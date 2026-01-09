@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { createARScene, disposeScene, SceneContext } from '@/lib/three/scene-setup';
 import { startARSession, endARSession, XRSessionContext } from '@/lib/webxr/session-manager';
@@ -250,18 +251,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     onExit();
   }, [cleanup, dispatch, onExit]);
 
-  return (
+  // Render UI into the overlay container via portal so it shows during AR
+  const overlayContent = (
     <>
-      {/* Three.js container */}
+      {/* Tap capture layer - covers entire screen for point placement */}
       <div
-        ref={containerRef}
         className="fixed inset-0"
-      />
-
-      {/* Tap capture layer - this captures taps for point placement */}
-      <div
-        className="fixed inset-0 z-0"
         onClick={handleTap}
+        style={{ touchAction: 'none' }}
       />
 
       {/* Measurement UI overlay */}
@@ -284,6 +281,19 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           </div>
         </div>
       )}
+    </>
+  );
+
+  return (
+    <>
+      {/* Three.js container */}
+      <div
+        ref={containerRef}
+        className="fixed inset-0"
+      />
+
+      {/* Portal UI into the overlay element so it renders during AR session */}
+      {overlayRef.current && createPortal(overlayContent, overlayRef.current)}
     </>
   );
 }
