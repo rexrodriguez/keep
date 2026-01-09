@@ -55,15 +55,14 @@ export async function checkWebXRCapabilities(): Promise<CapabilityResult> {
   }
 
   // Check 4: Required features (hit-test, local-floor)
-  // We attempt to request a session with these features and immediately end it
+  // Use isSessionSupported which doesn't require user gesture or camera permission
   try {
     const xr = navigator.xr!;
-    const testSession = await xr.requestSession('immersive-ar', {
-      requiredFeatures: ['hit-test', 'local-floor'],
-    });
-    // Successfully created session - features are supported
-    await testSession.end();
-    checks.requiredFeaturesSupported = true;
+    // If immersive-ar is supported, hit-test and local-floor are typically available
+    // We can't directly check features without requesting a session (which requires user gesture)
+    // So we assume if immersive-ar is supported on Android Chrome, features are available
+    // The actual feature check happens when user taps "Start AR"
+    checks.requiredFeaturesSupported = checks.immersiveARSupported;
   } catch (error) {
     checks.requiredFeaturesSupported = false;
     return {
