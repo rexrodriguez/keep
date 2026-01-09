@@ -42,7 +42,7 @@ export async function startARSession(
   // Create hit-test source from viewer space
   let hitTestSource: XRHitTestSource | null = null;
   try {
-    hitTestSource = await session.requestHitTestSource!({ space: viewerSpace });
+    hitTestSource = await session.requestHitTestSource!({ space: viewerSpace }) ?? null;
   } catch (error) {
     console.warn('Failed to create hit-test source:', error);
   }
@@ -87,8 +87,8 @@ export function getHitTestResults(
   const results = frame.getHitTestResults(hitTestSource);
 
   if (results.length > 0) {
-    const pose = results[0].getPose(referenceSpace);
-    return { pose, hasHit: true };
+    const pose = results[0].getPose(referenceSpace) ?? null;
+    return { pose, hasHit: pose !== null };
   }
 
   return { pose: null, hasHit: false };

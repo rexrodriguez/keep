@@ -71,6 +71,66 @@ npx next dev --experimental-https
 
 5. Grant camera permission when prompted
 
+### WSL2 Setup (Windows Subsystem for Linux)
+
+When running from WSL2, your Android phone can't directly reach the WSL2 network. You need to forward the port from Windows.
+
+#### Step 1: Get your WSL2 IP address
+
+In WSL2 terminal:
+```bash
+hostname -I | awk '{print $1}'
+```
+Example output: `172.25.123.45`
+
+#### Step 2: Set up port forwarding (run in PowerShell as Administrator)
+
+```powershell
+# Replace <WSL2_IP> with your actual WSL2 IP from Step 1
+netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=<WSL2_IP>
+
+# Example:
+netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=172.25.123.45
+```
+
+#### Step 3: Allow the port through Windows Firewall (PowerShell as Administrator)
+
+```powershell
+New-NetFirewallRule -DisplayName "WSL2 Port 3000" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+```
+
+#### Step 4: Get your Windows host IP
+
+In PowerShell or CMD:
+```powershell
+ipconfig
+```
+Look for your WiFi or Ethernet adapter's IPv4 address (e.g., `192.168.1.100`)
+
+#### Step 5: Access from your phone
+
+Open Chrome on your Android phone and navigate to:
+```
+https://YOUR_WINDOWS_IP:3000
+```
+(e.g., `https://192.168.1.100:3000`)
+
+#### Cleanup (when done)
+
+Remove the port forwarding rule:
+```powershell
+netsh interface portproxy delete v4tov4 listenport=3000 listenaddress=0.0.0.0
+```
+
+Remove the firewall rule:
+```powershell
+Remove-NetFirewallRule -DisplayName "WSL2 Port 3000"
+```
+
+#### Note on WSL2 IP changes
+
+WSL2 IP addresses change on restart. If the connection stops working after a reboot, repeat Steps 1-2 with the new WSL2 IP.
+
 ### 4. Use the App
 
 1. **Capability Check**: App verifies your device supports WebXR AR
