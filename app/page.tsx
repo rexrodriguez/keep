@@ -226,8 +226,8 @@ export default function Home() {
   if (appState === 'AR_ACTIVE') {
     return (
       <>
-        {/* DOM overlay container for AR UI */}
-        <div ref={overlayRef} className="fixed inset-0 pointer-events-none z-10">
+        {/* DOM overlay container for AR UI - pointer-events-auto allows interaction */}
+        <div ref={overlayRef} className="fixed inset-0 z-10">
           {/* ARSession renders its own MeasurementUI inside */}
         </div>
         <ARSession

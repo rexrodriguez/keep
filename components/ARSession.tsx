@@ -256,6 +256,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       <div
         ref={containerRef}
         className="fixed inset-0"
+      />
+
+      {/* Tap capture layer - this captures taps for point placement */}
+      <div
+        className="fixed inset-0 z-0"
         onClick={handleTap}
       />
 
