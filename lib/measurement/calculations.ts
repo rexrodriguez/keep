@@ -51,6 +51,46 @@ export function calculateMeasurementsFromDragRect(
 }
 
 /**
+ * Calculate measurements from LLM-estimated dimensions.
+ * Used when the user captures an image and gets AI-estimated dimensions,
+ * which they can then adjust via sliders.
+ */
+export function calculateMeasurementsFromLLM(
+  anchorPoint: MeasurementPoint,
+  width_m: number,
+  depth_m: number,
+  height_m: number,
+  llmConfidence: ConfidenceLevel
+): MeasurementData {
+  // Ensure minimum dimensions
+  const actualWidth = Math.max(width_m, 0.01);
+  const actualDepth = Math.max(depth_m, 0.01);
+  const actualHeight = Math.max(height_m, 0.01);
+
+  // Calculate volume
+  const volume_m3 = actualWidth * actualDepth * actualHeight;
+
+  // Create synthetic second point for compatibility
+  const floorPoint2: MeasurementPoint = {
+    position: anchorPoint.position.clone().add(
+      new THREE.Vector3(actualWidth, 0, actualDepth)
+    ),
+    timestamp: Date.now(),
+    stability: anchorPoint.stability,
+  };
+
+  return {
+    floorPoint1: anchorPoint,
+    floorPoint2: floorPoint2,
+    height_m: actualHeight,
+    width_m: actualWidth,
+    depth_m: actualDepth,
+    volume_m3,
+    confidence: llmConfidence,
+  };
+}
+
+/**
  * Convert measurement data to display format
  */
 export function toComputedMeasurements(

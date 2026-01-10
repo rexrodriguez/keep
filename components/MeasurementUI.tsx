@@ -10,8 +10,12 @@ interface MeasurementUIProps {
   trackingWarning: string | null;
   onUndo: () => void;
   onReset: () => void;
+  onSetWidth: (width_m: number) => void;
+  onSetDepth: (depth_m: number) => void;
   onSetHeight: (height_m: number) => void;
   onConfirmHeight: () => void;
+  onCaptureEstimate: () => void;
+  onClearTarget: () => void;
   onFindStorage: () => void;
   onExit: () => void;
 }
@@ -23,8 +27,12 @@ export default function MeasurementUI({
   trackingWarning,
   onUndo,
   onReset,
+  onSetWidth,
+  onSetDepth,
   onSetHeight,
   onConfirmHeight,
+  onCaptureEstimate,
+  onClearTarget,
   onFindStorage,
   onExit,
 }: MeasurementUIProps) {
@@ -34,8 +42,11 @@ export default function MeasurementUI({
   const isDrawing = context.state === 'DRAWING';
   const isReadyToDraw = context.state === 'READY_TO_DRAW';
   const showBottomActions = isHeightInput || isReview;
+  const hasLLMEstimate = context.llmEstimate !== null;
 
-  // Convert current height to cm for display
+  // Convert dimensions to cm for display
+  const widthCm = Math.round(context.width_m * 100);
+  const depthCm = Math.round(context.depth_m * 100);
   const heightCm = Math.round(context.height_m * 100);
 
   return (
@@ -59,14 +70,32 @@ export default function MeasurementUI({
         </div>
 
         <p className="text-white text-lg font-medium text-center">
-          {uiState.instruction}
+          {context.isEstimating ? 'Analyzing image...' : uiState.instruction}
         </p>
 
+        {/* LLM estimate info */}
+        {hasLLMEstimate && context.llmEstimate && (
+          <div className="mt-2 bg-blue-500/20 border border-blue-500/40 rounded-lg px-3 py-2">
+            <p className="text-blue-200 text-sm text-center">
+              AI detected: {context.llmEstimate.objectDescription}
+            </p>
+          </div>
+        )}
+
         {/* Tracking warning */}
-        {trackingWarning && (
+        {trackingWarning && !context.isEstimating && (
           <div className="mt-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-3 py-2">
             <p className="text-yellow-200 text-sm text-center">
               {trackingWarning}
+            </p>
+          </div>
+        )}
+
+        {/* Error message */}
+        {context.error && (
+          <div className="mt-2 bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2">
+            <p className="text-red-200 text-sm text-center">
+              {context.error}
             </p>
           </div>
         )}
@@ -75,47 +104,39 @@ export default function MeasurementUI({
       {/* Spacer to push bottom content down */}
       <div className="flex-1" />
 
-      {/* Bottom panel - Height slider or Review */}
+      {/* Bottom panel - Dimension sliders or Review */}
       {showBottomActions && (
         <div className="pointer-events-auto bg-black/70 backdrop-blur-sm p-4 safe-area-bottom">
-          {/* Height slider (compact, at bottom) */}
+          {/* Dimension sliders (for LLM mode, show all 3) */}
           {isHeightInput && (
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-white/60 text-sm">Height</span>
-                <span className="text-white text-xl font-bold">{heightCm} cm</span>
-              </div>
+            <div className="mb-4 space-y-3">
+              {/* Width slider (only show if LLM mode) */}
+              {hasLLMEstimate && (
+                <DimensionSlider
+                  label="Width"
+                  value={widthCm}
+                  onChange={(cm) => onSetWidth(cm / 100)}
+                  presets={[30, 50, 75, 100, 150]}
+                />
+              )}
+
+              {/* Depth slider (only show if LLM mode) */}
+              {hasLLMEstimate && (
+                <DimensionSlider
+                  label="Depth"
+                  value={depthCm}
+                  onChange={(cm) => onSetDepth(cm / 100)}
+                  presets={[30, 50, 75, 100, 150]}
+                />
+              )}
 
               {/* Height slider */}
-              <input
-                type="range"
-                min="5"
-                max="300"
-                step="1"
+              <DimensionSlider
+                label="Height"
                 value={heightCm}
-                onChange={(e) => onSetHeight(parseInt(e.target.value) / 100)}
-                className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((heightCm - 5) / 295) * 100}%, rgba(255,255,255,0.2) ${((heightCm - 5) / 295) * 100}%, rgba(255,255,255,0.2) 100%)`,
-                }}
+                onChange={(cm) => onSetHeight(cm / 100)}
+                presets={[25, 50, 75, 100, 150]}
               />
-
-              {/* Quick height presets */}
-              <div className="grid grid-cols-5 gap-2 mt-3">
-                {[25, 50, 75, 100, 150].map((h) => (
-                  <button
-                    key={h}
-                    onClick={() => onSetHeight(h / 100)}
-                    className={`py-2 rounded text-xs font-medium transition-colors ${
-                      heightCm === h
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white/10 text-white/80 hover:bg-white/20'
-                    }`}
-                  >
-                    {h}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
@@ -164,7 +185,7 @@ export default function MeasurementUI({
                   onClick={onUndo}
                   className="flex-1 py-3 px-4 rounded-lg font-medium bg-white/10 text-white hover:bg-white/20 transition-colors"
                 >
-                  Redraw
+                  {hasLLMEstimate ? 'Redo' : 'Redraw'}
                 </button>
                 <button
                   onClick={onConfirmHeight}
@@ -195,16 +216,122 @@ export default function MeasurementUI({
         </div>
       )}
 
-      {/* Drawing hint */}
-      {(isReadyToDraw || isDrawing) && !trackingWarning && (
+      {/* Ready to draw - show options based on whether target is marked */}
+      {isReadyToDraw && !trackingWarning && !context.isEstimating && (
+        <div className="pointer-events-auto pb-8 px-4 space-y-3">
+          {/* If target is marked, show capture button */}
+          {context.targetPoint ? (
+            <>
+              <button
+                onClick={onCaptureEstimate}
+                className="w-full py-4 px-6 rounded-xl font-medium bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Capture & Estimate with AI
+              </button>
+              <button
+                onClick={onClearTarget}
+                className="w-full py-2 px-4 rounded-lg font-medium bg-white/10 text-white/80 hover:bg-white/20"
+              >
+                Clear target
+              </button>
+            </>
+          ) : (
+            <>
+              {/* No target - show instructions */}
+              <div className="bg-purple-500/30 backdrop-blur-sm px-4 py-3 rounded-xl mx-auto">
+                <p className="text-white text-sm font-medium text-center">
+                  Tap near the object to mark target for AI
+                </p>
+              </div>
+
+              {/* Manual drag hint */}
+              <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
+                <span className="text-white text-sm font-medium">
+                  Or touch and drag to draw manually
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Drawing in progress */}
+      {isDrawing && (
         <div className="pointer-events-none pb-8 px-4">
           <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm font-medium">
-              {isDrawing ? 'Drag to size rectangle...' : 'Touch and drag on floor'}
+              Drag to size rectangle...
             </span>
           </div>
         </div>
       )}
+
+      {/* Estimating spinner */}
+      {context.isEstimating && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-purple-500/30 backdrop-blur-sm px-6 py-3 rounded-full mx-auto w-fit flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <span className="text-white text-sm font-medium">
+              AI analyzing image...
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Dimension slider component
+function DimensionSlider({
+  label,
+  value,
+  onChange,
+  presets,
+}: {
+  label: string;
+  value: number;
+  onChange: (cm: number) => void;
+  presets: number[];
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-white/60 text-sm">{label}</span>
+        <span className="text-white text-lg font-bold">{value} cm</span>
+      </div>
+
+      <input
+        type="range"
+        min="5"
+        max="300"
+        step="1"
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value))}
+        className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
+        style={{
+          background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((value - 5) / 295) * 100}%, rgba(255,255,255,0.2) ${((value - 5) / 295) * 100}%, rgba(255,255,255,0.2) 100%)`,
+        }}
+      />
+
+      <div className="grid grid-cols-5 gap-2 mt-2">
+        {presets.map((p) => (
+          <button
+            key={p}
+            onClick={() => onChange(p)}
+            className={`py-1.5 rounded text-xs font-medium transition-colors ${
+              value === p
+                ? 'bg-blue-500 text-white'
+                : 'bg-white/10 text-white/80 hover:bg-white/20'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

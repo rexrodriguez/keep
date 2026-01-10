@@ -1,11 +1,25 @@
+import * as THREE from 'three';
 import { MeasurementState, MeasurementPoint, UIState } from '@/lib/types';
 
 export interface StateMachineContext {
   state: MeasurementState;
   dragStart: MeasurementPoint | null;   // Start corner of drag rectangle
   dragEnd: MeasurementPoint | null;     // End corner of drag rectangle
+  targetPoint: MeasurementPoint | null; // Target point for LLM estimation (tap marker)
   height_m: number;                      // User-adjusted height (default 0.5m)
+  width_m: number;                       // User-adjusted width (for LLM mode)
+  depth_m: number;                       // User-adjusted depth (for LLM mode)
+  llmEstimate: LLMEstimate | null;      // LLM dimension estimate
+  isEstimating: boolean;                 // LLM estimation in progress
   error: string | null;
+}
+
+export interface LLMEstimate {
+  width_cm: number;
+  depth_cm: number;
+  height_cm: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  objectDescription: string;
 }
 
 export type StateAction =
@@ -19,7 +33,14 @@ export type StateAction =
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
   | { type: 'SET_HEIGHT'; height_m: number }
+  | { type: 'SET_WIDTH'; width_m: number }
+  | { type: 'SET_DEPTH'; depth_m: number }
   | { type: 'CONFIRM_HEIGHT' }
+  | { type: 'SET_TARGET'; point: MeasurementPoint }
+  | { type: 'CLEAR_TARGET' }
+  | { type: 'START_LLM_ESTIMATE' }
+  | { type: 'LLM_ESTIMATE_COMPLETE'; estimate: LLMEstimate }
+  | { type: 'LLM_ESTIMATE_FAILED'; error: string }
   | { type: 'UNDO' }
   | { type: 'RESET' }
   | { type: 'START_SEARCH' }
@@ -34,7 +55,12 @@ export const initialContext: StateMachineContext = {
   state: 'IDLE',
   dragStart: null,
   dragEnd: null,
+  targetPoint: null,
   height_m: 0.5, // Default 50cm
+  width_m: 0.5,  // Default 50cm
+  depth_m: 0.5,  // Default 50cm
+  llmEstimate: null,
+  isEstimating: false,
   error: null,
 };
 
@@ -111,6 +137,18 @@ export function stateMachineReducer(
         height_m: action.height_m,
       };
 
+    case 'SET_WIDTH':
+      return {
+        ...context,
+        width_m: action.width_m,
+      };
+
+    case 'SET_DEPTH':
+      return {
+        ...context,
+        depth_m: action.depth_m,
+      };
+
     case 'CONFIRM_HEIGHT':
       if (context.state === 'HEIGHT_INPUT') {
         return {
@@ -120,6 +158,68 @@ export function stateMachineReducer(
       }
       return context;
 
+    case 'SET_TARGET':
+      if (context.state === 'READY_TO_DRAW') {
+        return {
+          ...context,
+          targetPoint: action.point,
+        };
+      }
+      return context;
+
+    case 'CLEAR_TARGET':
+      return {
+        ...context,
+        targetPoint: null,
+      };
+
+    case 'START_LLM_ESTIMATE':
+      if (!context.targetPoint) {
+        return context; // Need a target point first
+      }
+      return {
+        ...context,
+        isEstimating: true,
+        error: null,
+      };
+
+    case 'LLM_ESTIMATE_COMPLETE': {
+      // Use the target point as anchor, create drag points from LLM dimensions
+      const { estimate } = action;
+      const anchorPoint = context.targetPoint!;
+      const widthM = estimate.width_cm / 100;
+      const depthM = estimate.depth_cm / 100;
+      const heightM = estimate.height_cm / 100;
+
+      // Create dragStart at anchor, dragEnd offset by width/depth
+      const dragEnd: MeasurementPoint = {
+        position: anchorPoint.position.clone().add(
+          new THREE.Vector3(widthM, 0, depthM)
+        ),
+        timestamp: Date.now(),
+        stability: anchorPoint.stability,
+      };
+
+      return {
+        ...context,
+        isEstimating: false,
+        llmEstimate: estimate,
+        dragStart: anchorPoint,
+        dragEnd: dragEnd,
+        width_m: widthM,
+        depth_m: depthM,
+        height_m: heightM,
+        state: 'HEIGHT_INPUT',
+      };
+    }
+
+    case 'LLM_ESTIMATE_FAILED':
+      return {
+        ...context,
+        isEstimating: false,
+        error: action.error,
+      };
+
     case 'UNDO':
       return handleUndo(context);
 
@@ -128,7 +228,11 @@ export function stateMachineReducer(
         ...context,
         dragStart: null,
         dragEnd: null,
+        targetPoint: null,
         height_m: 0.5,
+        width_m: 0.5,
+        depth_m: 0.5,
+        llmEstimate: null,
         state: 'READY_TO_DRAW',
       };
 
@@ -159,7 +263,11 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
       ...context,
       dragStart: null,
       dragEnd: null,
+      targetPoint: null,
       height_m: 0.5,
+      width_m: 0.5,
+      depth_m: 0.5,
+      llmEstimate: null,
       state: 'READY_TO_DRAW',
     };
   }
