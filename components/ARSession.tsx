@@ -189,18 +189,18 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
   // Handle screen tap for point capture
   const handleTap = useCallback((e: React.TouchEvent | React.MouseEvent) => {
-    // Don't capture if tap was on a button or interactive element
+    // Don't capture if tap was on a button or UI element
     const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('[data-interactive]')) {
+    if (target.tagName === 'BUTTON' || target.closest('button')) {
       return;
     }
 
-    if (!canCapturePoint(context.state)) return;
-    if (!currentHitRef.current) return;
+    if (!canCapturePoint(context.state)) {
+      return;
+    }
 
-    const stability = stabilizerRef.current.checkStability();
-    if (!stability.isStable) {
-      // Don't capture if unstable
+    // Use current hit position if available
+    if (!currentHitRef.current) {
       return;
     }
 
