@@ -23,9 +23,15 @@ This is a WebXR AR web app (Next.js 14 + Three.js) for measuring objects and fin
 1. **Capability Detection** (`lib/webxr/capability-check.ts`) → Validates HTTPS, WebXR API, immersive-ar, hit-test, local-floor
 2. **AR Session** (`lib/webxr/session-manager.ts`) → Manages XRSession lifecycle with Three.js renderer
 3. **Hit-Test Loop** (`lib/webxr/render-loop.ts`) → Frame-by-frame surface detection via `frame.getHitTestResults()`
-4. **Stabilization** (`lib/measurement/stabilization.ts`) → Rolling window (10 frames) filters noisy poses; taps only accepted when variance < 5mm
-5. **Geometry** (`lib/measurement/geometry.ts`) → Fits rectangle to 4 imperfect points; computes base plane for height
-6. **State Machine** (`lib/measurement/state-machine.ts`) → Drives UI through: `BASE_P1→P2→P3→P4→HEIGHT→REVIEW→RESULTS`
+4. **Stabilization** (`lib/measurement/stabilization.ts`) → Rolling window (5 frames) filters noisy poses; variance threshold 15mm
+5. **State Machine** (`lib/measurement/state-machine.ts`) → Drives UI through: `FLOOR_1→FLOOR_2→HEIGHT_INPUT→REVIEW→RESULTS`
+
+### Measurement Approach
+
+**Important**: WebXR hit-test only detects flat surfaces (floor, table, walls). It cannot detect arbitrary 3D points in space. The measurement flow is:
+1. Two floor taps capture width and depth from X/Z coordinates
+2. Height is set manually via slider (user estimates object height)
+3. This approach works because surfaces are the only thing hit-test can reliably detect
 
 ### Key Integration Points
 

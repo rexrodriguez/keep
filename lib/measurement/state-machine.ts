@@ -2,8 +2,9 @@ import { MeasurementState, MeasurementPoint, UIState } from '@/lib/types';
 
 export interface StateMachineContext {
   state: MeasurementState;
-  corner1: MeasurementPoint | null;  // Bottom-front corner
-  corner2: MeasurementPoint | null;  // Top-back diagonal corner
+  floorPoint1: MeasurementPoint | null;  // First floor corner
+  floorPoint2: MeasurementPoint | null;  // Diagonal floor corner
+  height_m: number;                       // User-adjusted height (default 0.5m)
   error: string | null;
 }
 
@@ -14,7 +15,9 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
-  | { type: 'ADD_CORNER'; point: MeasurementPoint }
+  | { type: 'ADD_FLOOR_POINT'; point: MeasurementPoint }
+  | { type: 'SET_HEIGHT'; height_m: number }
+  | { type: 'CONFIRM_HEIGHT' }
   | { type: 'UNDO' }
   | { type: 'RESET' }
   | { type: 'START_SEARCH' }
@@ -27,8 +30,9 @@ export type StateAction =
  */
 export const initialContext: StateMachineContext = {
   state: 'IDLE',
-  corner1: null,
-  corner2: null,
+  floorPoint1: null,
+  floorPoint2: null,
+  height_m: 0.5, // Default 50cm
   error: null,
 };
 
@@ -53,22 +57,45 @@ export function stateMachineReducer(
       return { ...context, state: 'AR_STARTING' };
 
     case 'AR_STARTED':
-      return { ...context, state: 'CORNER_1' };
+      return { ...context, state: 'FLOOR_1' };
 
     case 'AR_FAILED':
       return { ...context, state: 'SUPPORTED_READY', error: action.error };
 
-    case 'ADD_CORNER':
-      if (context.state === 'CORNER_1') {
+    case 'ADD_FLOOR_POINT':
+      if (context.state === 'FLOOR_1') {
         return {
           ...context,
-          corner1: action.point,
-          state: 'CORNER_2',
+          floorPoint1: action.point,
+          state: 'FLOOR_2',
         };
-      } else if (context.state === 'CORNER_2') {
+      } else if (context.state === 'FLOOR_2') {
+        // Require minimum distance between points (at least 5cm apart)
+        if (context.floorPoint1) {
+          const dist = action.point.position.distanceTo(context.floorPoint1.position);
+          if (dist < 0.05) {
+            // Points too close, ignore this tap
+            return context;
+          }
+        }
         return {
           ...context,
-          corner2: action.point,
+          floorPoint2: action.point,
+          state: 'HEIGHT_INPUT',
+        };
+      }
+      return context;
+
+    case 'SET_HEIGHT':
+      return {
+        ...context,
+        height_m: action.height_m,
+      };
+
+    case 'CONFIRM_HEIGHT':
+      if (context.state === 'HEIGHT_INPUT') {
+        return {
+          ...context,
           state: 'REVIEW',
         };
       }
@@ -80,9 +107,10 @@ export function stateMachineReducer(
     case 'RESET':
       return {
         ...context,
-        corner1: null,
-        corner2: null,
-        state: 'CORNER_1',
+        floorPoint1: null,
+        floorPoint2: null,
+        height_m: 0.5,
+        state: 'FLOOR_1',
       };
 
     case 'START_SEARCH':
@@ -106,21 +134,31 @@ export function stateMachineReducer(
  * Handle undo action
  */
 function handleUndo(context: StateMachineContext): StateMachineContext {
-  if (context.corner2) {
-    // Undo second corner
+  // In height input or review, go back to floor 2
+  if (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') {
     return {
       ...context,
-      corner2: null,
-      state: 'CORNER_2',
+      floorPoint2: null,
+      height_m: 0.5,
+      state: 'FLOOR_2',
     };
   }
 
-  if (context.corner1) {
-    // Undo first corner
+  // In floor 2, go back to floor 1
+  if (context.floorPoint2) {
     return {
       ...context,
-      corner1: null,
-      state: 'CORNER_1',
+      floorPoint2: null,
+      state: 'FLOOR_2',
+    };
+  }
+
+  // Undo first floor point
+  if (context.floorPoint1) {
+    return {
+      ...context,
+      floorPoint1: null,
+      state: 'FLOOR_1',
     };
   }
 
@@ -136,9 +174,9 @@ export function getUIState(context: StateMachineContext): UIState {
   return {
     currentStep: stateInfo.step,
     instruction: stateInfo.instruction,
-    canUndo: context.corner1 !== null,
-    canReset: context.corner1 !== null,
-    showMeasurements: context.corner1 !== null && context.corner2 !== null,
+    canUndo: context.floorPoint1 !== null,
+    canReset: context.floorPoint1 !== null,
+    showMeasurements: context.floorPoint1 !== null && context.floorPoint2 !== null,
     trackingWarning: null,
   };
 }
@@ -163,10 +201,12 @@ function getStateInfo(state: MeasurementState): {
       return { step: '', instruction: 'Starting AR session...' };
     case 'AR_RUNNING':
       return { step: '', instruction: 'Point at a flat surface' };
-    case 'CORNER_1':
-      return { step: '1/2', instruction: 'Tap the BOTTOM corner of the object' };
-    case 'CORNER_2':
-      return { step: '2/2', instruction: 'Tap the opposite TOP corner' };
+    case 'FLOOR_1':
+      return { step: '1/3', instruction: 'Tap one corner of the object base' };
+    case 'FLOOR_2':
+      return { step: '2/3', instruction: 'Tap the diagonal opposite corner' };
+    case 'HEIGHT_INPUT':
+      return { step: '3/3', instruction: 'Adjust height with slider' };
     case 'REVIEW':
       return { step: 'Done', instruction: 'Review your measurement' };
     case 'SEARCHING':
@@ -179,8 +219,8 @@ function getStateInfo(state: MeasurementState): {
 }
 
 /**
- * Check if current state allows point capture
+ * Check if current state allows point capture (floor taps only)
  */
 export function canCapturePoint(state: MeasurementState): boolean {
-  return ['CORNER_1', 'CORNER_2'].includes(state);
+  return ['FLOOR_1', 'FLOOR_2'].includes(state);
 }

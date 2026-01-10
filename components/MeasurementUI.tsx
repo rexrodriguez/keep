@@ -10,6 +10,8 @@ interface MeasurementUIProps {
   trackingWarning: string | null;
   onUndo: () => void;
   onReset: () => void;
+  onSetHeight: (height_m: number) => void;
+  onConfirmHeight: () => void;
   onFindStorage: () => void;
   onExit: () => void;
 }
@@ -21,12 +23,18 @@ export default function MeasurementUI({
   trackingWarning,
   onUndo,
   onReset,
+  onSetHeight,
+  onConfirmHeight,
   onFindStorage,
   onExit,
 }: MeasurementUIProps) {
   const uiState = getUIState(context);
+  const isHeightInput = context.state === 'HEIGHT_INPUT';
   const isReview = context.state === 'REVIEW';
-  const showActions = ['CORNER_1', 'CORNER_2', 'REVIEW'].includes(context.state);
+  const showActions = ['FLOOR_1', 'FLOOR_2', 'HEIGHT_INPUT', 'REVIEW'].includes(context.state);
+
+  // Convert current height to cm for display
+  const heightCm = Math.round(context.height_m * 100);
 
   return (
     <div className="fixed inset-0 pointer-events-none flex flex-col">
@@ -62,8 +70,66 @@ export default function MeasurementUI({
         )}
       </div>
 
-      {/* Middle - measurements display */}
-      {measurements && (
+      {/* Height slider (HEIGHT_INPUT state) */}
+      {isHeightInput && (
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="pointer-events-auto bg-black/60 backdrop-blur-sm rounded-lg p-6 mx-4 max-w-sm w-full">
+            <div className="text-center mb-6">
+              <p className="text-white/60 text-sm mb-1">Object Height</p>
+              <p className="text-white text-4xl font-bold">{heightCm} cm</p>
+              <p className="text-white/60 text-sm">{(heightCm / 2.54).toFixed(1)}"</p>
+            </div>
+
+            {/* Height slider */}
+            <div className="mb-6">
+              <input
+                type="range"
+                min="5"
+                max="300"
+                step="1"
+                value={heightCm}
+                onChange={(e) => onSetHeight(parseInt(e.target.value) / 100)}
+                className="w-full h-3 bg-white/20 rounded-lg appearance-none cursor-pointer slider-thumb"
+                style={{
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((heightCm - 5) / 295) * 100}%, rgba(255,255,255,0.2) ${((heightCm - 5) / 295) * 100}%, rgba(255,255,255,0.2) 100%)`,
+                }}
+              />
+              <div className="flex justify-between text-white/40 text-xs mt-1">
+                <span>5 cm</span>
+                <span>300 cm</span>
+              </div>
+            </div>
+
+            {/* Quick height presets */}
+            <div className="grid grid-cols-4 gap-2 mb-6">
+              {[30, 50, 75, 100].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => onSetHeight(h / 100)}
+                  className={`py-2 px-2 rounded text-sm font-medium transition-colors ${
+                    heightCm === h
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white/10 text-white/80 hover:bg-white/20'
+                  }`}
+                >
+                  {h} cm
+                </button>
+              ))}
+            </div>
+
+            {/* Confirm button */}
+            <button
+              onClick={onConfirmHeight}
+              className="w-full py-3 px-4 rounded-lg font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+            >
+              Confirm Height
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Measurements display (Review state) */}
+      {isReview && measurements && (
         <div className="flex-1 flex items-end justify-center pb-4">
           <div className="pointer-events-auto bg-black/60 backdrop-blur-sm rounded-lg p-4 mx-4 max-w-sm w-full">
             {/* Confidence badge */}
@@ -130,7 +196,7 @@ export default function MeasurementUI({
       )}
 
       {/* Bottom bar - actions */}
-      {showActions && (
+      {showActions && !isHeightInput && (
         <div className="pointer-events-auto bg-black/60 backdrop-blur-sm p-4 safe-area-bottom">
           <div className="flex gap-3">
             {/* Undo button */}

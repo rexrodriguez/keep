@@ -12,37 +12,39 @@ const METERS_TO_INCHES = 39.3701;
 const CUBIC_METERS_TO_CUBIC_FEET = 35.3147;
 
 /**
- * Calculate measurements from two diagonal corners.
- * Corner 1: Bottom corner (any bottom corner of bounding box)
- * Corner 2: Opposite top corner (diagonal from corner 1)
+ * Calculate measurements from two floor points and user-input height.
+ * FloorPoint1 and FloorPoint2: Diagonal corners of object's floor footprint
+ * Height: User-adjusted via slider (since WebXR hit-test can't detect vertical points)
  *
- * This gives us the bounding box dimensions directly.
+ * Width/Depth are calculated from the floor point X/Z differences.
  */
-export function calculateMeasurementsFromCorners(
-  corner1: MeasurementPoint,
-  corner2: MeasurementPoint
+export function calculateMeasurementsFromFloorPoints(
+  floorPoint1: MeasurementPoint,
+  floorPoint2: MeasurementPoint,
+  height_m: number
 ): MeasurementData {
-  const p1 = corner1.position;
-  const p2 = corner2.position;
+  const p1 = floorPoint1.position;
+  const p2 = floorPoint2.position;
 
-  // Calculate dimensions from the two diagonal corners
-  // Width and depth are horizontal distances, height is vertical
+  // Calculate width and depth from floor footprint (X and Z axes)
   const width_m = Math.abs(p2.x - p1.x);
   const depth_m = Math.abs(p2.z - p1.z);
-  const height_m = Math.abs(p2.y - p1.y);
+
+  // Height is user-provided via slider
+  const actualHeight = Math.max(height_m, 0.01); // Min 1cm
 
   // Calculate volume
-  const volume_m3 = width_m * depth_m * height_m;
+  const volume_m3 = width_m * depth_m * actualHeight;
 
-  // Calculate confidence based on stability
-  const confidence = calculateConfidence(corner1, corner2, width_m, depth_m, height_m);
+  // Calculate confidence based on stability and dimensions
+  const confidence = calculateConfidence(floorPoint1, floorPoint2, width_m, depth_m, actualHeight);
 
   return {
-    corner1,
-    corner2,
+    floorPoint1,
+    floorPoint2,
+    height_m: actualHeight,
     width_m,
     depth_m,
-    height_m,
     volume_m3,
     confidence,
   };
@@ -70,14 +72,14 @@ export function toComputedMeasurements(
  * Calculate confidence level based on stability and sanity checks
  */
 function calculateConfidence(
-  corner1: MeasurementPoint,
-  corner2: MeasurementPoint,
+  floorPoint1: MeasurementPoint,
+  floorPoint2: MeasurementPoint,
   width: number,
   depth: number,
   height: number
 ): ConfidenceLevel {
-  // Factor 1: Tracking stability at capture time
-  const avgStability = (corner1.stability + corner2.stability) / 2;
+  // Factor 1: Tracking stability at capture time (floor points only)
+  const avgStability = (floorPoint1.stability + floorPoint2.stability) / 2;
 
   // Factor 2: Minimum dimension check (not too small to be a mistake)
   const minDimension = Math.min(width, depth, height);
@@ -88,12 +90,16 @@ function calculateConfidence(
   const aspectRatio = maxDimension / Math.max(minDimension, 0.001);
   const aspectOk = aspectRatio < 50; // Not too extreme
 
+  // Factor 4: Floor points should be reasonably separated
+  const floorDistance = floorPoint1.position.distanceTo(floorPoint2.position);
+  const floorOk = floorDistance > 0.05; // At least 5cm apart
+
   // Determine confidence level
-  if (avgStability > 0.8 && dimensionsOk && aspectOk) {
+  if (avgStability > 0.8 && dimensionsOk && aspectOk && floorOk) {
     return 'HIGH';
   }
 
-  if (avgStability > 0.5 && dimensionsOk) {
+  if (avgStability > 0.5 && dimensionsOk && floorOk) {
     return 'MEDIUM';
   }
 

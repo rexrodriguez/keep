@@ -9,7 +9,9 @@ export interface XRHitTestResult {
   getPose(baseSpace: XRReferenceSpace): XRPose | null;
 }
 
-// Application State Machine (2-tap flow: CORNER_1 -> CORNER_2 -> REVIEW)
+// Application State Machine (floor taps + height slider)
+// WebXR hit-test only detects surfaces, so we capture 2 floor points
+// and let user input height manually via slider
 export type MeasurementState =
   | 'IDLE'
   | 'CHECKING_SUPPORT'
@@ -17,8 +19,9 @@ export type MeasurementState =
   | 'SUPPORTED_READY'
   | 'AR_STARTING'
   | 'AR_RUNNING'
-  | 'CORNER_1'      // Tap bottom-front corner
-  | 'CORNER_2'      // Tap top-back (diagonal) corner
+  | 'FLOOR_1'       // Tap first floor corner of object base
+  | 'FLOOR_2'       // Tap diagonal opposite floor corner
+  | 'HEIGHT_INPUT'  // User adjusts height via slider
   | 'REVIEW'
   | 'SEARCHING'
   | 'RESULTS';
@@ -45,11 +48,11 @@ export interface MeasurementPoint {
 }
 
 export interface MeasurementData {
-  corner1: MeasurementPoint;      // Bottom-front corner
-  corner2: MeasurementPoint;      // Top-back (diagonal) corner
-  width_m: number;
-  depth_m: number;
-  height_m: number;
+  floorPoint1: MeasurementPoint;  // First floor corner
+  floorPoint2: MeasurementPoint;  // Diagonal opposite floor corner
+  height_m: number;               // User-input height (slider)
+  width_m: number;                // Calculated from floor points
+  depth_m: number;                // Calculated from floor points
   volume_m3: number;
   confidence: ConfidenceLevel;
 }

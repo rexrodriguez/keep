@@ -135,12 +135,14 @@ WSL2 IP addresses change on restart. If the connection stops working after a reb
 
 1. **Capability Check**: App verifies your device supports WebXR AR
 2. **Start AR**: Tap "Start AR Measurement"
-3. **Measure** (2 taps):
-   - Point at the bottom corner of your object and tap
-   - Point at the opposite top corner (diagonal) and tap
-   - The app calculates width, depth, and height from these two corners
+3. **Measure** (3 steps):
+   - **Floor Point 1**: Point at one corner of the object's base on the floor and tap
+   - **Floor Point 2**: Point at the diagonal opposite corner on the floor and tap
+   - **Height**: Use the slider to set the object's height (since AR can only detect floor surfaces)
 4. **Review**: Check the measurements and confidence level
 5. **Find Storage**: Set search radius and find matching storage units
+
+**Note**: WebXR hit-test only detects flat surfaces (floor, table), so width and depth are measured from floor taps while height is set manually via slider.
 
 ## Project Structure
 
