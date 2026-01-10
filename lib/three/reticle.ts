@@ -8,38 +8,38 @@ export function createReticle(): THREE.Group {
   group.name = 'reticle';
   group.visible = false;
 
-  // Outer ring
-  const outerGeometry = new THREE.RingGeometry(0.08, 0.1, 32);
+  // Outer ring - smaller for precision
+  const outerGeometry = new THREE.RingGeometry(0.03, 0.04, 32);
   const outerMaterial = new THREE.MeshBasicMaterial({
     color: 0x00ff00,
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.9,
   });
   const outerRing = new THREE.Mesh(outerGeometry, outerMaterial);
   outerRing.rotation.x = -Math.PI / 2;
   group.add(outerRing);
 
-  // Inner dot
-  const innerGeometry = new THREE.CircleGeometry(0.02, 16);
+  // Inner dot - small center point
+  const innerGeometry = new THREE.CircleGeometry(0.008, 16);
   const innerMaterial = new THREE.MeshBasicMaterial({
     color: 0x00ff00,
     side: THREE.DoubleSide,
   });
   const innerDot = new THREE.Mesh(innerGeometry, innerMaterial);
   innerDot.rotation.x = -Math.PI / 2;
-  innerDot.position.y = 0.001; // Slight offset to prevent z-fighting
+  innerDot.position.y = 0.001;
   group.add(innerDot);
 
-  // Cross lines for precision
+  // Cross lines for precision - smaller
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
 
   // Horizontal line
   const hPoints = [
-    new THREE.Vector3(-0.06, 0, 0),
-    new THREE.Vector3(-0.03, 0, 0),
-    new THREE.Vector3(0.03, 0, 0),
-    new THREE.Vector3(0.06, 0, 0),
+    new THREE.Vector3(-0.025, 0, 0),
+    new THREE.Vector3(-0.012, 0, 0),
+    new THREE.Vector3(0.012, 0, 0),
+    new THREE.Vector3(0.025, 0, 0),
   ];
   const hGeometry = new THREE.BufferGeometry().setFromPoints([hPoints[0], hPoints[1]]);
   const hLine1 = new THREE.Line(hGeometry, lineMaterial);
@@ -50,10 +50,10 @@ export function createReticle(): THREE.Group {
 
   // Vertical line
   const vPoints = [
-    new THREE.Vector3(0, 0, -0.06),
-    new THREE.Vector3(0, 0, -0.03),
-    new THREE.Vector3(0, 0, 0.03),
-    new THREE.Vector3(0, 0, 0.06),
+    new THREE.Vector3(0, 0, -0.025),
+    new THREE.Vector3(0, 0, -0.012),
+    new THREE.Vector3(0, 0, 0.012),
+    new THREE.Vector3(0, 0, 0.025),
   ];
   const vGeometry = new THREE.BufferGeometry().setFromPoints([vPoints[0], vPoints[1]]);
   const vLine1 = new THREE.Line(vGeometry, lineMaterial);

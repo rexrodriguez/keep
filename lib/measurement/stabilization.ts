@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { StabilizationFrame, StabilizationResult } from '@/lib/types';
 
-const WINDOW_SIZE = 10;
-const POSITION_VARIANCE_THRESHOLD = 0.005; // 5mm
-const MIN_FRAMES_FOR_STABILITY = 5;
+const WINDOW_SIZE = 5;
+const POSITION_VARIANCE_THRESHOLD = 0.015; // 15mm - more lenient for usability
+const MIN_FRAMES_FOR_STABILITY = 3;
 
 /**
  * Rolling window for pose stabilization

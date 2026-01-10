@@ -67,8 +67,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         sceneCtx.scene.add(reticle);
         reticleRef.current = reticle;
 
-        // Create marker for first corner (shown after first tap)
-        const markerGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+        // Create marker for first corner (shown after first tap) - small sphere
+        const markerGeometry = new THREE.SphereGeometry(0.01, 16, 16);
         const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
         const marker1 = new THREE.Mesh(markerGeometry, markerMaterial);
         marker1.visible = false;
