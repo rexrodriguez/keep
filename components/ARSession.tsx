@@ -45,6 +45,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
   // Current hit position for tap capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
+  // Store viewer pose for raycasting when no surface is detected
+  const viewerPoseRef = useRef<{ position: THREE.Vector3; direction: THREE.Vector3 } | null>(null);
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
@@ -136,7 +138,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   }, [context.corner1, context.corner2]);
 
   const handleFrame = useCallback((data: FrameData) => {
-    const { hitTest } = data;
+    const { hitTest, viewerPose } = data;
+
+    // Store viewer pose for raycasting
+    if (viewerPose) {
+      const pose = viewerPose.transform;
+      const position = new THREE.Vector3(
+        pose.position.x,
+        pose.position.y,
+        pose.position.z
+      );
+      // Get forward direction from orientation
+      const quaternion = new THREE.Quaternion(
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w
+      );
+      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
+      viewerPoseRef.current = { position, direction };
+    }
 
     // Update reticle
     if (reticleRef.current) {
@@ -149,7 +170,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       setIsReticleVisible(hitTest.hasHit);
     }
 
-    // Update stabilizer
+    // Update stabilizer and current hit
     if (hitTest.hasHit) {
       stabilizerRef.current.addFrame(hitTest.position);
       const stability = stabilizerRef.current.checkStability();
@@ -165,8 +186,20 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         stability: stability.stability,
       };
 
-      // Update tracking warning
-      setTrackingWarning(stability.message || null);
+      setTrackingWarning(null);
+    } else if (viewerPoseRef.current) {
+      // No surface hit, but we can still capture using ray projection
+      // Project along view direction at a reasonable distance
+      const distance = 0.5; // Default 50cm if no surface detected
+      const projectedPos = viewerPoseRef.current.position.clone()
+        .add(viewerPoseRef.current.direction.clone().multiplyScalar(distance));
+
+      currentHitRef.current = {
+        position: projectedPos,
+        stability: 0.5,
+      };
+
+      setTrackingWarning('Point at object corner');
     } else {
       currentHitRef.current = null;
       setTrackingWarning('Point at a flat surface');
