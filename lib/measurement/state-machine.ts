@@ -2,9 +2,9 @@ import { MeasurementState, MeasurementPoint, UIState } from '@/lib/types';
 
 export interface StateMachineContext {
   state: MeasurementState;
-  floorPoint1: MeasurementPoint | null;  // First floor corner
-  floorPoint2: MeasurementPoint | null;  // Diagonal floor corner
-  height_m: number;                       // User-adjusted height (default 0.5m)
+  dragStart: MeasurementPoint | null;   // Start corner of drag rectangle
+  dragEnd: MeasurementPoint | null;     // End corner of drag rectangle
+  height_m: number;                      // User-adjusted height (default 0.5m)
   error: string | null;
 }
 
@@ -15,7 +15,9 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
-  | { type: 'ADD_FLOOR_POINT'; point: MeasurementPoint }
+  | { type: 'START_DRAG'; point: MeasurementPoint }
+  | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
+  | { type: 'END_DRAG'; point: MeasurementPoint }
   | { type: 'SET_HEIGHT'; height_m: number }
   | { type: 'CONFIRM_HEIGHT' }
   | { type: 'UNDO' }
@@ -30,8 +32,8 @@ export type StateAction =
  */
 export const initialContext: StateMachineContext = {
   state: 'IDLE',
-  floorPoint1: null,
-  floorPoint2: null,
+  dragStart: null,
+  dragEnd: null,
   height_m: 0.5, // Default 50cm
   error: null,
 };
@@ -57,30 +59,47 @@ export function stateMachineReducer(
       return { ...context, state: 'AR_STARTING' };
 
     case 'AR_STARTED':
-      return { ...context, state: 'FLOOR_1' };
+      return { ...context, state: 'READY_TO_DRAW' };
 
     case 'AR_FAILED':
       return { ...context, state: 'SUPPORTED_READY', error: action.error };
 
-    case 'ADD_FLOOR_POINT':
-      if (context.state === 'FLOOR_1') {
+    case 'START_DRAG':
+      if (context.state === 'READY_TO_DRAW') {
         return {
           ...context,
-          floorPoint1: action.point,
-          state: 'FLOOR_2',
+          dragStart: action.point,
+          dragEnd: action.point, // Initialize end to start
+          state: 'DRAWING',
         };
-      } else if (context.state === 'FLOOR_2') {
-        // Require minimum distance between points (at least 5cm apart)
-        if (context.floorPoint1) {
-          const dist = action.point.position.distanceTo(context.floorPoint1.position);
-          if (dist < 0.05) {
-            // Points too close, ignore this tap
-            return context;
-          }
+      }
+      return context;
+
+    case 'UPDATE_DRAG':
+      if (context.state === 'DRAWING') {
+        return {
+          ...context,
+          dragEnd: action.point,
+        };
+      }
+      return context;
+
+    case 'END_DRAG':
+      if (context.state === 'DRAWING' && context.dragStart) {
+        // Require minimum rectangle size (at least 5cm in any direction)
+        const dist = action.point.position.distanceTo(context.dragStart.position);
+        if (dist < 0.05) {
+          // Rectangle too small, cancel and reset
+          return {
+            ...context,
+            dragStart: null,
+            dragEnd: null,
+            state: 'READY_TO_DRAW',
+          };
         }
         return {
           ...context,
-          floorPoint2: action.point,
+          dragEnd: action.point,
           state: 'HEIGHT_INPUT',
         };
       }
@@ -107,10 +126,10 @@ export function stateMachineReducer(
     case 'RESET':
       return {
         ...context,
-        floorPoint1: null,
-        floorPoint2: null,
+        dragStart: null,
+        dragEnd: null,
         height_m: 0.5,
-        state: 'FLOOR_1',
+        state: 'READY_TO_DRAW',
       };
 
     case 'START_SEARCH':
@@ -134,31 +153,24 @@ export function stateMachineReducer(
  * Handle undo action
  */
 function handleUndo(context: StateMachineContext): StateMachineContext {
-  // In height input or review, go back to floor 2
+  // In height input or review, go back to ready to draw
   if (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') {
     return {
       ...context,
-      floorPoint2: null,
+      dragStart: null,
+      dragEnd: null,
       height_m: 0.5,
-      state: 'FLOOR_2',
+      state: 'READY_TO_DRAW',
     };
   }
 
-  // In floor 2, go back to floor 1
-  if (context.floorPoint2) {
+  // In drawing, cancel the drag
+  if (context.state === 'DRAWING') {
     return {
       ...context,
-      floorPoint2: null,
-      state: 'FLOOR_2',
-    };
-  }
-
-  // Undo first floor point
-  if (context.floorPoint1) {
-    return {
-      ...context,
-      floorPoint1: null,
-      state: 'FLOOR_1',
+      dragStart: null,
+      dragEnd: null,
+      state: 'READY_TO_DRAW',
     };
   }
 
@@ -174,9 +186,9 @@ export function getUIState(context: StateMachineContext): UIState {
   return {
     currentStep: stateInfo.step,
     instruction: stateInfo.instruction,
-    canUndo: context.floorPoint1 !== null,
-    canReset: context.floorPoint1 !== null,
-    showMeasurements: context.floorPoint1 !== null && context.floorPoint2 !== null,
+    canUndo: context.dragStart !== null || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW',
+    canReset: context.dragStart !== null,
+    showMeasurements: context.dragStart !== null && context.dragEnd !== null && context.state !== 'DRAWING',
     trackingWarning: null,
   };
 }
@@ -201,12 +213,12 @@ function getStateInfo(state: MeasurementState): {
       return { step: '', instruction: 'Starting AR session...' };
     case 'AR_RUNNING':
       return { step: '', instruction: 'Point at a flat surface' };
-    case 'FLOOR_1':
-      return { step: '1/3', instruction: 'Tap one corner of the object base' };
-    case 'FLOOR_2':
-      return { step: '2/3', instruction: 'Tap the diagonal opposite corner' };
+    case 'READY_TO_DRAW':
+      return { step: '1/2', instruction: 'Drag to draw rectangle around object base' };
+    case 'DRAWING':
+      return { step: '1/2', instruction: 'Release to set rectangle' };
     case 'HEIGHT_INPUT':
-      return { step: '3/3', instruction: 'Adjust height with slider' };
+      return { step: '2/2', instruction: 'Adjust height' };
     case 'REVIEW':
       return { step: 'Done', instruction: 'Review your measurement' };
     case 'SEARCHING':
@@ -219,8 +231,15 @@ function getStateInfo(state: MeasurementState): {
 }
 
 /**
- * Check if current state allows point capture (floor taps only)
+ * Check if current state allows drag interaction
  */
-export function canCapturePoint(state: MeasurementState): boolean {
-  return ['FLOOR_1', 'FLOOR_2'].includes(state);
+export function canStartDrag(state: MeasurementState): boolean {
+  return state === 'READY_TO_DRAW';
+}
+
+/**
+ * Check if currently in drag mode
+ */
+export function isDragging(state: MeasurementState): boolean {
+  return state === 'DRAWING';
 }

@@ -13,11 +13,12 @@ import {
   stateMachineReducer,
   initialContext,
   StateAction,
-  canCapturePoint,
+  canStartDrag,
+  isDragging,
   StateMachineContext,
 } from '@/lib/measurement/state-machine';
 import {
-  calculateMeasurementsFromFloorPoints,
+  calculateMeasurementsFromDragRect,
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
@@ -34,9 +35,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const sceneContextRef = useRef<SceneContext | null>(null);
   const xrContextRef = useRef<XRSessionContext | null>(null);
   const reticleRef = useRef<THREE.Group | null>(null);
-  const marker1Ref = useRef<THREE.Mesh | null>(null);
-  const marker2Ref = useRef<THREE.Mesh | null>(null);
-  const lineRef = useRef<THREE.Line | null>(null);
   const stabilizerRef = useRef<PoseStabilizer>(new PoseStabilizer());
   const renderLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
 
@@ -44,10 +42,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
-  const [isReticleVisible, setIsReticleVisible] = useState(false);
 
-  // Current hit position for tap capture
+  // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
+  // Track if currently in a touch gesture
+  const isTouchingRef = useRef(false);
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
@@ -69,28 +68,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         const reticle = createReticle();
         sceneCtx.scene.add(reticle);
         reticleRef.current = reticle;
-
-        // Create markers for floor points (shown after taps)
-        const markerGeometry = new THREE.SphereGeometry(0.02, 16, 16);
-        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-
-        const marker1 = new THREE.Mesh(markerGeometry, markerMaterial);
-        marker1.visible = false;
-        sceneCtx.scene.add(marker1);
-        marker1Ref.current = marker1;
-
-        const marker2 = new THREE.Mesh(markerGeometry, markerMaterial.clone());
-        marker2.visible = false;
-        sceneCtx.scene.add(marker2);
-        marker2Ref.current = marker2;
-
-        // Create line between markers
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
-        const lineGeometry = new THREE.BufferGeometry();
-        const line = new THREE.Line(lineGeometry, lineMaterial);
-        line.visible = false;
-        sceneCtx.scene.add(line);
-        lineRef.current = line;
 
         // Start AR session
         const xrCtx = await startARSession(
@@ -131,72 +108,40 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     };
   }, [dispatch, overlayRef]);
 
-  // Update visuals when floor points change
-  useEffect(() => {
-    // Update first marker
-    if (marker1Ref.current && context.floorPoint1) {
-      marker1Ref.current.position.copy(context.floorPoint1.position);
-      marker1Ref.current.visible = true;
-    } else if (marker1Ref.current) {
-      marker1Ref.current.visible = false;
-    }
-
-    // Update second marker
-    if (marker2Ref.current && context.floorPoint2) {
-      marker2Ref.current.position.copy(context.floorPoint2.position);
-      marker2Ref.current.visible = true;
-    } else if (marker2Ref.current) {
-      marker2Ref.current.visible = false;
-    }
-
-    // Update line between markers
-    if (lineRef.current && context.floorPoint1 && context.floorPoint2) {
-      const positions = new Float32Array([
-        context.floorPoint1.position.x, context.floorPoint1.position.y, context.floorPoint1.position.z,
-        context.floorPoint2.position.x, context.floorPoint2.position.y, context.floorPoint2.position.z,
-      ]);
-      lineRef.current.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      lineRef.current.visible = true;
-    } else if (lineRef.current) {
-      lineRef.current.visible = false;
-    }
-  }, [context.floorPoint1, context.floorPoint2]);
-
-  // Update bounding box when floor points or height change
+  // Update bounding box when drag points or height change
   useEffect(() => {
     if (sceneContextRef.current) {
-      // Show bounding box once we have both floor points (during HEIGHT_INPUT or REVIEW)
-      const showBox = context.floorPoint1 && context.floorPoint2 &&
-        (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW');
+      // Show bounding box during drawing, height input, or review
+      const showBox = context.dragStart && context.dragEnd;
 
       if (showBox) {
         updateBoundingBox(
           sceneContextRef.current.scene,
-          context.floorPoint1,
-          context.floorPoint2,
+          context.dragStart,
+          context.dragEnd,
           context.height_m
         );
       } else {
         disposeBoundingBox(sceneContextRef.current.scene);
       }
     }
-  }, [context.floorPoint1, context.floorPoint2, context.height_m, context.state]);
+  }, [context.dragStart, context.dragEnd, context.height_m]);
 
-  // Update measurements when height changes or in review
+  // Update measurements when drag ends or height changes
   useEffect(() => {
-    if (context.floorPoint1 && context.floorPoint2) {
-      const data = calculateMeasurementsFromFloorPoints(
-        context.floorPoint1,
-        context.floorPoint2,
+    if (context.dragStart && context.dragEnd && context.state !== 'DRAWING') {
+      const data = calculateMeasurementsFromDragRect(
+        context.dragStart,
+        context.dragEnd,
         context.height_m
       );
       setMeasurements(toComputedMeasurements(data));
       setConfidence(data.confidence);
-    } else {
+    } else if (!context.dragStart || !context.dragEnd) {
       setMeasurements(null);
       setConfidence(null);
     }
-  }, [context.floorPoint1, context.floorPoint2, context.height_m]);
+  }, [context.dragStart, context.dragEnd, context.height_m, context.state]);
 
   const handleFrame = useCallback((data: FrameData) => {
     const { hitTest } = data;
@@ -209,7 +154,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         hitTest.quaternion,
         hitTest.hasHit
       );
-      setIsReticleVisible(hitTest.hasHit);
     }
 
     // Update stabilizer and current hit
@@ -222,7 +166,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         setReticleColor(reticleRef.current, stability.isStable);
       }
 
-      // Store current hit for tap capture
+      // Store current hit for drag capture
       currentHitRef.current = {
         position: stability.averagedPosition.clone(),
         stability: stability.stability,
@@ -250,19 +194,39 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     }
   }, []);
 
-  // Handle screen tap for floor point capture
-  const handleTap = useCallback((e: React.TouchEvent | React.MouseEvent) => {
-    // Don't capture if tap was on a button or UI element
+  // Handle touch start - begin drag
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    // Don't start drag if tap was on a button or UI element
     const target = e.target as HTMLElement;
     if (target.tagName === 'BUTTON' || target.closest('button') || target.tagName === 'INPUT') {
       return;
     }
 
-    if (!canCapturePoint(context.state)) {
+    if (!canStartDrag(context.state)) {
       return;
     }
 
-    // Use current hit position if available
+    if (!currentHitRef.current) {
+      return;
+    }
+
+    isTouchingRef.current = true;
+
+    const point: MeasurementPoint = {
+      position: currentHitRef.current.position.clone(),
+      timestamp: Date.now(),
+      stability: currentHitRef.current.stability,
+    };
+
+    dispatch({ type: 'START_DRAG', point });
+  }, [context.state, dispatch]);
+
+  // Handle touch move - update drag end point
+  const handleTouchMove = useCallback(() => {
+    if (!isDragging(context.state)) {
+      return;
+    }
+
     if (!currentHitRef.current) {
       return;
     }
@@ -273,8 +237,38 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       stability: currentHitRef.current.stability,
     };
 
-    dispatch({ type: 'ADD_FLOOR_POINT', point });
+    dispatch({ type: 'UPDATE_DRAG', point });
   }, [context.state, dispatch]);
+
+  // Handle touch end - finish drag
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    // Don't end drag if tap was on a button or UI element
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.closest('button') || target.tagName === 'INPUT') {
+      return;
+    }
+
+    if (!isDragging(context.state)) {
+      isTouchingRef.current = false;
+      return;
+    }
+
+    isTouchingRef.current = false;
+
+    // Use the last known hit position
+    if (!currentHitRef.current || !context.dragStart) {
+      dispatch({ type: 'UNDO' }); // Cancel if no valid position
+      return;
+    }
+
+    const point: MeasurementPoint = {
+      position: currentHitRef.current.position.clone(),
+      timestamp: Date.now(),
+      stability: currentHitRef.current.stability,
+    };
+
+    dispatch({ type: 'END_DRAG', point });
+  }, [context.state, context.dragStart, dispatch]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
@@ -294,15 +288,15 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   }, [dispatch]);
 
   const handleFindStorage = useCallback(() => {
-    if (context.floorPoint1 && context.floorPoint2) {
-      const data = calculateMeasurementsFromFloorPoints(
-        context.floorPoint1,
-        context.floorPoint2,
+    if (context.dragStart && context.dragEnd) {
+      const data = calculateMeasurementsFromDragRect(
+        context.dragStart,
+        context.dragEnd,
         context.height_m
       );
       onFindStorage(data);
     }
-  }, [context.floorPoint1, context.floorPoint2, context.height_m, onFindStorage]);
+  }, [context.dragStart, context.dragEnd, context.height_m, onFindStorage]);
 
   const handleExit = useCallback(() => {
     cleanup();
@@ -314,9 +308,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const overlayContent = (
     <div
       className="fixed inset-0"
-      onTouchEnd={handleTap}
-      onClick={handleTap}
-      style={{ touchAction: 'manipulation' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{ touchAction: 'none' }}
     >
       {/* Measurement UI overlay */}
       <MeasurementUI
@@ -331,15 +326,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         onFindStorage={handleFindStorage}
         onExit={handleExit}
       />
-
-      {/* Tap hint (show when ready to capture floor points) */}
-      {canCapturePoint(context.state) && isReticleVisible && !trackingWarning && (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 pointer-events-none">
-          <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full">
-            <span className="text-white text-sm font-medium">Tap to place point</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 

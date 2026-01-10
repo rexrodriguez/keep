@@ -9,8 +9,8 @@ export interface XRHitTestResult {
   getPose(baseSpace: XRReferenceSpace): XRPose | null;
 }
 
-// Application State Machine (floor taps + height slider)
-// WebXR hit-test only detects surfaces, so we capture 2 floor points
+// Application State Machine (drag rectangle + height slider)
+// WebXR hit-test only detects surfaces, so we capture rectangle via drag
 // and let user input height manually via slider
 export type MeasurementState =
   | 'IDLE'
@@ -19,9 +19,9 @@ export type MeasurementState =
   | 'SUPPORTED_READY'
   | 'AR_STARTING'
   | 'AR_RUNNING'
-  | 'FLOOR_1'       // Tap first floor corner of object base
-  | 'FLOOR_2'       // Tap diagonal opposite floor corner
-  | 'HEIGHT_INPUT'  // User adjusts height via slider
+  | 'READY_TO_DRAW'  // Ready for user to start drag
+  | 'DRAWING'        // User is dragging to draw rectangle
+  | 'HEIGHT_INPUT'   // User adjusts height via slider
   | 'REVIEW'
   | 'SEARCHING'
   | 'RESULTS';

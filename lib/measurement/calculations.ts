@@ -12,21 +12,21 @@ const METERS_TO_INCHES = 39.3701;
 const CUBIC_METERS_TO_CUBIC_FEET = 35.3147;
 
 /**
- * Calculate measurements from two floor points and user-input height.
- * FloorPoint1 and FloorPoint2: Diagonal corners of object's floor footprint
+ * Calculate measurements from drag rectangle corners and user-input height.
+ * DragStart and DragEnd: Diagonal corners of object's floor footprint from drag gesture
  * Height: User-adjusted via slider (since WebXR hit-test can't detect vertical points)
  *
- * Width/Depth are calculated from the floor point X/Z differences.
+ * Width/Depth are calculated from the drag rectangle X/Z differences.
  */
-export function calculateMeasurementsFromFloorPoints(
-  floorPoint1: MeasurementPoint,
-  floorPoint2: MeasurementPoint,
+export function calculateMeasurementsFromDragRect(
+  dragStart: MeasurementPoint,
+  dragEnd: MeasurementPoint,
   height_m: number
 ): MeasurementData {
-  const p1 = floorPoint1.position;
-  const p2 = floorPoint2.position;
+  const p1 = dragStart.position;
+  const p2 = dragEnd.position;
 
-  // Calculate width and depth from floor footprint (X and Z axes)
+  // Calculate width and depth from drag rectangle (X and Z axes)
   const width_m = Math.abs(p2.x - p1.x);
   const depth_m = Math.abs(p2.z - p1.z);
 
@@ -37,11 +37,11 @@ export function calculateMeasurementsFromFloorPoints(
   const volume_m3 = width_m * depth_m * actualHeight;
 
   // Calculate confidence based on stability and dimensions
-  const confidence = calculateConfidence(floorPoint1, floorPoint2, width_m, depth_m, actualHeight);
+  const confidence = calculateConfidence(dragStart, dragEnd, width_m, depth_m, actualHeight);
 
   return {
-    floorPoint1,
-    floorPoint2,
+    floorPoint1: dragStart,
+    floorPoint2: dragEnd,
     height_m: actualHeight,
     width_m,
     depth_m,

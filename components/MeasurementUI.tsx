@@ -31,7 +31,9 @@ export default function MeasurementUI({
   const uiState = getUIState(context);
   const isHeightInput = context.state === 'HEIGHT_INPUT';
   const isReview = context.state === 'REVIEW';
-  const showActions = ['FLOOR_1', 'FLOOR_2', 'HEIGHT_INPUT', 'REVIEW'].includes(context.state);
+  const isDrawing = context.state === 'DRAWING';
+  const isReadyToDraw = context.state === 'READY_TO_DRAW';
+  const showBottomActions = isHeightInput || isReview;
 
   // Convert current height to cm for display
   const heightCm = Math.round(context.height_m * 100);
@@ -70,18 +72,21 @@ export default function MeasurementUI({
         )}
       </div>
 
-      {/* Height slider (HEIGHT_INPUT state) */}
-      {isHeightInput && (
-        <div className="flex-1 flex items-center justify-center px-4">
-          <div className="pointer-events-auto bg-black/60 backdrop-blur-sm rounded-lg p-6 mx-4 max-w-sm w-full">
-            <div className="text-center mb-6">
-              <p className="text-white/60 text-sm mb-1">Object Height</p>
-              <p className="text-white text-4xl font-bold">{heightCm} cm</p>
-              <p className="text-white/60 text-sm">{(heightCm / 2.54).toFixed(1)}"</p>
-            </div>
+      {/* Spacer to push bottom content down */}
+      <div className="flex-1" />
 
-            {/* Height slider */}
-            <div className="mb-6">
+      {/* Bottom panel - Height slider or Review */}
+      {showBottomActions && (
+        <div className="pointer-events-auto bg-black/70 backdrop-blur-sm p-4 safe-area-bottom">
+          {/* Height slider (compact, at bottom) */}
+          {isHeightInput && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/60 text-sm">Height</span>
+                <span className="text-white text-xl font-bold">{heightCm} cm</span>
+              </div>
+
+              {/* Height slider */}
               <input
                 type="range"
                 min="5"
@@ -89,151 +94,114 @@ export default function MeasurementUI({
                 step="1"
                 value={heightCm}
                 onChange={(e) => onSetHeight(parseInt(e.target.value) / 100)}
-                className="w-full h-3 bg-white/20 rounded-lg appearance-none cursor-pointer slider-thumb"
+                className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
                 style={{
                   background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((heightCm - 5) / 295) * 100}%, rgba(255,255,255,0.2) ${((heightCm - 5) / 295) * 100}%, rgba(255,255,255,0.2) 100%)`,
                 }}
               />
-              <div className="flex justify-between text-white/40 text-xs mt-1">
-                <span>5 cm</span>
-                <span>300 cm</span>
+
+              {/* Quick height presets */}
+              <div className="grid grid-cols-5 gap-2 mt-3">
+                {[25, 50, 75, 100, 150].map((h) => (
+                  <button
+                    key={h}
+                    onClick={() => onSetHeight(h / 100)}
+                    className={`py-2 rounded text-xs font-medium transition-colors ${
+                      heightCm === h
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white/10 text-white/80 hover:bg-white/20'
+                    }`}
+                  >
+                    {h}
+                  </button>
+                ))}
               </div>
             </div>
+          )}
 
-            {/* Quick height presets */}
-            <div className="grid grid-cols-4 gap-2 mb-6">
-              {[30, 50, 75, 100].map((h) => (
-                <button
-                  key={h}
-                  onClick={() => onSetHeight(h / 100)}
-                  className={`py-2 px-2 rounded text-sm font-medium transition-colors ${
-                    heightCm === h
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white/10 text-white/80 hover:bg-white/20'
-                  }`}
-                >
-                  {h} cm
-                </button>
-              ))}
-            </div>
-
-            {/* Confirm button */}
-            <button
-              onClick={onConfirmHeight}
-              className="w-full py-3 px-4 rounded-lg font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-            >
-              Confirm Height
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Measurements display (Review state) */}
-      {isReview && measurements && (
-        <div className="flex-1 flex items-end justify-center pb-4">
-          <div className="pointer-events-auto bg-black/60 backdrop-blur-sm rounded-lg p-4 mx-4 max-w-sm w-full">
-            {/* Confidence badge */}
-            {confidence && (
-              <div className="flex justify-center mb-3">
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    confidence === 'HIGH'
-                      ? 'bg-green-500/20 text-green-300'
-                      : confidence === 'MEDIUM'
-                      ? 'bg-yellow-500/20 text-yellow-300'
-                      : 'bg-red-500/20 text-red-300'
-                  }`}
-                >
-                  {confidence} Confidence
-                </span>
-              </div>
-            )}
-
-            {/* Measurements grid */}
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-white/60">Width</span>
-                <p className="text-white font-medium">
-                  {measurements.width_cm.toFixed(1)} cm
-                </p>
-                <p className="text-white/60 text-xs">
-                  {measurements.width_in.toFixed(1)}"
-                </p>
-              </div>
-
-              <div>
-                <span className="text-white/60">Depth</span>
-                <p className="text-white font-medium">
-                  {measurements.depth_cm.toFixed(1)} cm
-                </p>
-                <p className="text-white/60 text-xs">
-                  {measurements.depth_in.toFixed(1)}"
-                </p>
-              </div>
-
-              <div>
-                <span className="text-white/60">Height</span>
-                <p className="text-white font-medium">
-                  {measurements.height_cm.toFixed(1)} cm
-                </p>
-                <p className="text-white/60 text-xs">
-                  {measurements.height_in.toFixed(1)}"
-                </p>
-              </div>
-
-              <div>
-                <span className="text-white/60">Volume</span>
-                <p className="text-white font-medium">
-                  {measurements.volume_m3.toFixed(3)} m³
-                </p>
-                <p className="text-white/60 text-xs">
-                  {measurements.volume_ft3.toFixed(2)} ft³
-                </p>
+          {/* Measurements summary (compact) */}
+          {measurements && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <div className="flex-1 text-center">
+                  <span className="text-white/60 block text-xs">W</span>
+                  <span className="text-white font-medium">{measurements.width_cm.toFixed(0)}cm</span>
+                </div>
+                <div className="flex-1 text-center">
+                  <span className="text-white/60 block text-xs">D</span>
+                  <span className="text-white font-medium">{measurements.depth_cm.toFixed(0)}cm</span>
+                </div>
+                <div className="flex-1 text-center">
+                  <span className="text-white/60 block text-xs">H</span>
+                  <span className="text-white font-medium">{measurements.height_cm.toFixed(0)}cm</span>
+                </div>
+                <div className="flex-1 text-center">
+                  <span className="text-white/60 block text-xs">Vol</span>
+                  <span className="text-white font-medium">{measurements.volume_m3.toFixed(2)}m³</span>
+                </div>
+                {confidence && (
+                  <span
+                    className={`px-2 py-1 rounded text-xs font-semibold ${
+                      confidence === 'HIGH'
+                        ? 'bg-green-500/20 text-green-300'
+                        : confidence === 'MEDIUM'
+                        ? 'bg-yellow-500/20 text-yellow-300'
+                        : 'bg-red-500/20 text-red-300'
+                    }`}
+                  >
+                    {confidence}
+                  </span>
+                )}
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Bottom bar - actions */}
-      {showActions && !isHeightInput && (
-        <div className="pointer-events-auto bg-black/60 backdrop-blur-sm p-4 safe-area-bottom">
+          {/* Action buttons */}
           <div className="flex gap-3">
-            {/* Undo button */}
-            <button
-              onClick={onUndo}
-              disabled={!uiState.canUndo}
-              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                uiState.canUndo
-                  ? 'bg-white/10 text-white hover:bg-white/20'
-                  : 'bg-white/5 text-white/30 cursor-not-allowed'
-              }`}
-            >
-              Undo
-            </button>
-
-            {/* Reset button */}
-            <button
-              onClick={onReset}
-              disabled={!uiState.canReset}
-              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                uiState.canReset
-                  ? 'bg-white/10 text-white hover:bg-white/20'
-                  : 'bg-white/5 text-white/30 cursor-not-allowed'
-              }`}
-            >
-              Reset
-            </button>
-
-            {/* Find Storage button (only in review) */}
-            {isReview && (
-              <button
-                onClick={onFindStorage}
-                className="flex-1 py-3 px-4 rounded-lg font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-              >
-                Find Storage
-              </button>
+            {isHeightInput && (
+              <>
+                <button
+                  onClick={onUndo}
+                  className="flex-1 py-3 px-4 rounded-lg font-medium bg-white/10 text-white hover:bg-white/20 transition-colors"
+                >
+                  Redraw
+                </button>
+                <button
+                  onClick={onConfirmHeight}
+                  className="flex-1 py-3 px-4 rounded-lg font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                >
+                  Confirm
+                </button>
+              </>
             )}
+
+            {isReview && (
+              <>
+                <button
+                  onClick={onReset}
+                  className="flex-1 py-3 px-4 rounded-lg font-medium bg-white/10 text-white hover:bg-white/20 transition-colors"
+                >
+                  Redo
+                </button>
+                <button
+                  onClick={onFindStorage}
+                  className="flex-1 py-3 px-4 rounded-lg font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                >
+                  Find Storage
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Drawing hint */}
+      {(isReadyToDraw || isDrawing) && !trackingWarning && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
+            <span className="text-white text-sm font-medium">
+              {isDrawing ? 'Drag to size rectangle...' : 'Touch and drag on floor'}
+            </span>
           </div>
         </div>
       )}
