@@ -1,11 +1,11 @@
 'use client';
 
-import { MeasurementState, ComputedMeasurements, ConfidenceLevel } from '@/lib/types';
+import { ComputedMeasurements, ConfidenceLevel } from '@/lib/types';
 import { getUIState, StateMachineContext } from '@/lib/measurement/state-machine';
 
 interface MeasurementUIProps {
   context: StateMachineContext;
-  measurements: Partial<ComputedMeasurements> | null;
+  measurements: ComputedMeasurements | null;
   confidence: ConfidenceLevel | null;
   trackingWarning: string | null;
   onUndo: () => void;
@@ -26,9 +26,7 @@ export default function MeasurementUI({
 }: MeasurementUIProps) {
   const uiState = getUIState(context);
   const isReview = context.state === 'REVIEW';
-  const showActions = ['BASE_P1', 'BASE_P2', 'BASE_P3', 'BASE_P4', 'HEIGHT', 'REVIEW'].includes(
-    context.state
-  );
+  const showActions = ['CORNER_1', 'CORNER_2', 'REVIEW'].includes(context.state);
 
   return (
     <div className="fixed inset-0 pointer-events-none flex flex-col">
@@ -65,7 +63,7 @@ export default function MeasurementUI({
       </div>
 
       {/* Middle - measurements display */}
-      {measurements && Object.keys(measurements).length > 0 && (
+      {measurements && (
         <div className="flex-1 flex items-end justify-center pb-4">
           <div className="pointer-events-auto bg-black/60 backdrop-blur-sm rounded-lg p-4 mx-4 max-w-sm w-full">
             {/* Confidence badge */}
@@ -87,53 +85,45 @@ export default function MeasurementUI({
 
             {/* Measurements grid */}
             <div className="grid grid-cols-2 gap-3 text-sm">
-              {measurements.width_cm !== undefined && (
-                <div>
-                  <span className="text-white/60">Width</span>
-                  <p className="text-white font-medium">
-                    {measurements.width_cm?.toFixed(1)} cm
-                  </p>
-                  <p className="text-white/60 text-xs">
-                    {measurements.width_in?.toFixed(1)}"
-                  </p>
-                </div>
-              )}
+              <div>
+                <span className="text-white/60">Width</span>
+                <p className="text-white font-medium">
+                  {measurements.width_cm.toFixed(1)} cm
+                </p>
+                <p className="text-white/60 text-xs">
+                  {measurements.width_in.toFixed(1)}"
+                </p>
+              </div>
 
-              {measurements.depth_cm !== undefined && (
-                <div>
-                  <span className="text-white/60">Depth</span>
-                  <p className="text-white font-medium">
-                    {measurements.depth_cm?.toFixed(1)} cm
-                  </p>
-                  <p className="text-white/60 text-xs">
-                    {measurements.depth_in?.toFixed(1)}"
-                  </p>
-                </div>
-              )}
+              <div>
+                <span className="text-white/60">Depth</span>
+                <p className="text-white font-medium">
+                  {measurements.depth_cm.toFixed(1)} cm
+                </p>
+                <p className="text-white/60 text-xs">
+                  {measurements.depth_in.toFixed(1)}"
+                </p>
+              </div>
 
-              {measurements.height_cm !== undefined && (
-                <div>
-                  <span className="text-white/60">Height</span>
-                  <p className="text-white font-medium">
-                    {measurements.height_cm?.toFixed(1)} cm
-                  </p>
-                  <p className="text-white/60 text-xs">
-                    {measurements.height_in?.toFixed(1)}"
-                  </p>
-                </div>
-              )}
+              <div>
+                <span className="text-white/60">Height</span>
+                <p className="text-white font-medium">
+                  {measurements.height_cm.toFixed(1)} cm
+                </p>
+                <p className="text-white/60 text-xs">
+                  {measurements.height_in.toFixed(1)}"
+                </p>
+              </div>
 
-              {measurements.volume_m3 !== undefined && (
-                <div>
-                  <span className="text-white/60">Volume</span>
-                  <p className="text-white font-medium">
-                    {measurements.volume_m3?.toFixed(3)} m³
-                  </p>
-                  <p className="text-white/60 text-xs">
-                    {measurements.volume_ft3?.toFixed(2)} ft³
-                  </p>
-                </div>
-              )}
+              <div>
+                <span className="text-white/60">Volume</span>
+                <p className="text-white font-medium">
+                  {measurements.volume_m3.toFixed(3)} m³
+                </p>
+                <p className="text-white/60 text-xs">
+                  {measurements.volume_ft3.toFixed(2)} ft³
+                </p>
+              </div>
             </div>
           </div>
         </div>

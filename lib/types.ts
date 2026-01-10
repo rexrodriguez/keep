@@ -9,7 +9,7 @@ export interface XRHitTestResult {
   getPose(baseSpace: XRReferenceSpace): XRPose | null;
 }
 
-// Application State Machine
+// Application State Machine (2-tap flow: CORNER_1 -> CORNER_2 -> REVIEW)
 export type MeasurementState =
   | 'IDLE'
   | 'CHECKING_SUPPORT'
@@ -17,11 +17,8 @@ export type MeasurementState =
   | 'SUPPORTED_READY'
   | 'AR_STARTING'
   | 'AR_RUNNING'
-  | 'BASE_P1'
-  | 'BASE_P2'
-  | 'BASE_P3'
-  | 'BASE_P4'
-  | 'HEIGHT'
+  | 'CORNER_1'      // Tap bottom-front corner
+  | 'CORNER_2'      // Tap top-back (diagonal) corner
   | 'REVIEW'
   | 'SEARCHING'
   | 'RESULTS';
@@ -48,8 +45,8 @@ export interface MeasurementPoint {
 }
 
 export interface MeasurementData {
-  basePoints: MeasurementPoint[];
-  heightPoint: MeasurementPoint | null;
+  corner1: MeasurementPoint;      // Bottom-front corner
+  corner2: MeasurementPoint;      // Top-back (diagonal) corner
   width_m: number;
   depth_m: number;
   height_m: number;

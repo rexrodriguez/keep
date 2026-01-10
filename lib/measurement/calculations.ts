@@ -5,13 +5,6 @@ import {
   ComputedMeasurements,
   ConfidenceLevel,
 } from '@/lib/types';
-import {
-  fitRectangleToPoints,
-  calculateBasePlane,
-  calculateHeightFromPlane,
-  calculateOrthogonalityError,
-} from './geometry';
-import { calculatePointSetStability } from './stabilization';
 
 // Conversion constants
 const METERS_TO_CM = 100;
@@ -19,89 +12,39 @@ const METERS_TO_INCHES = 39.3701;
 const CUBIC_METERS_TO_CUBIC_FEET = 35.3147;
 
 /**
- * Calculate full measurement data from points
+ * Calculate measurements from two diagonal corners.
+ * Corner 1: Bottom corner (any bottom corner of bounding box)
+ * Corner 2: Opposite top corner (diagonal from corner 1)
+ *
+ * This gives us the bounding box dimensions directly.
  */
-export function calculateMeasurements(
-  basePoints: MeasurementPoint[],
-  heightPoint: MeasurementPoint | null
-): MeasurementData | null {
-  if (basePoints.length < 4 || !heightPoint) {
-    return null;
-  }
+export function calculateMeasurementsFromCorners(
+  corner1: MeasurementPoint,
+  corner2: MeasurementPoint
+): MeasurementData {
+  const p1 = corner1.position;
+  const p2 = corner2.position;
 
-  const positions = basePoints.map((p) => p.position);
-
-  // Fit rectangle to base points
-  const rectangle = fitRectangleToPoints(positions);
-
-  // Calculate base plane
-  const basePlane = calculateBasePlane(positions);
-
-  // Calculate height
-  const height_m = calculateHeightFromPlane(basePlane, heightPoint.position);
+  // Calculate dimensions from the two diagonal corners
+  // Width and depth are horizontal distances, height is vertical
+  const width_m = Math.abs(p2.x - p1.x);
+  const depth_m = Math.abs(p2.z - p1.z);
+  const height_m = Math.abs(p2.y - p1.y);
 
   // Calculate volume
-  const volume_m3 = rectangle.width * rectangle.depth * height_m;
+  const volume_m3 = width_m * depth_m * height_m;
 
-  // Calculate confidence
-  const confidence = calculateConfidence(
-    basePoints,
-    heightPoint,
-    rectangle.width,
-    rectangle.depth
-  );
+  // Calculate confidence based on stability
+  const confidence = calculateConfidence(corner1, corner2, width_m, depth_m, height_m);
 
   return {
-    basePoints,
-    heightPoint,
-    width_m: rectangle.width,
-    depth_m: rectangle.depth,
+    corner1,
+    corner2,
+    width_m,
+    depth_m,
     height_m,
     volume_m3,
     confidence,
-  };
-}
-
-/**
- * Calculate partial measurements (when not all points are captured)
- */
-export function calculatePartialMeasurements(
-  basePoints: MeasurementPoint[]
-): Partial<ComputedMeasurements> {
-  if (basePoints.length < 2) {
-    return {};
-  }
-
-  const positions = basePoints.map((p) => p.position);
-
-  if (basePoints.length === 2) {
-    // Just width (first edge)
-    const width_m = positions[0].distanceTo(positions[1]);
-    return {
-      width_cm: width_m * METERS_TO_CM,
-      width_in: width_m * METERS_TO_INCHES,
-    };
-  }
-
-  if (basePoints.length === 3) {
-    // Width and partial depth estimate
-    const width_m = positions[0].distanceTo(positions[1]);
-    const depth_m = positions[1].distanceTo(positions[2]);
-    return {
-      width_cm: width_m * METERS_TO_CM,
-      width_in: width_m * METERS_TO_INCHES,
-      depth_cm: depth_m * METERS_TO_CM,
-      depth_in: depth_m * METERS_TO_INCHES,
-    };
-  }
-
-  // 4 points - full base measurements
-  const rectangle = fitRectangleToPoints(positions);
-  return {
-    width_cm: rectangle.width * METERS_TO_CM,
-    width_in: rectangle.width * METERS_TO_INCHES,
-    depth_cm: rectangle.depth * METERS_TO_CM,
-    depth_in: rectangle.depth * METERS_TO_INCHES,
   };
 }
 
@@ -124,33 +67,33 @@ export function toComputedMeasurements(
 }
 
 /**
- * Calculate confidence level based on multiple factors
+ * Calculate confidence level based on stability and sanity checks
  */
 function calculateConfidence(
-  basePoints: MeasurementPoint[],
-  heightPoint: MeasurementPoint,
+  corner1: MeasurementPoint,
+  corner2: MeasurementPoint,
   width: number,
-  depth: number
+  depth: number,
+  height: number
 ): ConfidenceLevel {
-  const positions = basePoints.map((p) => p.position);
-
   // Factor 1: Tracking stability at capture time
-  const stabilities = [...basePoints.map((p) => p.stability), heightPoint.stability];
-  const avgStability = calculatePointSetStability(positions, stabilities);
+  const avgStability = (corner1.stability + corner2.stability) / 2;
 
-  // Factor 2: Orthogonality of base rectangle
-  const orthoError = calculateOrthogonalityError(positions);
+  // Factor 2: Minimum dimension check (not too small to be a mistake)
+  const minDimension = Math.min(width, depth, height);
+  const maxDimension = Math.max(width, depth, height);
+  const dimensionsOk = minDimension > 0.01 && maxDimension < 10; // 1cm to 10m
 
-  // Factor 3: Aspect ratio sanity check (not too extreme)
-  const aspectRatio = Math.max(width, depth) / Math.min(width, depth);
-  const aspectOk = aspectRatio < 10; // Reasonable aspect ratio
+  // Factor 3: Aspect ratio sanity check
+  const aspectRatio = maxDimension / Math.max(minDimension, 0.001);
+  const aspectOk = aspectRatio < 50; // Not too extreme
 
   // Determine confidence level
-  if (avgStability > 0.8 && orthoError < 5 && aspectOk) {
+  if (avgStability > 0.8 && dimensionsOk && aspectOk) {
     return 'HIGH';
   }
 
-  if (avgStability > 0.5 && orthoError < 15 && aspectOk) {
+  if (avgStability > 0.5 && dimensionsOk) {
     return 'MEDIUM';
   }
 

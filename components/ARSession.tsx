@@ -7,8 +7,6 @@ import { createARScene, disposeScene, SceneContext } from '@/lib/three/scene-set
 import { startARSession, endARSession, XRSessionContext } from '@/lib/webxr/session-manager';
 import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
 import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
-import { updateMarkersGroup } from '@/lib/three/markers';
-import { updateBoundingBoxFromPoints } from '@/lib/three/bounding-box';
 import { PoseStabilizer } from '@/lib/measurement/stabilization';
 import {
   stateMachineReducer,
@@ -18,8 +16,7 @@ import {
   StateMachineContext,
 } from '@/lib/measurement/state-machine';
 import {
-  calculateMeasurements,
-  calculatePartialMeasurements,
+  calculateMeasurementsFromCorners,
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
@@ -36,12 +33,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const sceneContextRef = useRef<SceneContext | null>(null);
   const xrContextRef = useRef<XRSessionContext | null>(null);
   const reticleRef = useRef<THREE.Group | null>(null);
-  const markersGroupRef = useRef<THREE.Group | null>(null);
+  const marker1Ref = useRef<THREE.Mesh | null>(null);
   const stabilizerRef = useRef<PoseStabilizer>(new PoseStabilizer());
   const renderLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
 
   const [context, setContext] = useState<StateMachineContext>(initialContext);
-  const [measurements, setMeasurements] = useState<Partial<ComputedMeasurements> | null>(null);
+  const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
   const [isReticleVisible, setIsReticleVisible] = useState(false);
@@ -70,11 +67,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         sceneCtx.scene.add(reticle);
         reticleRef.current = reticle;
 
-        // Create markers group
-        const markersGroup = new THREE.Group();
-        markersGroup.name = 'markers';
-        sceneCtx.scene.add(markersGroup);
-        markersGroupRef.current = markersGroup;
+        // Create marker for first corner (shown after first tap)
+        const markerGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const marker1 = new THREE.Mesh(markerGeometry, markerMaterial);
+        marker1.visible = false;
+        sceneCtx.scene.add(marker1);
+        marker1Ref.current = marker1;
 
         // Start AR session
         const xrCtx = await startARSession(
@@ -115,43 +114,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     };
   }, [dispatch, overlayRef]);
 
-  // Update measurements when points change
+  // Update measurements and visuals when corners change
   useEffect(() => {
-    if (context.basePoints.length >= 2) {
-      if (context.basePoints.length === 4 && context.heightPoint) {
-        // Full measurements
-        const data = calculateMeasurements(context.basePoints, context.heightPoint);
-        if (data) {
-          setMeasurements(toComputedMeasurements(data));
-          setConfidence(data.confidence);
-        }
-      } else {
-        // Partial measurements
-        const partial = calculatePartialMeasurements(context.basePoints);
-        setMeasurements(partial);
-        setConfidence(null);
-      }
+    // Update first marker visibility
+    if (marker1Ref.current && context.corner1) {
+      marker1Ref.current.position.copy(context.corner1.position);
+      marker1Ref.current.visible = true;
+    } else if (marker1Ref.current) {
+      marker1Ref.current.visible = false;
+    }
+
+    // Calculate measurements when both corners are set
+    if (context.corner1 && context.corner2) {
+      const data = calculateMeasurementsFromCorners(context.corner1, context.corner2);
+      setMeasurements(toComputedMeasurements(data));
+      setConfidence(data.confidence);
     } else {
       setMeasurements(null);
       setConfidence(null);
     }
-
-    // Update 3D markers
-    if (markersGroupRef.current && sceneContextRef.current) {
-      updateMarkersGroup(
-        markersGroupRef.current,
-        context.basePoints,
-        context.heightPoint
-      );
-
-      // Update bounding box
-      updateBoundingBoxFromPoints(
-        sceneContextRef.current.scene,
-        context.basePoints,
-        context.heightPoint
-      );
-    }
-  }, [context.basePoints, context.heightPoint]);
+  }, [context.corner1, context.corner2]);
 
   const handleFrame = useCallback((data: FrameData) => {
     const { hitTest } = data;
@@ -222,11 +204,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       stability: currentHitRef.current.stability,
     };
 
-    if (context.state === 'HEIGHT') {
-      dispatch({ type: 'ADD_HEIGHT_POINT', point });
-    } else {
-      dispatch({ type: 'ADD_BASE_POINT', point });
-    }
+    dispatch({ type: 'ADD_CORNER', point });
   }, [context.state, dispatch]);
 
   const handleUndo = useCallback(() => {
@@ -239,11 +217,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   }, [dispatch]);
 
   const handleFindStorage = useCallback(() => {
-    const data = calculateMeasurements(context.basePoints, context.heightPoint);
-    if (data) {
+    if (context.corner1 && context.corner2) {
+      const data = calculateMeasurementsFromCorners(context.corner1, context.corner2);
       onFindStorage(data);
     }
-  }, [context.basePoints, context.heightPoint, onFindStorage]);
+  }, [context.corner1, context.corner2, onFindStorage]);
 
   const handleExit = useCallback(() => {
     cleanup();

@@ -2,8 +2,8 @@ import { MeasurementState, MeasurementPoint, UIState } from '@/lib/types';
 
 export interface StateMachineContext {
   state: MeasurementState;
-  basePoints: MeasurementPoint[];
-  heightPoint: MeasurementPoint | null;
+  corner1: MeasurementPoint | null;  // Bottom-front corner
+  corner2: MeasurementPoint | null;  // Top-back diagonal corner
   error: string | null;
 }
 
@@ -14,8 +14,7 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
-  | { type: 'ADD_BASE_POINT'; point: MeasurementPoint }
-  | { type: 'ADD_HEIGHT_POINT'; point: MeasurementPoint }
+  | { type: 'ADD_CORNER'; point: MeasurementPoint }
   | { type: 'UNDO' }
   | { type: 'RESET' }
   | { type: 'START_SEARCH' }
@@ -28,8 +27,8 @@ export type StateAction =
  */
 export const initialContext: StateMachineContext = {
   state: 'IDLE',
-  basePoints: [],
-  heightPoint: null,
+  corner1: null,
+  corner2: null,
   error: null,
 };
 
@@ -54,26 +53,26 @@ export function stateMachineReducer(
       return { ...context, state: 'AR_STARTING' };
 
     case 'AR_STARTED':
-      return { ...context, state: 'BASE_P1' };
+      return { ...context, state: 'CORNER_1' };
 
     case 'AR_FAILED':
       return { ...context, state: 'SUPPORTED_READY', error: action.error };
 
-    case 'ADD_BASE_POINT':
-      const newBasePoints = [...context.basePoints, action.point];
-      const nextBaseState = getNextBaseState(newBasePoints.length);
-      return {
-        ...context,
-        basePoints: newBasePoints,
-        state: nextBaseState,
-      };
-
-    case 'ADD_HEIGHT_POINT':
-      return {
-        ...context,
-        heightPoint: action.point,
-        state: 'REVIEW',
-      };
+    case 'ADD_CORNER':
+      if (context.state === 'CORNER_1') {
+        return {
+          ...context,
+          corner1: action.point,
+          state: 'CORNER_2',
+        };
+      } else if (context.state === 'CORNER_2') {
+        return {
+          ...context,
+          corner2: action.point,
+          state: 'REVIEW',
+        };
+      }
+      return context;
 
     case 'UNDO':
       return handleUndo(context);
@@ -81,9 +80,9 @@ export function stateMachineReducer(
     case 'RESET':
       return {
         ...context,
-        basePoints: [],
-        heightPoint: null,
-        state: 'BASE_P1',
+        corner1: null,
+        corner2: null,
+        state: 'CORNER_1',
       };
 
     case 'START_SEARCH':
@@ -104,67 +103,28 @@ export function stateMachineReducer(
 }
 
 /**
- * Get the next state based on number of base points
- */
-function getNextBaseState(pointCount: number): MeasurementState {
-  switch (pointCount) {
-    case 1:
-      return 'BASE_P2';
-    case 2:
-      return 'BASE_P3';
-    case 3:
-      return 'BASE_P4';
-    case 4:
-      return 'HEIGHT';
-    default:
-      return 'BASE_P1';
-  }
-}
-
-/**
  * Handle undo action
  */
 function handleUndo(context: StateMachineContext): StateMachineContext {
-  if (context.heightPoint) {
-    // Undo height point
+  if (context.corner2) {
+    // Undo second corner
     return {
       ...context,
-      heightPoint: null,
-      state: 'HEIGHT',
+      corner2: null,
+      state: 'CORNER_2',
     };
   }
 
-  if (context.basePoints.length > 0) {
-    // Undo last base point
-    const newBasePoints = context.basePoints.slice(0, -1);
+  if (context.corner1) {
+    // Undo first corner
     return {
       ...context,
-      basePoints: newBasePoints,
-      state: getStateForPointCount(newBasePoints.length),
+      corner1: null,
+      state: 'CORNER_1',
     };
   }
 
   return context;
-}
-
-/**
- * Get state for a given point count
- */
-function getStateForPointCount(count: number): MeasurementState {
-  switch (count) {
-    case 0:
-      return 'BASE_P1';
-    case 1:
-      return 'BASE_P2';
-    case 2:
-      return 'BASE_P3';
-    case 3:
-      return 'BASE_P4';
-    case 4:
-      return 'HEIGHT';
-    default:
-      return 'BASE_P1';
-  }
 }
 
 /**
@@ -176,9 +136,9 @@ export function getUIState(context: StateMachineContext): UIState {
   return {
     currentStep: stateInfo.step,
     instruction: stateInfo.instruction,
-    canUndo: context.basePoints.length > 0 || context.heightPoint !== null,
-    canReset: context.basePoints.length > 0,
-    showMeasurements: context.basePoints.length >= 2,
+    canUndo: context.corner1 !== null,
+    canReset: context.corner1 !== null,
+    showMeasurements: context.corner1 !== null && context.corner2 !== null,
     trackingWarning: null,
   };
 }
@@ -202,17 +162,11 @@ function getStateInfo(state: MeasurementState): {
     case 'AR_STARTING':
       return { step: '', instruction: 'Starting AR session...' };
     case 'AR_RUNNING':
-      return { step: '0/5', instruction: 'Point at a flat surface' };
-    case 'BASE_P1':
-      return { step: '1/5', instruction: 'Tap the FRONT-LEFT corner' };
-    case 'BASE_P2':
-      return { step: '2/5', instruction: 'Tap the FRONT-RIGHT corner' };
-    case 'BASE_P3':
-      return { step: '3/5', instruction: 'Tap the BACK-RIGHT corner' };
-    case 'BASE_P4':
-      return { step: '4/5', instruction: 'Tap the BACK-LEFT corner' };
-    case 'HEIGHT':
-      return { step: '5/5', instruction: 'Tap the TOP of the object' };
+      return { step: '', instruction: 'Point at a flat surface' };
+    case 'CORNER_1':
+      return { step: '1/2', instruction: 'Tap the BOTTOM corner of the object' };
+    case 'CORNER_2':
+      return { step: '2/2', instruction: 'Tap the opposite TOP corner' };
     case 'REVIEW':
       return { step: 'Done', instruction: 'Review your measurement' };
     case 'SEARCHING':
@@ -228,12 +182,5 @@ function getStateInfo(state: MeasurementState): {
  * Check if current state allows point capture
  */
 export function canCapturePoint(state: MeasurementState): boolean {
-  return ['BASE_P1', 'BASE_P2', 'BASE_P3', 'BASE_P4', 'HEIGHT'].includes(state);
-}
-
-/**
- * Check if current state is capturing base points
- */
-export function isCapturingBase(state: MeasurementState): boolean {
-  return ['BASE_P1', 'BASE_P2', 'BASE_P3', 'BASE_P4'].includes(state);
+  return ['CORNER_1', 'CORNER_2'].includes(state);
 }
