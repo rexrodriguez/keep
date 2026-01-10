@@ -188,7 +188,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   }, []);
 
   // Handle screen tap for point capture
-  const handleTap = useCallback(() => {
+  const handleTap = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    // Don't capture if tap was on a button or interactive element
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('[data-interactive]')) {
+      return;
+    }
+
     if (!canCapturePoint(context.state)) return;
     if (!currentHitRef.current) return;
 
@@ -231,15 +237,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
   // Render UI into the overlay container via portal so it shows during AR
   const overlayContent = (
-    <>
-      {/* Tap capture layer - covers entire screen for point placement */}
-      <div
-        className="fixed inset-0"
-        onClick={handleTap}
-        style={{ touchAction: 'none' }}
-      />
-
-      {/* Measurement UI overlay */}
+    <div
+      className="fixed inset-0"
+      onTouchEnd={handleTap}
+      onClick={handleTap}
+      style={{ touchAction: 'manipulation' }}
+    >
+      {/* Measurement UI overlay - renders on top but has pointer-events-none except for buttons */}
       <MeasurementUI
         context={context}
         measurements={measurements}
@@ -259,7 +263,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 
   return (
