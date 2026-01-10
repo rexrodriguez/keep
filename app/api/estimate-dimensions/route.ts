@@ -10,7 +10,6 @@ export interface DimensionEstimate {
 
 export interface EstimateRequest {
   image: string; // base64 encoded image
-  provider?: 'openai' | 'deepseek';
 }
 
 export interface EstimateResponse {
@@ -92,54 +91,6 @@ async function callOpenAI(image: string): Promise<DimensionEstimate> {
   return parseResponse(content);
 }
 
-async function callDeepSeek(image: string): Promise<DimensionEstimate> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    throw new Error('DEEPSEEK_API_KEY not configured');
-  }
-
-  // DeepSeek uses OpenAI-compatible API
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: DIMENSION_PROMPT },
-            {
-              type: 'image_url',
-              image_url: {
-                url: image.startsWith('data:') ? image : `data:image/jpeg;base64,${image}`,
-              },
-            },
-          ],
-        },
-      ],
-      max_tokens: 300,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`DeepSeek API error: ${error}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0]?.message?.content;
-
-  if (!content) {
-    throw new Error('No response from DeepSeek');
-  }
-
-  return parseResponse(content);
-}
-
 function parseResponse(content: string): DimensionEstimate {
   // Try to extract JSON from the response
   let jsonStr = content.trim();
@@ -177,29 +128,10 @@ function parseResponse(content: string): DimensionEstimate {
   }
 }
 
-// Determine which provider to use based on available API keys
-function getDefaultProvider(): 'openai' | 'deepseek' {
-  const hasOpenAI = !!process.env.OPENAI_API_KEY;
-  const hasDeepSeek = !!process.env.DEEPSEEK_API_KEY;
-
-  // Prefer DeepSeek if only that key is available
-  if (hasDeepSeek && !hasOpenAI) {
-    return 'deepseek';
-  }
-  // Default to OpenAI if available, or DeepSeek as fallback
-  if (hasOpenAI) {
-    return 'openai';
-  }
-  return 'deepseek';
-}
-
 export async function POST(request: NextRequest): Promise<NextResponse<EstimateResponse>> {
   try {
     const body: EstimateRequest = await request.json();
-    const { image, provider } = body;
-
-    // Auto-detect provider if not specified
-    const selectedProvider = provider || getDefaultProvider();
+    const { image } = body;
 
     if (!image) {
       return NextResponse.json(
@@ -208,24 +140,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<EstimateR
       );
     }
 
-    // Check if we have any API key configured
-    const hasOpenAI = !!process.env.OPENAI_API_KEY;
-    const hasDeepSeek = !!process.env.DEEPSEEK_API_KEY;
-
-    if (!hasOpenAI && !hasDeepSeek) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { success: false, error: 'No LLM API key configured. Add OPENAI_API_KEY or DEEPSEEK_API_KEY to .env' },
+        { success: false, error: 'OPENAI_API_KEY required for image analysis' },
         { status: 500 }
       );
     }
 
-    let estimate: DimensionEstimate;
-
-    if (selectedProvider === 'deepseek') {
-      estimate = await callDeepSeek(image);
-    } else {
-      estimate = await callOpenAI(image);
-    }
+    const estimate = await callOpenAI(image);
 
     return NextResponse.json({ success: true, estimate });
   } catch (error) {
