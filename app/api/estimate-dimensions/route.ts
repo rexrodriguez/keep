@@ -88,6 +88,7 @@ async function callOpenAI(image: string): Promise<DimensionEstimate> {
     throw new Error('No response from OpenAI');
   }
 
+  console.log('OpenAI raw response:', content);
   return parseResponse(content);
 }
 
@@ -146,6 +147,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<EstimateR
         { status: 500 }
       );
     }
+
+    // Log image info for debugging
+    const isDataUrl = image.startsWith('data:');
+    const imageSize = image.length;
+    console.log(`Received image: isDataUrl=${isDataUrl}, size=${imageSize} chars`);
 
     const estimate = await callOpenAI(image);
 

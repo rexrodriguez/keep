@@ -140,17 +140,21 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       const showBox = context.dragStart && context.dragEnd;
 
       if (showBox) {
+        // In LLM mode, pass width/depth overrides so sliders affect the box
+        const isLLMMode = context.llmEstimate !== null;
         updateBoundingBox(
           sceneContextRef.current.scene,
           context.dragStart,
           context.dragEnd,
-          context.height_m
+          context.height_m,
+          isLLMMode ? context.width_m : undefined,
+          isLLMMode ? context.depth_m : undefined
         );
       } else {
         disposeBoundingBox(sceneContextRef.current.scene);
       }
     }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m]);
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.llmEstimate]);
 
   // Update measurements when dimensions change
   useEffect(() => {

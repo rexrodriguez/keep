@@ -56,12 +56,16 @@ export function createFloorBoundingBox(
 
 /**
  * Update or create the bounding box in the scene
+ * @param overrideWidth - Optional override for width (used in LLM mode when user adjusts sliders)
+ * @param overrideDepth - Optional override for depth (used in LLM mode when user adjusts sliders)
  */
 export function updateBoundingBox(
   scene: THREE.Scene,
   floorPoint1: MeasurementPoint | null,
   floorPoint2: MeasurementPoint | null,
-  height: number
+  height: number,
+  overrideWidth?: number,
+  overrideDepth?: number
 ): void {
   // Remove existing bounding box
   const existing = scene.getObjectByName('bounding-box');
@@ -88,11 +92,18 @@ export function updateBoundingBox(
   const minDim = 0.02; // 2cm minimum
   const p1 = floorPoint1.position;
   const p2 = floorPoint2.position;
-  const actualWidth = Math.max(Math.abs(p2.x - p1.x), minDim);
-  const actualDepth = Math.max(Math.abs(p2.z - p1.z), minDim);
+
+  // Use override dimensions if provided (LLM mode with slider adjustments)
+  // Otherwise calculate from drag points
+  const actualWidth = overrideWidth !== undefined
+    ? Math.max(overrideWidth, minDim)
+    : Math.max(Math.abs(p2.x - p1.x), minDim);
+  const actualDepth = overrideDepth !== undefined
+    ? Math.max(overrideDepth, minDim)
+    : Math.max(Math.abs(p2.z - p1.z), minDim);
   const actualHeight = Math.max(height, minDim);
 
-  // Create adjusted points if needed
+  // Create adjusted points - always use p1 as anchor
   const adjustedP1: MeasurementPoint = {
     ...floorPoint1,
     position: p1.clone(),
@@ -100,9 +111,9 @@ export function updateBoundingBox(
   const adjustedP2: MeasurementPoint = {
     ...floorPoint2,
     position: new THREE.Vector3(
-      p1.x + (p2.x >= p1.x ? actualWidth : -actualWidth),
+      p1.x + actualWidth,
       p2.y,
-      p1.z + (p2.z >= p1.z ? actualDepth : -actualDepth)
+      p1.z + actualDepth
     ),
   };
 
