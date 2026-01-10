@@ -10,7 +10,7 @@ import { createReticle, updateReticle, setReticleColor } from '@/lib/three/retic
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
 import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
 import { PoseStabilizer } from '@/lib/measurement/stabilization';
-import { captureFrameResized } from '@/lib/webxr/camera-capture';
+import { captureXRCameraImage, captureRendererFallback } from '@/lib/webxr/camera-capture';
 import {
   stateMachineReducer,
   initialContext,
@@ -50,6 +50,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
+  // Store latest frame for camera capture
+  const currentFrameRef = useRef<XRFrame | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -180,7 +182,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.state, context.llmEstimate]);
 
   const handleFrame = useCallback((data: FrameData) => {
-    const { hitTest } = data;
+    const { hitTest, frame } = data;
+
+    // Store frame for camera capture
+    currentFrameRef.current = frame;
 
     // Update reticle
     if (reticleRef.current) {
@@ -390,8 +395,23 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     dispatch({ type: 'START_LLM_ESTIMATE' });
 
     try {
-      // Capture frame from the renderer
-      const image = await captureFrameResized(xrContextRef.current.renderer);
+      // Try to capture using raw camera access first
+      let image: string | null = null;
+
+      if (currentFrameRef.current && xrContextRef.current.glBinding) {
+        image = await captureXRCameraImage(
+          xrContextRef.current.renderer,
+          xrContextRef.current.glBinding,
+          currentFrameRef.current,
+          xrContextRef.current.localFloorSpace
+        );
+      }
+
+      // Fall back to renderer capture if raw camera access failed
+      if (!image) {
+        console.warn('Raw camera access failed, using renderer fallback');
+        image = captureRendererFallback(xrContextRef.current.renderer);
+      }
 
       if (!image) {
         dispatch({ type: 'LLM_ESTIMATE_FAILED', error: 'Failed to capture image' });

@@ -306,14 +306,14 @@ function DimensionSlider({
 
       <input
         type="range"
-        min="5"
-        max="300"
+        min="1"
+        max="500"
         step="1"
         value={value}
         onChange={(e) => onChange(parseInt(e.target.value))}
         className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
         style={{
-          background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((value - 5) / 295) * 100}%, rgba(255,255,255,0.2) ${((value - 5) / 295) * 100}%, rgba(255,255,255,0.2) 100%)`,
+          background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((value - 1) / 499) * 100}%, rgba(255,255,255,0.2) ${((value - 1) / 499) * 100}%, rgba(255,255,255,0.2) 100%)`,
         }}
       />
 

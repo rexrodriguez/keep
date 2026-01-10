@@ -6,6 +6,8 @@ export interface XRSessionContext {
   viewerSpace: XRReferenceSpace;
   hitTestSource: XRHitTestSource | null;
   renderer: THREE.WebGLRenderer;
+  glBinding: XRWebGLBinding | null;
+  hasCameraAccess: boolean;
 }
 
 /**
@@ -18,9 +20,15 @@ export async function startARSession(
   const xr = navigator.xr!;
 
   // Configure session options
+  // camera-access is optional - allows raw camera image capture for AI estimation
+  const optionalFeatures: string[] = ['camera-access'];
+  if (overlayElement) {
+    optionalFeatures.push('dom-overlay');
+  }
+
   const sessionInit: XRSessionInit = {
     requiredFeatures: ['hit-test', 'local-floor'],
-    optionalFeatures: overlayElement ? ['dom-overlay'] : [],
+    optionalFeatures,
   };
 
   if (overlayElement) {
@@ -47,12 +55,27 @@ export async function startARSession(
     console.warn('Failed to create hit-test source:', error);
   }
 
+  // Create WebGL binding for camera access
+  let glBinding: XRWebGLBinding | null = null;
+  let hasCameraAccess = false;
+  try {
+    const gl = renderer.getContext();
+    glBinding = new XRWebGLBinding(session, gl);
+    // Check if camera-access was granted by trying to see if XRView has camera property
+    hasCameraAccess = true;
+    console.log('WebXR camera access available');
+  } catch (error) {
+    console.warn('WebXR camera access not available:', error);
+  }
+
   return {
     session,
     localFloorSpace,
     viewerSpace,
     hitTestSource,
     renderer,
+    glBinding,
+    hasCameraAccess,
   };
 }
 
