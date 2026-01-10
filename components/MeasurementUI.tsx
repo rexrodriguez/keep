@@ -8,6 +8,7 @@ interface MeasurementUIProps {
   measurements: ComputedMeasurements | null;
   confidence: ConfidenceLevel | null;
   trackingWarning: string | null;
+  aiEnabled: boolean;
   onUndo: () => void;
   onReset: () => void;
   onSetWidth: (width_m: number) => void;
@@ -25,6 +26,7 @@ export default function MeasurementUI({
   measurements,
   confidence,
   trackingWarning,
+  aiEnabled,
   onUndo,
   onReset,
   onSetWidth,
@@ -216,11 +218,11 @@ export default function MeasurementUI({
         </div>
       )}
 
-      {/* Ready to draw - show options based on whether target is marked */}
+      {/* Ready to draw - show options based on whether target is marked and AI is enabled */}
       {isReadyToDraw && !trackingWarning && !context.isEstimating && (
         <div className="pointer-events-auto pb-8 px-4 space-y-3">
-          {/* If target is marked, show capture button */}
-          {context.targetPoint ? (
+          {/* AI mode: show capture button if target marked, or tap instruction */}
+          {aiEnabled && context.targetPoint ? (
             <>
               <button
                 onClick={onCaptureEstimate}
@@ -241,17 +243,19 @@ export default function MeasurementUI({
             </>
           ) : (
             <>
-              {/* No target - show instructions */}
-              <div className="bg-purple-500/30 backdrop-blur-sm px-4 py-3 rounded-xl mx-auto">
-                <p className="text-white text-sm font-medium text-center">
-                  Tap near the object to mark target for AI
-                </p>
-              </div>
+              {/* Show AI tap instruction only if AI is enabled */}
+              {aiEnabled && (
+                <div className="bg-purple-500/30 backdrop-blur-sm px-4 py-3 rounded-xl mx-auto">
+                  <p className="text-white text-sm font-medium text-center">
+                    Tap near the object to mark target for AI
+                  </p>
+                </div>
+              )}
 
               {/* Manual drag hint */}
               <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
                 <span className="text-white text-sm font-medium">
-                  Or touch and drag to draw manually
+                  {aiEnabled ? 'Or touch and drag to draw manually' : 'Touch and drag to draw rectangle'}
                 </span>
               </div>
             </>

@@ -47,6 +47,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
+  const [aiEnabled, setAiEnabled] = useState(false);
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -59,6 +60,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
+  }, []);
+
+  // Check if AI features are available
+  useEffect(() => {
+    fetch('/api/config')
+      .then((res) => res.json())
+      .then((data) => setAiEnabled(data.hasOpenAIKey))
+      .catch(() => setAiEnabled(false));
   }, []);
 
   // Initialize AR session
@@ -327,10 +336,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     const isTap = duration < 300 && !hasDragged;
 
     if (isTap) {
-      // Cancel any started drag and set target instead
+      // Cancel any started drag
       dispatch({ type: 'UNDO' });
 
-      if (currentHitRef.current) {
+      // Only set target for AI if AI is enabled
+      if (aiEnabled && currentHitRef.current) {
         const point: MeasurementPoint = {
           position: touchStart.position.clone(),
           timestamp: Date.now(),
@@ -494,6 +504,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         measurements={measurements}
         confidence={confidence}
         trackingWarning={trackingWarning}
+        aiEnabled={aiEnabled}
         onUndo={handleUndo}
         onReset={handleReset}
         onSetWidth={handleSetWidth}
