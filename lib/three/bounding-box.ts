@@ -50,6 +50,31 @@ export function createFloorBoundingBox(
   const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
   group.add(edges);
 
+  // Add corner handles (spheres at bottom corners)
+  const cornerRadius = 0.03; // 3cm spheres
+  const cornerGeometry = new THREE.SphereGeometry(cornerRadius, 16, 16);
+  const cornerMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffaa00, // Orange handles
+    transparent: true,
+    opacity: 0.8,
+  });
+
+  // Bottom corners in local coordinates (before rotation)
+  const corners = [
+    new THREE.Vector3(-width / 2, -height / 2, -depth / 2), // Front-left
+    new THREE.Vector3(width / 2, -height / 2, -depth / 2),  // Front-right
+    new THREE.Vector3(width / 2, -height / 2, depth / 2),   // Back-right
+    new THREE.Vector3(-width / 2, -height / 2, depth / 2),  // Back-left
+  ];
+
+  corners.forEach((pos, i) => {
+    const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
+    cornerMesh.position.copy(pos);
+    cornerMesh.name = `corner-${i}`;
+    cornerMesh.userData = { isCornerHandle: true, cornerIndex: i };
+    group.add(cornerMesh);
+  });
+
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
 

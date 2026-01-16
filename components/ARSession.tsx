@@ -11,6 +11,8 @@ import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/l
 import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
 import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
 import { captureXRCameraImage, captureRendererFallback } from '@/lib/webxr/camera-capture';
+import { raycastCornerHandles } from '@/lib/three/raycasting';
+import { calculateSimpleCornerDrag } from '@/lib/three/corner-drag';
 import {
   stateMachineReducer,
   initialContext,
@@ -269,6 +271,35 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
+    // Check for corner handle touch first (in HEIGHT_INPUT or REVIEW states)
+    if ((context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') && sceneContextRef.current) {
+      const touch = e.touches[0];
+      const canvas = sceneContextRef.current.renderer.domElement;
+      const rect = canvas.getBoundingClientRect();
+      const screenX = touch.clientX - rect.left;
+      const screenY = touch.clientY - rect.top;
+
+      const cornerHit = raycastCornerHandles(
+        screenX,
+        screenY,
+        sceneContextRef.current.camera,
+        sceneContextRef.current.scene,
+        rect.width,
+        rect.height
+      );
+
+      if (cornerHit) {
+        isTouchingRef.current = true;
+        hasDraggedRef.current = true; // Corner drag is always a drag
+        touchStartRef.current = {
+          time: Date.now(),
+          position: cornerHit.worldPosition.clone(),
+        };
+        dispatch({ type: 'START_CORNER_DRAG', cornerIndex: cornerHit.cornerIndex });
+        return;
+      }
+    }
+
     if (!canStartDrag(context.state)) {
       return;
     }
@@ -328,6 +359,29 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
+    // Handle corner dragging separately
+    if (context.cornerDragIndex !== null) {
+      // Corner drag - update box dimensions and rotation
+      if (context.dragStart && context.dragEnd) {
+        const result = calculateSimpleCornerDrag(
+          context.cornerDragIndex,
+          context.dragStart,
+          context.dragEnd,
+          hitToUse.position,
+          context.rotation_deg
+        );
+
+        // Update context with new drag points and rotation
+        setContext((prev) => ({
+          ...prev,
+          dragStart: result.newDragStart,
+          dragEnd: result.newDragEnd,
+          rotation_deg: result.newRotation,
+        }));
+      }
+      return;
+    }
+
     const point: MeasurementPoint = {
       position: hitToUse.position.clone(),
       timestamp: Date.now(),
@@ -335,7 +389,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     };
 
     dispatch({ type: 'UPDATE_DRAG', point });
-  }, [context.state, dispatch]);
+  }, [context.state, context.cornerDragIndex, context.dragStart, context.dragEnd, context.rotation_deg, dispatch]);
 
   // Handle touch end - finish drag or set target
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
@@ -354,6 +408,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     hasDraggedRef.current = false;
 
     if (!wasTouching || !touchStart) {
+      return;
+    }
+
+    // Handle corner drag end
+    if (context.cornerDragIndex !== null) {
+      dispatch({ type: 'END_CORNER_DRAG' });
       return;
     }
 
