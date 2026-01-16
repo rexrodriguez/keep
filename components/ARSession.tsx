@@ -360,7 +360,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
     // Handle corner dragging separately
     if (context.cornerDragIndex !== null) {
-      // Corner drag - transform to local coordinates accounting for rotation
+      // Corner drag - transform using proper Euler rotation matrices
       if (context.dragStart && context.dragEnd) {
         const p1 = context.dragStart.position;
         const p2 = context.dragEnd.position;
@@ -369,50 +369,56 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         const centerX = (p1.x + p2.x) / 2;
         const centerY = Math.min(p1.y, p2.y);
         const centerZ = (p1.z + p2.z) / 2;
-        const rotRad = (context.rotation_deg * Math.PI) / 180;
 
-        // Transform hit position to local space (relative to box center, unrotated)
+        // Get current rotation angle in radians
+        const theta = (context.rotation_deg * Math.PI) / 180;
+
+        // Create rotation matrix for Y-axis rotation (Euler)
+        // R_y(θ) = [cos(θ)  0  sin(θ)]
+        //          [  0     1    0   ]
+        //          [-sin(θ) 0  cos(θ)]
+        const cosTheta = Math.cos(theta);
+        const sinTheta = Math.sin(theta);
+
+        // Transform hit position to local space using inverse rotation
+        // Inverse of R_y(θ) is R_y(-θ)
         const dx = hitToUse.position.x - centerX;
         const dz = hitToUse.position.z - centerZ;
 
-        // Rotate by -rotation to get local coordinates
-        const cosRot = Math.cos(-rotRad);
-        const sinRot = Math.sin(-rotRad);
-        const localX = dx * cosRot - dz * sinRot;
-        const localZ = dx * sinRot + dz * cosRot;
+        // Apply inverse rotation matrix: R_y(-θ)
+        const localX = cosTheta * dx + sinTheta * dz;
+        const localZ = -sinTheta * dx + cosTheta * dz;
 
         // Calculate new dimensions from local position
-        // The dragged corner should be at ±width/2, ±depth/2 from center in local space
+        // The dragged corner is at the extremum, so dimensions are 2x the local position
         const newWidth = Math.abs(localX) * 2;
         const newDepth = Math.abs(localZ) * 2;
 
-        // Now we need to recalculate both dragStart and dragEnd to maintain the center
-        // In local space: dragStart at (-w/2, -d/2), dragEnd at (+w/2, +d/2)
+        // In local space, p1 is at (-w/2, -d/2) and p2 is at (+w/2, +d/2)
         const halfWidth = newWidth / 2;
         const halfDepth = newDepth / 2;
 
-        // Local coordinates for start and end (assuming standard orientation)
-        const localStartX = -halfWidth;
-        const localStartZ = -halfDepth;
-        const localEndX = halfWidth;
-        const localEndZ = halfDepth;
+        // Local coordinates for the two corners
+        const localP1 = { x: -halfWidth, z: -halfDepth };
+        const localP2 = { x: halfWidth, z: halfDepth };
 
-        // Rotate both points back to world space
-        const worldStartX = centerX + (localStartX * Math.cos(rotRad) - localStartZ * Math.sin(rotRad));
-        const worldStartZ = centerZ + (localStartX * Math.sin(rotRad) + localStartZ * Math.cos(rotRad));
+        // Transform both points back to world space using forward rotation
+        // Apply rotation matrix: R_y(θ)
+        const worldP1X = centerX + (cosTheta * localP1.x - sinTheta * localP1.z);
+        const worldP1Z = centerZ + (sinTheta * localP1.x + cosTheta * localP1.z);
 
-        const worldEndX = centerX + (localEndX * Math.cos(rotRad) - localEndZ * Math.sin(rotRad));
-        const worldEndZ = centerZ + (localEndX * Math.sin(rotRad) + localEndZ * Math.cos(rotRad));
+        const worldP2X = centerX + (cosTheta * localP2.x - sinTheta * localP2.z);
+        const worldP2Z = centerZ + (sinTheta * localP2.x + cosTheta * localP2.z);
 
         const newDragStart: MeasurementPoint = {
           ...context.dragStart,
-          position: new THREE.Vector3(worldStartX, centerY, worldStartZ),
+          position: new THREE.Vector3(worldP1X, centerY, worldP1Z),
           timestamp: Date.now(),
         };
 
         const newDragEnd: MeasurementPoint = {
           ...context.dragEnd,
-          position: new THREE.Vector3(worldEndX, centerY, worldEndZ),
+          position: new THREE.Vector3(worldP2X, centerY, worldP2Z),
           timestamp: Date.now(),
         };
 

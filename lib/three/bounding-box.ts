@@ -60,12 +60,12 @@ export function createFloorBoundingBox(
     opacity: 0.9,
   });
 
-  // Determine which corner is dragEnd based on the sign of width/depth
-  // dragEnd is at the far corner from dragStart
+  // Corner handle is always at the local (+width/2, +depth/2) position
+  // This ensures it stays in the same corner regardless of rotation
   const dragEndLocal = new THREE.Vector3(
-    (p2.x - p1.x) / 2,  // Preserve sign for correct corner
+    width / 2,   // Always positive (far corner in local space)
     -height / 2,
-    (p2.z - p1.z) / 2   // Preserve sign for correct corner
+    depth / 2    // Always positive (far corner in local space)
   );
 
   const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
