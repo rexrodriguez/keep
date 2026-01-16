@@ -16,6 +16,7 @@ interface MeasurementUIProps {
   onSetWidth: (width_m: number) => void;
   onSetDepth: (depth_m: number) => void;
   onSetHeight: (height_m: number) => void;
+  onSetRotation: (rotation_deg: number) => void;
   onConfirmHeight: () => void;
   onCaptureEstimate: () => void;
   onClearTarget: () => void;
@@ -36,6 +37,7 @@ export default function MeasurementUI({
   onSetWidth,
   onSetDepth,
   onSetHeight,
+  onSetRotation,
   onConfirmHeight,
   onCaptureEstimate,
   onClearTarget,
@@ -149,6 +151,12 @@ export default function MeasurementUI({
                 value={heightCm}
                 onChange={(cm) => onSetHeight(cm / 100)}
                 presets={[25, 50, 75, 100, 150]}
+              />
+
+              {/* Rotation slider */}
+              <RotationSlider
+                value={context.rotation_deg}
+                onChange={onSetRotation}
               />
             </div>
           )}
@@ -344,6 +352,55 @@ function DimensionSlider({
             }`}
           >
             {p}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Rotation slider component
+function RotationSlider({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (deg: number) => void;
+}) {
+  const presets = [0, 45, 90, 135, 180];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-white/60 text-sm">Rotation</span>
+        <span className="text-white text-lg font-bold">{value}°</span>
+      </div>
+
+      <input
+        type="range"
+        min="0"
+        max="359"
+        step="1"
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value))}
+        className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
+        style={{
+          background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(value / 359) * 100}%, rgba(255,255,255,0.2) ${(value / 359) * 100}%, rgba(255,255,255,0.2) 100%)`,
+        }}
+      />
+
+      <div className="grid grid-cols-5 gap-2 mt-2">
+        {presets.map((p) => (
+          <button
+            key={p}
+            onClick={() => onChange(p)}
+            className={`py-1.5 rounded text-xs font-medium transition-colors ${
+              value === p
+                ? 'bg-purple-500 text-white'
+                : 'bg-white/10 text-white/80 hover:bg-white/20'
+            }`}
+          >
+            {p}°
           </button>
         ))}
       </div>

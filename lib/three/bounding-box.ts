@@ -4,11 +4,13 @@ import { MeasurementPoint } from '@/lib/types';
 /**
  * Create or update a bounding box from two floor points and a height value.
  * The box is positioned between the two floor points and extends upward.
+ * @param rotation_deg - Optional rotation in degrees (applied around Y axis)
  */
 export function createFloorBoundingBox(
   floorPoint1: MeasurementPoint,
   floorPoint2: MeasurementPoint,
-  height: number
+  height: number,
+  rotation_deg: number = 0
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = 'bounding-box';
@@ -16,7 +18,7 @@ export function createFloorBoundingBox(
   const p1 = floorPoint1.position;
   const p2 = floorPoint2.position;
 
-  // Calculate dimensions
+  // Calculate dimensions (absolute values for size)
   const width = Math.abs(p2.x - p1.x);
   const depth = Math.abs(p2.z - p1.z);
 
@@ -25,7 +27,7 @@ export function createFloorBoundingBox(
   const centerY = Math.min(p1.y, p2.y) + height / 2;
   const centerZ = (p1.z + p2.z) / 2;
 
-  // Create box geometry
+  // Create box geometry - axis-aligned for now
   const geometry = new THREE.BoxGeometry(width, height, depth);
 
   // Translucent fill - blue with low opacity
@@ -51,6 +53,10 @@ export function createFloorBoundingBox(
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
 
+  // Apply rotation around Y axis (yaw)
+  // Convert degrees to radians
+  group.rotation.y = (rotation_deg * Math.PI) / 180;
+
   return group;
 }
 
@@ -58,6 +64,7 @@ export function createFloorBoundingBox(
  * Update or create the bounding box in the scene
  * @param overrideWidth - Optional override for width (used in LLM mode when user adjusts sliders)
  * @param overrideDepth - Optional override for depth (used in LLM mode when user adjusts sliders)
+ * @param rotation_deg - Optional rotation in degrees (default 0)
  */
 export function updateBoundingBox(
   scene: THREE.Scene,
@@ -65,7 +72,8 @@ export function updateBoundingBox(
   floorPoint2: MeasurementPoint | null,
   height: number,
   overrideWidth?: number,
-  overrideDepth?: number
+  overrideDepth?: number,
+  rotation_deg: number = 0
 ): void {
   // Remove existing bounding box
   const existing = scene.getObjectByName('bounding-box');
@@ -114,7 +122,7 @@ export function updateBoundingBox(
       ),
     };
 
-    const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight);
+    const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg);
     scene.add(box);
     return;
   }
@@ -140,7 +148,7 @@ export function updateBoundingBox(
     ),
   };
 
-  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight);
+  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg);
   scene.add(box);
 }
 

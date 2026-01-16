@@ -9,6 +9,7 @@ export interface StateMachineContext {
   height_m: number;                      // User-adjusted height (default 0.5m)
   width_m: number;                       // User-adjusted width (for LLM mode)
   depth_m: number;                       // User-adjusted depth (for LLM mode)
+  rotation_deg: number;                  // Box rotation in degrees (0-360)
   llmEstimate: LLMEstimate | null;      // LLM dimension estimate
   isEstimating: boolean;                 // LLM estimation in progress
   error: string | null;
@@ -35,6 +36,7 @@ export type StateAction =
   | { type: 'SET_HEIGHT'; height_m: number }
   | { type: 'SET_WIDTH'; width_m: number }
   | { type: 'SET_DEPTH'; depth_m: number }
+  | { type: 'SET_ROTATION'; rotation_deg: number }
   | { type: 'CONFIRM_HEIGHT' }
   | { type: 'SET_TARGET'; point: MeasurementPoint }
   | { type: 'CLEAR_TARGET' }
@@ -59,6 +61,7 @@ export const initialContext: StateMachineContext = {
   height_m: 0.5, // Default 50cm
   width_m: 0.5,  // Default 50cm
   depth_m: 0.5,  // Default 50cm
+  rotation_deg: 0, // Default 0 degrees (no rotation)
   llmEstimate: null,
   isEstimating: false,
   error: null,
@@ -149,6 +152,12 @@ export function stateMachineReducer(
         depth_m: action.depth_m,
       };
 
+    case 'SET_ROTATION':
+      return {
+        ...context,
+        rotation_deg: action.rotation_deg,
+      };
+
     case 'CONFIRM_HEIGHT':
       if (context.state === 'HEIGHT_INPUT') {
         return {
@@ -232,6 +241,7 @@ export function stateMachineReducer(
         height_m: 0.5,
         width_m: 0.5,
         depth_m: 0.5,
+        rotation_deg: 0,
         llmEstimate: null,
         state: 'READY_TO_DRAW',
       };
@@ -267,6 +277,7 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
       height_m: 0.5,
       width_m: 0.5,
       depth_m: 0.5,
+      rotation_deg: 0,
       llmEstimate: null,
       state: 'READY_TO_DRAW',
     };

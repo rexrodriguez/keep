@@ -160,13 +160,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           context.dragEnd,
           context.height_m,
           isLLMMode ? context.width_m : undefined,
-          isLLMMode ? context.depth_m : undefined
+          isLLMMode ? context.depth_m : undefined,
+          context.rotation_deg
         );
       } else {
         disposeBoundingBox(sceneContextRef.current.scene);
       }
     }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.llmEstimate]);
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, context.llmEstimate]);
 
   // Update measurements when dimensions change
   useEffect(() => {
@@ -416,6 +417,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     dispatch({ type: 'SET_HEIGHT', height_m });
   }, [dispatch]);
 
+  const handleSetRotation = useCallback((rotation_deg: number) => {
+    dispatch({ type: 'SET_ROTATION', rotation_deg });
+  }, [dispatch]);
+
   const handleConfirmHeight = useCallback(() => {
     dispatch({ type: 'CONFIRM_HEIGHT' });
   }, [dispatch]);
@@ -543,6 +548,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         onSetWidth={handleSetWidth}
         onSetDepth={handleSetDepth}
         onSetHeight={handleSetHeight}
+        onSetRotation={handleSetRotation}
         onConfirmHeight={handleConfirmHeight}
         onCaptureEstimate={handleCaptureEstimate}
         onClearTarget={handleClearTarget}
