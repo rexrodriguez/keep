@@ -365,8 +365,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         const p1 = context.dragStart.position;
         const p2 = context.dragEnd.position;
 
-        // Calculate current box center and rotation
+        // Calculate current box center (stays fixed during resize)
         const centerX = (p1.x + p2.x) / 2;
+        const centerY = Math.min(p1.y, p2.y);
         const centerZ = (p1.z + p2.z) / 2;
         const rotRad = (context.rotation_deg * Math.PI) / 180;
 
@@ -380,40 +381,45 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         const localX = dx * cosRot - dz * sinRot;
         const localZ = dx * sinRot + dz * cosRot;
 
-        // Get current dimensions in local space
-        const currentWidth = Math.abs(p2.x - p1.x);
-        const currentDepth = Math.abs(p2.z - p1.z);
-
         // Calculate new dimensions from local position
-        // The dragged corner should be at +width/2, +depth/2 from center in local space
+        // The dragged corner should be at ±width/2, ±depth/2 from center in local space
         const newWidth = Math.abs(localX) * 2;
         const newDepth = Math.abs(localZ) * 2;
 
-        // Transform back to world space
-        // New dragEnd is at center + rotated(newWidth/2, newDepth/2)
+        // Now we need to recalculate both dragStart and dragEnd to maintain the center
+        // In local space: dragStart at (-w/2, -d/2), dragEnd at (+w/2, +d/2)
         const halfWidth = newWidth / 2;
         const halfDepth = newDepth / 2;
 
-        // Preserve signs based on which quadrant we're in
-        const signX = Math.sign(localX);
-        const signZ = Math.sign(localZ);
+        // Local coordinates for start and end (assuming standard orientation)
+        const localStartX = -halfWidth;
+        const localStartZ = -halfDepth;
+        const localEndX = halfWidth;
+        const localEndZ = halfDepth;
 
-        const localEndX = signX * halfWidth;
-        const localEndZ = signZ * halfDepth;
+        // Rotate both points back to world space
+        const worldStartX = centerX + (localStartX * Math.cos(rotRad) - localStartZ * Math.sin(rotRad));
+        const worldStartZ = centerZ + (localStartX * Math.sin(rotRad) + localStartZ * Math.cos(rotRad));
 
-        // Rotate back to world space
         const worldEndX = centerX + (localEndX * Math.cos(rotRad) - localEndZ * Math.sin(rotRad));
         const worldEndZ = centerZ + (localEndX * Math.sin(rotRad) + localEndZ * Math.cos(rotRad));
 
-        const newDragEnd: MeasurementPoint = {
-          ...context.dragEnd,
-          position: new THREE.Vector3(worldEndX, hitToUse.position.y, worldEndZ),
+        const newDragStart: MeasurementPoint = {
+          ...context.dragStart,
+          position: new THREE.Vector3(worldStartX, centerY, worldStartZ),
           timestamp: Date.now(),
         };
 
-        // Update context with new drag end point (rotation unchanged)
+        const newDragEnd: MeasurementPoint = {
+          ...context.dragEnd,
+          position: new THREE.Vector3(worldEndX, centerY, worldEndZ),
+          timestamp: Date.now(),
+        };
+
+        // Update both points to maintain center and rotation
         setContext((prev) => ({
           ...prev,
+          dragStart: newDragStart,
           dragEnd: newDragEnd,
         }));
       }
