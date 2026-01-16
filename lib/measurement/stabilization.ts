@@ -3,7 +3,15 @@ import { StabilizationFrame, StabilizationResult } from '@/lib/types';
 
 const WINDOW_SIZE = 5;
 const POSITION_VARIANCE_THRESHOLD = 0.015; // 15mm - more lenient for usability
-const MIN_FRAMES_FOR_STABILITY = 3;
+const MIN_FRAMES_FOR_STABILITY = 2; // Reduced from 3 to allow faster initial capture
+
+export type StabilityMode = 'strict' | 'balanced' | 'relaxed';
+
+export interface StabilizerConfig {
+  mode: StabilityMode;
+  windowSize?: number;
+  varianceThreshold?: number;
+}
 
 /**
  * Rolling window for pose stabilization
@@ -12,13 +20,47 @@ export class PoseStabilizer {
   private frames: StabilizationFrame[] = [];
   private windowSize: number;
   private varianceThreshold: number;
+  private mode: StabilityMode;
+  private minFramesForStability: number;
 
   constructor(
     windowSize: number = WINDOW_SIZE,
-    varianceThreshold: number = POSITION_VARIANCE_THRESHOLD
+    varianceThreshold: number = POSITION_VARIANCE_THRESHOLD,
+    mode: StabilityMode = 'balanced'
   ) {
     this.windowSize = windowSize;
     this.varianceThreshold = varianceThreshold;
+    this.mode = mode;
+    this.minFramesForStability = this.getMinFramesForMode(mode);
+  }
+
+  /**
+   * Get minimum frames required based on stability mode
+   */
+  private getMinFramesForMode(mode: StabilityMode): number {
+    switch (mode) {
+      case 'strict':
+        return 3; // Original strict requirement
+      case 'balanced':
+        return 2; // Improved default
+      case 'relaxed':
+        return 1; // Most responsive
+    }
+  }
+
+  /**
+   * Update stability mode
+   */
+  setMode(mode: StabilityMode): void {
+    this.mode = mode;
+    this.minFramesForStability = this.getMinFramesForMode(mode);
+  }
+
+  /**
+   * Get current stability mode
+   */
+  getMode(): StabilityMode {
+    return this.mode;
   }
 
   /**
@@ -40,7 +82,7 @@ export class PoseStabilizer {
    * Check if current pose is stable enough for capture
    */
   checkStability(): StabilizationResult {
-    if (this.frames.length < MIN_FRAMES_FOR_STABILITY) {
+    if (this.frames.length < this.minFramesForStability) {
       return {
         isStable: false,
         stability: 0,
@@ -61,13 +103,18 @@ export class PoseStabilizer {
       maxVariance = Math.max(maxVariance, dist);
     });
 
+    // Adjust threshold based on mode
+    const effectiveThreshold = this.mode === 'relaxed'
+      ? this.varianceThreshold * 1.5 // 50% more lenient in relaxed mode
+      : this.varianceThreshold;
+
     // Calculate stability score (0-1)
     const stability = Math.max(
       0,
-      1 - maxVariance / (this.varianceThreshold * 2)
+      1 - maxVariance / (effectiveThreshold * 2)
     );
 
-    const isStable = maxVariance < this.varianceThreshold;
+    const isStable = maxVariance < effectiveThreshold;
 
     return {
       isStable,

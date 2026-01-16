@@ -2,6 +2,7 @@
 
 import { ComputedMeasurements, ConfidenceLevel } from '@/lib/types';
 import { getUIState, StateMachineContext } from '@/lib/measurement/state-machine';
+import { StabilityMode } from '@/lib/measurement/stabilization';
 
 interface MeasurementUIProps {
   context: StateMachineContext;
@@ -9,6 +10,7 @@ interface MeasurementUIProps {
   confidence: ConfidenceLevel | null;
   trackingWarning: string | null;
   aiEnabled: boolean;
+  stabilityMode: StabilityMode;
   onUndo: () => void;
   onReset: () => void;
   onSetWidth: (width_m: number) => void;
@@ -18,6 +20,7 @@ interface MeasurementUIProps {
   onCaptureEstimate: () => void;
   onClearTarget: () => void;
   onFindStorage: () => void;
+  onSetStabilityMode: (mode: StabilityMode) => void;
   onExit: () => void;
 }
 
@@ -27,6 +30,7 @@ export default function MeasurementUI({
   confidence,
   trackingWarning,
   aiEnabled,
+  stabilityMode,
   onUndo,
   onReset,
   onSetWidth,
@@ -36,6 +40,7 @@ export default function MeasurementUI({
   onCaptureEstimate,
   onClearTarget,
   onFindStorage,
+  onSetStabilityMode,
   onExit,
 }: MeasurementUIProps) {
   const uiState = getUIState(context);
@@ -64,11 +69,17 @@ export default function MeasurementUI({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          {uiState.currentStep && (
-            <span className="text-white/60 text-sm font-medium">
-              Step {uiState.currentStep}
-            </span>
-          )}
+
+          <div className="flex items-center gap-2">
+            {/* Stability mode toggle */}
+            <StabilityModeToggle mode={stabilityMode} onChange={onSetStabilityMode} />
+
+            {uiState.currentStep && (
+              <span className="text-white/60 text-sm font-medium">
+                Step {uiState.currentStep}
+              </span>
+            )}
+          </div>
         </div>
 
         <p className="text-white text-lg font-medium text-center">
@@ -335,6 +346,58 @@ function DimensionSlider({
             {p}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// Stability mode toggle component
+function StabilityModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: StabilityMode;
+  onChange: (mode: StabilityMode) => void;
+}) {
+  const modes: { value: StabilityMode; icon: string; label: string; color: string }[] = [
+    { value: 'strict', icon: '🎯', label: 'Precise', color: 'bg-blue-500' },
+    { value: 'balanced', icon: '⚖️', label: 'Balanced', color: 'bg-green-500' },
+    { value: 'relaxed', icon: '⚡', label: 'Fast', color: 'bg-orange-500' },
+  ];
+
+  const currentMode = modes.find((m) => m.value === mode) || modes[1];
+
+  return (
+    <div className="relative group">
+      <button
+        className={`${currentMode.color} text-white px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1 hover:opacity-90 transition-opacity`}
+        title="Tracking Mode"
+      >
+        <span>{currentMode.icon}</span>
+        <span className="hidden sm:inline">{currentMode.label}</span>
+      </button>
+
+      {/* Dropdown menu */}
+      <div className="absolute top-full right-0 mt-1 bg-black/90 backdrop-blur-sm rounded-lg shadow-lg overflow-hidden opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity z-50">
+        {modes.map((m) => (
+          <button
+            key={m.value}
+            onClick={() => onChange(m.value)}
+            className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-white/10 transition-colors ${
+              mode === m.value ? 'bg-white/5 text-white font-medium' : 'text-white/80'
+            }`}
+          >
+            <span>{m.icon}</span>
+            <span>{m.label}</span>
+          </button>
+        ))}
+        <div className="px-4 py-2 text-xs text-white/50 border-t border-white/10">
+          <div className="space-y-1">
+            <div><span className="font-semibold">🎯 Precise:</span> Most stable</div>
+            <div><span className="font-semibold">⚖️ Balanced:</span> Recommended</div>
+            <div><span className="font-semibold">⚡ Fast:</span> Most responsive</div>
+          </div>
+        </div>
       </div>
     </div>
   );

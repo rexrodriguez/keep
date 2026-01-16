@@ -9,7 +9,7 @@ import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
 import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
 import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
-import { PoseStabilizer } from '@/lib/measurement/stabilization';
+import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
 import { captureXRCameraImage, captureRendererFallback } from '@/lib/webxr/camera-capture';
 import {
   stateMachineReducer,
@@ -48,9 +48,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [stabilityMode, setStabilityMode] = useState<StabilityMode>('balanced');
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
+  // Cache last valid hit for continuous dragging (Option 3: Aggressive caching)
+  const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
   // Track touch gesture state
@@ -221,14 +224,22 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       }
 
       // Store current hit for drag capture
-      currentHitRef.current = {
+      const hitData = {
         position: stability.averagedPosition.clone(),
         stability: stability.stability,
+      };
+      currentHitRef.current = hitData;
+
+      // Cache this as last valid hit (with timestamp for age tracking)
+      lastValidHitRef.current = {
+        ...hitData,
+        timestamp: performance.now(),
       };
 
       setTrackingWarning(null);
     } else {
       currentHitRef.current = null;
+      // Don't clear lastValidHitRef - keep it for dragging continuity
       setTrackingWarning('Point at a flat surface');
     }
   }, []);
@@ -288,12 +299,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    if (!currentHitRef.current || !touchStartRef.current) {
+    if (!touchStartRef.current) {
+      return;
+    }
+
+    // Use current hit if available, otherwise fall back to last valid hit (Option 3: Aggressive caching)
+    // Allow cached hit up to 100ms old during active dragging
+    let hitToUse = currentHitRef.current;
+    if (!hitToUse && lastValidHitRef.current) {
+      const age = performance.now() - lastValidHitRef.current.timestamp;
+      if (age < 100) {
+        hitToUse = lastValidHitRef.current;
+      }
+    }
+
+    if (!hitToUse) {
       return;
     }
 
     // Check if we've moved enough to count as a drag (> 3cm)
-    const distance = currentHitRef.current.position.distanceTo(touchStartRef.current.position);
+    const distance = hitToUse.position.distanceTo(touchStartRef.current.position);
     if (distance > 0.03) {
       hasDraggedRef.current = true;
     }
@@ -303,9 +328,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     }
 
     const point: MeasurementPoint = {
-      position: currentHitRef.current.position.clone(),
+      position: hitToUse.position.clone(),
       timestamp: Date.now(),
-      stability: currentHitRef.current.stability,
+      stability: hitToUse.stability,
     };
 
     dispatch({ type: 'UPDATE_DRAG', point });
@@ -398,6 +423,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const handleClearTarget = useCallback(() => {
     dispatch({ type: 'CLEAR_TARGET' });
   }, [dispatch]);
+
+  const handleSetStabilityMode = useCallback((mode: StabilityMode) => {
+    setStabilityMode(mode);
+    if (stabilizerRef.current) {
+      stabilizerRef.current.setMode(mode);
+    }
+  }, []);
 
   // Handle LLM capture and estimation
   const handleCaptureEstimate = useCallback(async () => {
@@ -505,6 +537,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         confidence={confidence}
         trackingWarning={trackingWarning}
         aiEnabled={aiEnabled}
+        stabilityMode={stabilityMode}
         onUndo={handleUndo}
         onReset={handleReset}
         onSetWidth={handleSetWidth}
@@ -514,6 +547,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         onCaptureEstimate={handleCaptureEstimate}
         onClearTarget={handleClearTarget}
         onFindStorage={handleFindStorage}
+        onSetStabilityMode={handleSetStabilityMode}
         onExit={handleExit}
       />
     </div>
