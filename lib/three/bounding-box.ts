@@ -127,28 +127,39 @@ export function updateBoundingBox(
     return;
   }
 
-  // Manual drag mode - preserve actual drag direction
+  // Manual drag mode - auto-orient box along drag direction
   const deltaX = p2.x - p1.x;
   const deltaZ = p2.z - p1.z;
-  const actualWidth = Math.max(Math.abs(deltaX), minDim);
-  const actualDepth = Math.max(Math.abs(deltaZ), minDim);
+
+  // Calculate drag distance and angle
+  const dragDistance = Math.sqrt(deltaX * deltaX + deltaZ * deltaZ);
+  const dragAngle = Math.atan2(deltaZ, deltaX) * (180 / Math.PI); // Convert to degrees
+
+  // The drag defines one dimension (length), use a default for the perpendicular dimension (width)
+  const actualLength = Math.max(dragDistance, minDim);
+  const actualWidth = Math.max(dragDistance * 0.5, minDim); // Default width is 50% of length
   const actualHeight = Math.max(height, minDim);
 
-  // Preserve the sign/direction of the drag
+  // Create a box that spans from p1 to p2 as the "length" dimension
+  // Width is perpendicular to the drag direction
+  const centerX = (p1.x + p2.x) / 2;
+  const centerZ = (p1.z + p2.z) / 2;
+
+  // Create virtual points for the box dimensions
+  // The "length" is along the drag direction, "width" is perpendicular
   const adjustedP1: MeasurementPoint = {
     ...floorPoint1,
-    position: p1.clone(),
+    position: new THREE.Vector3(centerX - actualLength / 2, p1.y, centerZ),
   };
   const adjustedP2: MeasurementPoint = {
     ...floorPoint2,
-    position: new THREE.Vector3(
-      p1.x + (Math.sign(deltaX) * actualWidth),
-      p2.y,
-      p1.z + (Math.sign(deltaZ) * actualDepth)
-    ),
+    position: new THREE.Vector3(centerX + actualLength / 2, p2.y, centerZ + actualWidth),
   };
 
-  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg);
+  // Apply auto-rotation from drag direction + manual rotation adjustment
+  const totalRotation = dragAngle + rotation_deg;
+
+  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, totalRotation);
   scene.add(box);
 }
 
