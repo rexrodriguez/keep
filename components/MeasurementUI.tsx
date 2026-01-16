@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { ComputedMeasurements, ConfidenceLevel } from '@/lib/types';
 import { getUIState, StateMachineContext } from '@/lib/measurement/state-machine';
 import { StabilityMode } from '@/lib/measurement/stabilization';
@@ -359,7 +360,7 @@ function DimensionSlider({
   );
 }
 
-// Rotation slider component
+// Rotation roller component (circular dial)
 function RotationSlider({
   value,
   onChange,
@@ -367,42 +368,106 @@ function RotationSlider({
   value: number;
   onChange: (deg: number) => void;
 }) {
-  const presets = [0, 45, 90, 135, 180];
+  const rollerRef = React.useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!rollerRef.current) return;
+    setIsDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updateRotationFromPointer(e);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    updateRotationFromPointer(e);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const updateRotationFromPointer = (e: React.PointerEvent) => {
+    if (!rollerRef.current) return;
+    const rect = rollerRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const dx = e.clientX - centerX;
+    const dy = e.clientY - centerY;
+
+    // Calculate angle in degrees (0° = up, clockwise)
+    let angle = Math.atan2(dx, -dy) * (180 / Math.PI);
+    if (angle < 0) angle += 360;
+
+    onChange(Math.round(angle));
+  };
+
+  const dialRadius = 60; // Radius of the dial
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-2">
         <span className="text-white/60 text-sm">Rotation</span>
         <span className="text-white text-lg font-bold">{value}°</span>
       </div>
 
-      <input
-        type="range"
-        min="0"
-        max="359"
-        step="1"
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
-        className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
-        style={{
-          background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(value / 359) * 100}%, rgba(255,255,255,0.2) ${(value / 359) * 100}%, rgba(255,255,255,0.2) 100%)`,
-        }}
-      />
+      <div className="flex justify-center">
+        {/* Circular roller dial */}
+        <div
+          ref={rollerRef}
+          className="relative shrink-0 cursor-pointer select-none touch-none"
+          style={{ width: dialRadius * 2, height: dialRadius * 2 }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {/* Outer ring */}
+          <div className="absolute inset-0 rounded-full bg-white/10 border-2 border-white/20" />
 
-      <div className="grid grid-cols-5 gap-2 mt-2">
-        {presets.map((p) => (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={`py-1.5 rounded text-xs font-medium transition-colors ${
-              value === p
-                ? 'bg-purple-500 text-white'
-                : 'bg-white/10 text-white/80 hover:bg-white/20'
-            }`}
-          >
-            {p}°
-          </button>
-        ))}
+          {/* Degree markers every 45° */}
+          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+            const rad = (deg - 90) * (Math.PI / 180);
+            const x = dialRadius + Math.cos(rad) * (dialRadius - 12);
+            const y = dialRadius + Math.sin(rad) * (dialRadius - 12);
+            return (
+              <div
+                key={deg}
+                className="absolute w-1.5 h-1.5 rounded-full bg-white/40"
+                style={{
+                  left: x - 3,
+                  top: y - 3,
+                }}
+              />
+            );
+          })}
+
+          {/* Indicator line */}
+          <div
+            className="absolute bg-purple-500 rounded-full"
+            style={{
+              width: 4,
+              height: dialRadius - 16,
+              left: dialRadius - 2,
+              top: 8,
+              transformOrigin: `center ${dialRadius - 8}px`,
+              transform: `rotate(${value}deg)`,
+              transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+            }}
+          />
+
+          {/* Center knob */}
+          <div
+            className="absolute rounded-full bg-purple-500 shadow-lg"
+            style={{
+              width: 20,
+              height: 20,
+              left: dialRadius - 10,
+              top: dialRadius - 10,
+            }}
+          />
+        </div>
       </div>
     </div>
   );
