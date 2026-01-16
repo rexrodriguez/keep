@@ -531,6 +531,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     dispatch({ type: 'SET_ROTATION', rotation_deg });
   }, [dispatch]);
 
+  const handleMoveBox = useCallback((deltaX: number, deltaZ: number) => {
+    dispatch({ type: 'MOVE_BOX', deltaX, deltaZ });
+  }, [dispatch]);
+
   const handleConfirmHeight = useCallback(() => {
     dispatch({ type: 'CONFIRM_HEIGHT' });
   }, [dispatch]);
@@ -659,6 +663,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         onSetDepth={handleSetDepth}
         onSetHeight={handleSetHeight}
         onSetRotation={handleSetRotation}
+        onMoveBox={handleMoveBox}
         onConfirmHeight={handleConfirmHeight}
         onCaptureEstimate={handleCaptureEstimate}
         onClearTarget={handleClearTarget}

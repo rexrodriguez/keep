@@ -41,6 +41,7 @@ export type StateAction =
   | { type: 'SET_WIDTH'; width_m: number }
   | { type: 'SET_DEPTH'; depth_m: number }
   | { type: 'SET_ROTATION'; rotation_deg: number }
+  | { type: 'MOVE_BOX'; deltaX: number; deltaZ: number }
   | { type: 'CONFIRM_HEIGHT' }
   | { type: 'SET_TARGET'; point: MeasurementPoint }
   | { type: 'CLEAR_TARGET' }
@@ -189,6 +190,29 @@ export function stateMachineReducer(
         ...context,
         rotation_deg: action.rotation_deg,
       };
+
+    case 'MOVE_BOX':
+      // Move both dragStart and dragEnd by the same delta to shift the entire box
+      if (context.dragStart && context.dragEnd) {
+        return {
+          ...context,
+          dragStart: {
+            ...context.dragStart,
+            position: context.dragStart.position.clone().add(
+              new THREE.Vector3(action.deltaX, 0, action.deltaZ)
+            ),
+            timestamp: Date.now(),
+          },
+          dragEnd: {
+            ...context.dragEnd,
+            position: context.dragEnd.position.clone().add(
+              new THREE.Vector3(action.deltaX, 0, action.deltaZ)
+            ),
+            timestamp: Date.now(),
+          },
+        };
+      }
+      return context;
 
     case 'CONFIRM_HEIGHT':
       if (context.state === 'HEIGHT_INPUT') {

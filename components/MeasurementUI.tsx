@@ -18,6 +18,7 @@ interface MeasurementUIProps {
   onSetDepth: (depth_m: number) => void;
   onSetHeight: (height_m: number) => void;
   onSetRotation: (rotation_deg: number) => void;
+  onMoveBox: (deltaX: number, deltaZ: number) => void;
   onConfirmHeight: () => void;
   onCaptureEstimate: () => void;
   onClearTarget: () => void;
@@ -39,6 +40,7 @@ export default function MeasurementUI({
   onSetDepth,
   onSetHeight,
   onSetRotation,
+  onMoveBox,
   onConfirmHeight,
   onCaptureEstimate,
   onClearTarget,
@@ -154,10 +156,11 @@ export default function MeasurementUI({
                 presets={[25, 50, 75, 100, 150]}
               />
 
-              {/* Rotation slider */}
+              {/* Rotation slider with position controls */}
               <RotationSlider
                 value={context.rotation_deg}
                 onChange={onSetRotation}
+                onMoveBox={onMoveBox}
               />
             </div>
           )}
@@ -360,13 +363,15 @@ function DimensionSlider({
   );
 }
 
-// Rotation roller component (circular dial)
+// Rotation roller component (circular dial) with position controls
 function RotationSlider({
   value,
   onChange,
+  onMoveBox,
 }: {
   value: number;
   onChange: (deg: number) => void;
+  onMoveBox: (deltaX: number, deltaZ: number) => void;
 }) {
   const rollerRef = React.useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = React.useState(false);
@@ -404,15 +409,16 @@ function RotationSlider({
   };
 
   const dialRadius = 60; // Radius of the dial
+  const moveIncrement = 0.05; // 5cm movement per tap
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-white/60 text-sm">Rotation</span>
+        <span className="text-white/60 text-sm">Rotation & Position</span>
         <span className="text-white text-lg font-bold">{value}°</span>
       </div>
 
-      <div className="flex justify-center">
+      <div className="flex items-center gap-4">
         {/* Circular roller dial */}
         <div
           ref={rollerRef}
@@ -468,6 +474,58 @@ function RotationSlider({
             }}
           />
         </div>
+
+        {/* Directional arrows for position control */}
+        <div className="flex-1 grid grid-cols-3 grid-rows-3 gap-1">
+          {/* Top row */}
+          <div />
+          <button
+            onClick={() => onMoveBox(0, -moveIncrement)}
+            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
+          >
+            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+          <div />
+
+          {/* Middle row */}
+          <button
+            onClick={() => onMoveBox(-moveIncrement, 0)}
+            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
+          >
+            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="flex items-center justify-center">
+            <div className="w-2 h-2 rounded-full bg-white/40" />
+          </div>
+          <button
+            onClick={() => onMoveBox(moveIncrement, 0)}
+            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
+          >
+            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+
+          {/* Bottom row */}
+          <div />
+          <button
+            onClick={() => onMoveBox(0, moveIncrement)}
+            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
+          >
+            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div />
+        </div>
+      </div>
+
+      <div className="text-center mt-1">
+        <span className="text-white/40 text-xs">Arrows move box by 5cm</span>
       </div>
     </div>
   );
