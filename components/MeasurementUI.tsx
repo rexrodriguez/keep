@@ -125,35 +125,32 @@ export default function MeasurementUI({
       {/* Bottom panel - Dimension sliders or Review */}
       {showBottomActions && (
         <div className="pointer-events-auto bg-black/70 backdrop-blur-sm p-4 safe-area-bottom">
-          {/* Dimension sliders (for LLM mode, show all 3) */}
+          {/* Dimension rollers (for LLM mode, show all 3) */}
           {isHeightInput && (
             <div className="mb-4 space-y-3">
-              {/* Width slider (only show if LLM mode) */}
+              {/* Width roller (only show if LLM mode) */}
               {hasLLMEstimate && (
-                <DimensionSlider
+                <DimensionRoller
                   label="Width"
                   value={widthCm}
                   onChange={(cm) => onSetWidth(cm / 100)}
-                  presets={[30, 50, 75, 100, 150]}
                 />
               )}
 
-              {/* Depth slider (only show if LLM mode) */}
+              {/* Depth roller (only show if LLM mode) */}
               {hasLLMEstimate && (
-                <DimensionSlider
+                <DimensionRoller
                   label="Depth"
                   value={depthCm}
                   onChange={(cm) => onSetDepth(cm / 100)}
-                  presets={[30, 50, 75, 100, 150]}
                 />
               )}
 
-              {/* Height slider */}
-              <DimensionSlider
+              {/* Height roller */}
+              <DimensionRoller
                 label="Height"
                 value={heightCm}
                 onChange={(cm) => onSetHeight(cm / 100)}
-                presets={[25, 50, 75, 100, 150]}
               />
 
               {/* Rotation slider with position controls */}
@@ -312,52 +309,111 @@ export default function MeasurementUI({
   );
 }
 
-// Dimension slider component
-function DimensionSlider({
+// Horizontal roller component (like a combination lock)
+function DimensionRoller({
   label,
   value,
   onChange,
-  presets,
+  min = 1,
+  max = 500,
 }: {
   label: string;
   value: number;
   onChange: (cm: number) => void;
-  presets: number[];
+  min?: number;
+  max?: number;
 }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-white/60 text-sm">{label}</span>
-        <span className="text-white text-lg font-bold">{value} cm</span>
-      </div>
+  const rollerRef = React.useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const lastXRef = React.useRef(0);
 
-      <input
-        type="range"
-        min="1"
-        max="500"
-        step="1"
-        value={value}
-        onChange={(e) => onChange(parseInt(e.target.value))}
-        className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer"
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setIsDragging(true);
+    lastXRef.current = e.clientX;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+
+    const deltaX = e.clientX - lastXRef.current;
+    // Each 3px of drag = 1cm change
+    const deltaCm = Math.round(deltaX / 3);
+
+    if (deltaCm !== 0) {
+      const newValue = Math.max(min, Math.min(max, value + deltaCm));
+      onChange(newValue);
+      lastXRef.current = e.clientX;
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  // Generate tick marks for the roller
+  const tickCount = 40;
+  const ticks = [];
+  for (let i = 0; i < tickCount; i++) {
+    // Create illusion of rotation based on value
+    const offset = (value * 2 + i * 8) % (tickCount * 8);
+    const normalizedPos = (offset / (tickCount * 8)) * 100;
+    const isMajor = i % 5 === 0;
+
+    ticks.push(
+      <div
+        key={i}
+        className={`absolute top-0 bottom-0 ${isMajor ? 'bg-white/60 w-0.5' : 'bg-white/30 w-px'}`}
         style={{
-          background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((value - 1) / 499) * 100}%, rgba(255,255,255,0.2) ${((value - 1) / 499) * 100}%, rgba(255,255,255,0.2) 100%)`,
+          left: `${normalizedPos}%`,
+          height: isMajor ? '100%' : '70%',
+          top: isMajor ? '0' : '15%',
         }}
       />
+    );
+  }
 
-      <div className="grid grid-cols-5 gap-2 mt-2">
-        {presets.map((p) => (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={`py-1.5 rounded text-xs font-medium transition-colors ${
-              value === p
-                ? 'bg-blue-500 text-white'
-                : 'bg-white/10 text-white/80 hover:bg-white/20'
-            }`}
-          >
-            {p}
-          </button>
-        ))}
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-white/60 text-sm">{label}</span>
+        <span className="text-white text-xl font-bold">{value} cm</span>
+      </div>
+
+      {/* Roller container */}
+      <div
+        ref={rollerRef}
+        className="relative h-12 rounded-lg overflow-hidden cursor-ew-resize select-none touch-none"
+        style={{
+          background: 'linear-gradient(to bottom, #1a1a1a 0%, #3a3a3a 20%, #4a4a4a 50%, #3a3a3a 80%, #1a1a1a 100%)',
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5), inset 0 -2px 4px rgba(0,0,0,0.5)',
+        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
+        {/* Tick marks */}
+        <div className="absolute inset-0">
+          {ticks}
+        </div>
+
+        {/* Center indicator line */}
+        <div
+          className="absolute left-1/2 top-0 bottom-0 w-1 bg-blue-500 -translate-x-1/2 z-10"
+          style={{
+            boxShadow: '0 0 8px rgba(59, 130, 246, 0.8)',
+          }}
+        />
+
+        {/* Highlight gradient overlay for 3D effect */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: 'linear-gradient(to bottom, rgba(255,255,255,0.1) 0%, transparent 30%, transparent 70%, rgba(0,0,0,0.2) 100%)',
+          }}
+        />
       </div>
     </div>
   );
