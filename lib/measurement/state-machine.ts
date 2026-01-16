@@ -339,12 +339,13 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
     };
   }
 
-  // In drawing, cancel the drag
+  // In drawing, cancel the drag and reset rotation/position
   if (context.state === 'DRAWING') {
     return {
       ...context,
       dragStart: null,
       dragEnd: null,
+      rotation_deg: 0,
       state: 'READY_TO_DRAW',
     };
   }
