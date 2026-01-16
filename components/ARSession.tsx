@@ -12,7 +12,6 @@ import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box'
 import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
 import { captureXRCameraImage, captureRendererFallback } from '@/lib/webxr/camera-capture';
 import { raycastCornerHandles } from '@/lib/three/raycasting';
-import { calculateSimpleCornerDrag } from '@/lib/three/corner-drag';
 import {
   stateMachineReducer,
   initialContext,
@@ -361,22 +360,18 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
     // Handle corner dragging separately
     if (context.cornerDragIndex !== null) {
-      // Corner drag - update box dimensions and rotation
+      // Corner drag - only update position, not rotation
       if (context.dragStart && context.dragEnd) {
-        const result = calculateSimpleCornerDrag(
-          context.cornerDragIndex,
-          context.dragStart,
-          context.dragEnd,
-          hitToUse.position,
-          context.rotation_deg
-        );
+        const newDragEnd: MeasurementPoint = {
+          ...context.dragEnd,
+          position: hitToUse.position.clone(),
+          timestamp: Date.now(),
+        };
 
-        // Update context with new drag points and rotation
+        // Update context with new drag end point (rotation unchanged)
         setContext((prev) => ({
           ...prev,
-          dragStart: result.newDragStart,
-          dragEnd: result.newDragEnd,
-          rotation_deg: result.newRotation,
+          dragEnd: newDragEnd,
         }));
       }
       return;
