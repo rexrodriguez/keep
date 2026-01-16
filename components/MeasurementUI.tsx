@@ -70,21 +70,21 @@ export default function MeasurementUI({
             </svg>
           </button>
 
-          <div className="flex items-center gap-2">
-            {/* Stability mode toggle */}
-            <StabilityModeToggle mode={stabilityMode} onChange={onSetStabilityMode} />
-
-            {uiState.currentStep && (
-              <span className="text-white/60 text-sm font-medium">
-                Step {uiState.currentStep}
-              </span>
-            )}
-          </div>
+          {uiState.currentStep && (
+            <span className="text-white/60 text-sm font-medium">
+              Step {uiState.currentStep}
+            </span>
+          )}
         </div>
 
-        <p className="text-white text-lg font-medium text-center">
+        <p className="text-white text-lg font-medium text-center mb-3">
           {context.isEstimating ? 'Analyzing image...' : uiState.instruction}
         </p>
+
+        {/* Stability mode toggle - centered below instruction */}
+        <div className="flex justify-center mb-2">
+          <StabilityModeToggle mode={stabilityMode} onChange={onSetStabilityMode} />
+        </div>
 
         {/* LLM estimate info */}
         {hasLLMEstimate && context.llmEstimate && (
