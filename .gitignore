@@ -3,3 +3,4 @@ package-lock.json
 certificates
 .next/
 .env
+tsconfig.tsbuildinfo
