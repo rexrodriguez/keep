@@ -93,17 +93,40 @@ export function updateBoundingBox(
   const p1 = floorPoint1.position;
   const p2 = floorPoint2.position;
 
-  // Use override dimensions if provided (LLM mode with slider adjustments)
-  // Otherwise calculate from drag points
-  const actualWidth = overrideWidth !== undefined
-    ? Math.max(overrideWidth, minDim)
-    : Math.max(Math.abs(p2.x - p1.x), minDim);
-  const actualDepth = overrideDepth !== undefined
-    ? Math.max(overrideDepth, minDim)
-    : Math.max(Math.abs(p2.z - p1.z), minDim);
+  // In LLM mode with overrides, use positive offsets from p1 as anchor
+  // Otherwise preserve the actual drag direction
+  if (overrideWidth !== undefined && overrideDepth !== undefined) {
+    const actualWidth = Math.max(overrideWidth, minDim);
+    const actualDepth = Math.max(overrideDepth, minDim);
+    const actualHeight = Math.max(height, minDim);
+
+    // Create adjusted points - use p1 as anchor with positive offsets
+    const adjustedP1: MeasurementPoint = {
+      ...floorPoint1,
+      position: p1.clone(),
+    };
+    const adjustedP2: MeasurementPoint = {
+      ...floorPoint2,
+      position: new THREE.Vector3(
+        p1.x + actualWidth,
+        p2.y,
+        p1.z + actualDepth
+      ),
+    };
+
+    const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight);
+    scene.add(box);
+    return;
+  }
+
+  // Manual drag mode - preserve actual drag direction
+  const deltaX = p2.x - p1.x;
+  const deltaZ = p2.z - p1.z;
+  const actualWidth = Math.max(Math.abs(deltaX), minDim);
+  const actualDepth = Math.max(Math.abs(deltaZ), minDim);
   const actualHeight = Math.max(height, minDim);
 
-  // Create adjusted points - always use p1 as anchor
+  // Preserve the sign/direction of the drag
   const adjustedP1: MeasurementPoint = {
     ...floorPoint1,
     position: p1.clone(),
@@ -111,9 +134,9 @@ export function updateBoundingBox(
   const adjustedP2: MeasurementPoint = {
     ...floorPoint2,
     position: new THREE.Vector3(
-      p1.x + actualWidth,
+      p1.x + (Math.sign(deltaX) * actualWidth),
       p2.y,
-      p1.z + actualDepth
+      p1.z + (Math.sign(deltaZ) * actualDepth)
     ),
   };
 
