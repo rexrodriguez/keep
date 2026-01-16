@@ -128,8 +128,8 @@ export function calculateCornerDrag(
 }
 
 /**
- * Simpler approach: Just update the dragged corner position directly
- * and recalculate rotation based on the diagonal
+ * Simpler approach: Only one draggable corner (dragEnd)
+ * dragStart is always the anchor point
  */
 export function calculateSimpleCornerDrag(
   cornerIndex: number,
@@ -138,46 +138,11 @@ export function calculateSimpleCornerDrag(
   newPosition: THREE.Vector3,
   currentRotation: number
 ): CornerDragResult {
-  // Determine anchor corner (opposite of dragged)
-  const anchorCornerIndex = (cornerIndex + 2) % 4;
+  // dragStart is always the anchor
+  const anchorPos = currentDragStart.position;
+  const draggedPos = newPosition.clone();
 
-  // For corners 0 and 2 (diagonal), anchor is the opposite
-  // For corners 1 and 3 (other diagonal), anchor is the opposite
-
-  let anchorPos: THREE.Vector3;
-  let draggedPos: THREE.Vector3;
-
-  // Map corner index to which point is which
-  if (cornerIndex === 0 || cornerIndex === 2) {
-    // Diagonal from start to end
-    anchorPos = cornerIndex === 0 ? currentDragEnd.position : currentDragStart.position;
-    draggedPos = newPosition.clone();
-  } else {
-    // Other diagonal - need to recalculate
-    const p1 = currentDragStart.position;
-    const p2 = currentDragEnd.position;
-
-    const width = Math.abs(p2.x - p1.x);
-    const depth = Math.abs(p2.z - p1.z);
-
-    // For corner 1 (front-right) and 3 (back-left)
-    if (cornerIndex === 1) {
-      anchorPos = new THREE.Vector3(
-        Math.min(p1.x, p2.x),
-        Math.min(p1.y, p2.y),
-        Math.max(p1.z, p2.z)
-      );
-    } else { // cornerIndex === 3
-      anchorPos = new THREE.Vector3(
-        Math.max(p1.x, p2.x),
-        Math.min(p1.y, p2.y),
-        Math.min(p1.z, p2.z)
-      );
-    }
-    draggedPos = newPosition.clone();
-  }
-
-  // Calculate rotation from the diagonal
+  // Calculate rotation from the diagonal between anchor and new position
   const diagonal = new THREE.Vector3(
     draggedPos.x - anchorPos.x,
     0,
@@ -187,7 +152,7 @@ export function calculateSimpleCornerDrag(
   // Rotation is based on the diagonal direction
   const angle = Math.atan2(diagonal.z, diagonal.x) * (180 / Math.PI);
 
-  // Adjust by 45 degrees since diagonal is 45° to edges
+  // Adjust by 45 degrees since diagonal is 45° to box edges
   let newRotation = angle - 45;
 
   // Normalize to 0-360
@@ -195,10 +160,7 @@ export function calculateSimpleCornerDrag(
   while (newRotation >= 360) newRotation -= 360;
 
   return {
-    newDragStart: {
-      ...currentDragStart,
-      position: anchorPos,
-    },
+    newDragStart: currentDragStart, // Anchor stays the same
     newDragEnd: {
       ...currentDragEnd,
       position: draggedPos,

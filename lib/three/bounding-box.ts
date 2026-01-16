@@ -50,30 +50,29 @@ export function createFloorBoundingBox(
   const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
   group.add(edges);
 
-  // Add corner handles (spheres at bottom corners)
-  const cornerRadius = 0.03; // 3cm spheres
+  // Add single corner handle at the dragEnd position (bottom corner opposite to dragStart)
+  // This represents the second point that was dragged
+  const cornerRadius = 0.04; // 4cm sphere for better visibility
   const cornerGeometry = new THREE.SphereGeometry(cornerRadius, 16, 16);
   const cornerMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffaa00, // Orange handles
+    color: 0xffaa00, // Orange handle
     transparent: true,
-    opacity: 0.8,
+    opacity: 0.9,
   });
 
-  // Bottom corners in local coordinates (before rotation)
-  const corners = [
-    new THREE.Vector3(-width / 2, -height / 2, -depth / 2), // Front-left
-    new THREE.Vector3(width / 2, -height / 2, -depth / 2),  // Front-right
-    new THREE.Vector3(width / 2, -height / 2, depth / 2),   // Back-right
-    new THREE.Vector3(-width / 2, -height / 2, depth / 2),  // Back-left
-  ];
+  // Determine which corner is dragEnd based on the sign of width/depth
+  // dragEnd is at the far corner from dragStart
+  const dragEndLocal = new THREE.Vector3(
+    (p2.x - p1.x) / 2,  // Preserve sign for correct corner
+    -height / 2,
+    (p2.z - p1.z) / 2   // Preserve sign for correct corner
+  );
 
-  corners.forEach((pos, i) => {
-    const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
-    cornerMesh.position.copy(pos);
-    cornerMesh.name = `corner-${i}`;
-    cornerMesh.userData = { isCornerHandle: true, cornerIndex: i };
-    group.add(cornerMesh);
-  });
+  const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
+  cornerMesh.position.copy(dragEndLocal);
+  cornerMesh.name = 'corner-handle';
+  cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 }; // Always index 0 since we only have one
+  group.add(cornerMesh);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
