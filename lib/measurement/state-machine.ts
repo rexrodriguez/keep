@@ -144,7 +144,6 @@ export function stateMachineReducer(
         return {
           ...context,
           cornerDragIndex: action.cornerIndex,
-          rotation_deg: 0, // Reset rotation to 0 for easier dimension adjustment
           state: 'DRAWING', // Reuse DRAWING state for corner dragging
         };
       }
