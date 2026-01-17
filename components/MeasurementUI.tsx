@@ -11,6 +11,7 @@ interface MeasurementUIProps {
   confidence: ConfidenceLevel | null;
   trackingWarning: string | null;
   stabilityMode: StabilityMode;
+  isSegmenting?: boolean;
   onUndo: () => void;
   onReset: () => void;
   onSetWidth: (width_m: number) => void;
@@ -30,6 +31,7 @@ export default function MeasurementUI({
   confidence,
   trackingWarning,
   stabilityMode,
+  isSegmenting = false,
   onUndo,
   onReset,
   onSetWidth,
@@ -79,7 +81,7 @@ export default function MeasurementUI({
         </div>
 
         <p className="text-white text-lg font-medium text-center mb-3">
-          {context.isEstimating ? 'Analyzing image...' : uiState.instruction}
+          {isSegmenting ? 'Detecting object...' : context.isEstimating ? 'Analyzing image...' : uiState.instruction}
         </p>
 
         {/* Stability mode toggle - centered below instruction */}

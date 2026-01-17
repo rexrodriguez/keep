@@ -120,6 +120,91 @@ function resizeAndConvert(canvas: HTMLCanvasElement, maxWidth: number): string {
 }
 
 /**
+ * Capture camera image as ImageBitmap for efficient worker transfer
+ * Returns an ImageBitmap that can be transferred to a Web Worker without copying
+ */
+export async function captureXRCameraImageBitmap(
+  renderer: THREE.WebGLRenderer,
+  glBinding: XRWebGLBinding | null,
+  frame: XRFrame,
+  referenceSpace: XRReferenceSpace
+): Promise<ImageBitmap | null> {
+  if (!glBinding) {
+    return null;
+  }
+
+  try {
+    const pose = frame.getViewerPose(referenceSpace);
+    if (!pose || pose.views.length === 0) {
+      return null;
+    }
+
+    const view = pose.views[0];
+    const camera = (view as any).camera;
+    if (!camera) {
+      return null;
+    }
+
+    const cameraTexture = (glBinding as any).getCameraImage(camera);
+    if (!cameraTexture) {
+      return null;
+    }
+
+    const gl = renderer.getContext();
+    const width = camera.width;
+    const height = camera.height;
+
+    // Create framebuffer to read from the texture
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, cameraTexture, 0);
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(framebuffer);
+      return null;
+    }
+
+    // Read pixels
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(framebuffer);
+
+    // Convert to canvas for ImageBitmap creation
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return null;
+    }
+
+    // Create ImageData and flip vertically (WebGL is bottom-up)
+    const imageData = ctx.createImageData(width, height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const srcIdx = ((height - 1 - y) * width + x) * 4;
+        const dstIdx = (y * width + x) * 4;
+        imageData.data[dstIdx] = pixels[srcIdx];
+        imageData.data[dstIdx + 1] = pixels[srcIdx + 1];
+        imageData.data[dstIdx + 2] = pixels[srcIdx + 2];
+        imageData.data[dstIdx + 3] = pixels[srcIdx + 3];
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // Create ImageBitmap from canvas (transferable to worker)
+    return await createImageBitmap(canvas);
+  } catch (error) {
+    console.error('Failed to capture XR camera ImageBitmap:', error);
+    return null;
+  }
+}
+
+/**
  * Fallback: Capture from renderer canvas (only gets the 3D overlay, not camera)
  */
 export function captureRendererFallback(renderer: THREE.WebGLRenderer): string | null {

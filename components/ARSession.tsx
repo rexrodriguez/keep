@@ -11,6 +11,9 @@ import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/l
 import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
 import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
 import { raycastCornerHandles } from '@/lib/three/raycasting';
+import { captureXRCameraImageBitmap } from '@/lib/webxr/camera-capture';
+import { SegmenterManager } from '@/lib/segmentation/segmenter-manager';
+import { calculate3DExtents, fovDegreesToRadians } from '@/lib/segmentation/bounds-to-3d';
 import {
   stateMachineReducer,
   initialContext,
@@ -54,8 +57,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const currentFrameRef = useRef<XRFrame | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
-  const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
+  const touchStartRef = useRef<{ time: number; position: THREE.Vector3; screenX: number; screenY: number } | null>(null);
   const hasDraggedRef = useRef(false);
+  // Segmenter for auto-detecting object bounds
+  const segmenterRef = useRef<SegmenterManager | null>(null);
+  const [isSegmenting, setIsSegmenting] = useState(false);
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
@@ -103,6 +109,19 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         if (mounted) {
           dispatch({ type: 'AR_STARTED' });
         }
+
+        // Initialize segmenter in background (non-blocking)
+        const segmenter = new SegmenterManager();
+        segmenter.initialize()
+          .then(() => {
+            if (mounted) {
+              segmenterRef.current = segmenter;
+              console.log('Segmenter initialized');
+            }
+          })
+          .catch((err) => {
+            console.warn('Segmenter initialization failed, falling back to default box:', err);
+          });
       } catch (error) {
         console.error('Failed to start AR session:', error);
         if (mounted) {
@@ -119,6 +138,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     return () => {
       mounted = false;
       cleanup();
+      // Clean up segmenter
+      if (segmenterRef.current) {
+        segmenterRef.current.dispose();
+        segmenterRef.current = null;
+      }
     };
   }, [dispatch, overlayRef]);
 
@@ -269,6 +293,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         touchStartRef.current = {
           time: Date.now(),
           position: cornerHit.worldPosition.clone(),
+          screenX,
+          screenY,
         };
         dispatch({ type: 'START_CORNER_DRAG', cornerIndex: cornerHit.cornerIndex });
         return;
@@ -284,11 +310,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
+    const touch = e.touches[0];
     isTouchingRef.current = true;
     hasDraggedRef.current = false;
     touchStartRef.current = {
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
+      screenX: touch.clientX,
+      screenY: touch.clientY,
     };
   }, [context.state, dispatch]);
 
@@ -441,7 +470,74 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         timestamp: Date.now(),
         stability: currentHitRef.current?.stability || 0.5,
       };
-      dispatch({ type: 'PLACE_BOX', point });
+
+      // Try to use segmentation for auto-detecting object bounds
+      const segmenter = segmenterRef.current;
+      const frame = currentFrameRef.current;
+      const xrContext = xrContextRef.current;
+      const sceneContext = sceneContextRef.current;
+
+      if (segmenter?.isReady() && frame && xrContext && sceneContext) {
+        // Run segmentation asynchronously
+        setIsSegmenting(true);
+
+        // Calculate normalized tap coordinates (0-1)
+        const canvas = sceneContext.renderer.domElement;
+        const rect = canvas.getBoundingClientRect();
+        const tapX = touchStart.screenX / rect.width;
+        const tapY = touchStart.screenY / rect.height;
+
+        // Capture camera image for segmentation
+        captureXRCameraImageBitmap(
+          sceneContext.renderer,
+          xrContext.glBinding,
+          frame,
+          xrContext.localFloorSpace
+        ).then(async (imageBitmap) => {
+          if (!imageBitmap) {
+            // Fallback to default box
+            setIsSegmenting(false);
+            dispatch({ type: 'PLACE_BOX', point });
+            return;
+          }
+
+          try {
+            const bounds = await segmenter.segmentAtPoint(imageBitmap, tapX, tapY);
+
+            if (bounds) {
+              // Calculate 3D dimensions from 2D bounds
+              const hitDepth = point.position.length(); // Distance from origin to hit point
+              const fovY = fovDegreesToRadians(sceneContext.camera.fov);
+              const aspectRatio = sceneContext.camera.aspect;
+
+              const extents = calculate3DExtents(bounds, hitDepth, fovY, aspectRatio);
+
+              setIsSegmenting(false);
+              dispatch({
+                type: 'PLACE_BOX_FROM_SEGMENTATION',
+                point,
+                width_m: extents.width_m,
+                depth_m: extents.depth_m,
+              });
+            } else {
+              // No segment found at tap point, use default box
+              setIsSegmenting(false);
+              dispatch({ type: 'PLACE_BOX', point });
+            }
+          } catch (err) {
+            console.warn('Segmentation failed, using default box:', err);
+            setIsSegmenting(false);
+            dispatch({ type: 'PLACE_BOX', point });
+          }
+        }).catch((err) => {
+          console.warn('Camera capture failed, using default box:', err);
+          setIsSegmenting(false);
+          dispatch({ type: 'PLACE_BOX', point });
+        });
+      } else {
+        // Segmenter not ready, use default box
+        dispatch({ type: 'PLACE_BOX', point });
+      }
       return;
     }
   }, [context.state, context.cornerDragIndex, dispatch]);
@@ -523,6 +619,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         confidence={confidence}
         trackingWarning={trackingWarning}
         stabilityMode={stabilityMode}
+        isSegmenting={isSegmenting}
         onUndo={handleUndo}
         onReset={handleReset}
         onSetWidth={handleSetWidth}
