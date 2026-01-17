@@ -195,13 +195,19 @@ export default function Home() {
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   2
                 </span>
-                Tap on the floor to place a box, then adjust dimensions
+                Tap to place a box at one corner of your item
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   3
                 </span>
-                Review dimensions and search for storage
+                Adjust width, depth, height, rotation, and position using the controls
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
+                  4
+                </span>
+                Confirm and search for storage
               </li>
             </ol>
           </div>

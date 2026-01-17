@@ -49,6 +49,9 @@ export default function MeasurementUI({
   const isReadyToDraw = context.state === 'READY_TO_DRAW';
   const showBottomActions = isHeightInput || isReview;
 
+  // Tab state for switching between Size and Position controls
+  const [activeTab, setActiveTab] = React.useState<'size' | 'position'>('size');
+
   // Convert dimensions to cm for display
   const widthCm = Math.round(context.width_m * 100);
   const depthCm = Math.round(context.depth_m * 100);
@@ -109,31 +112,62 @@ export default function MeasurementUI({
       {/* Bottom panel - Dimension sliders or Review */}
       {showBottomActions && (
         <div className="pointer-events-auto bg-black/70 backdrop-blur-sm p-4 safe-area-bottom">
-          {/* Dimension rollers - always show all 3 */}
+          {/* Tab controls */}
           {isHeightInput && (
-            <div className="mb-3 space-y-2">
-              <DimensionRoller
-                label="W"
-                value={widthCm}
-                onChange={(cm) => onSetWidth(cm / 100)}
-              />
-              <DimensionRoller
-                label="D"
-                value={depthCm}
-                onChange={(cm) => onSetDepth(cm / 100)}
-              />
-              <DimensionRoller
-                label="H"
-                value={heightCm}
-                onChange={(cm) => onSetHeight(cm / 100)}
-              />
+            <div className="mb-3">
+              {/* Tab buttons */}
+              <div className="flex mb-3 bg-white/10 rounded-lg p-1">
+                <button
+                  onClick={() => setActiveTab('size')}
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'size'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  Size
+                </button>
+                <button
+                  onClick={() => setActiveTab('position')}
+                  className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                    activeTab === 'position'
+                      ? 'bg-blue-500 text-white'
+                      : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  Position
+                </button>
+              </div>
 
-              {/* Rotation slider with position controls */}
-              <RotationSlider
-                value={context.rotation_deg}
-                onChange={onSetRotation}
-                onMoveBox={onMoveBox}
-              />
+              {/* Size tab content */}
+              {activeTab === 'size' && (
+                <div className="space-y-2">
+                  <DimensionRoller
+                    label="W"
+                    value={widthCm}
+                    onChange={(cm) => onSetWidth(cm / 100)}
+                  />
+                  <DimensionRoller
+                    label="D"
+                    value={depthCm}
+                    onChange={(cm) => onSetDepth(cm / 100)}
+                  />
+                  <DimensionRoller
+                    label="H"
+                    value={heightCm}
+                    onChange={(cm) => onSetHeight(cm / 100)}
+                  />
+                </div>
+              )}
+
+              {/* Position tab content */}
+              {activeTab === 'position' && (
+                <RotationSlider
+                  value={context.rotation_deg}
+                  onChange={onSetRotation}
+                  onMoveBox={onMoveBox}
+                />
+              )}
             </div>
           )}
 
