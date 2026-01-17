@@ -429,7 +429,7 @@ function RotationSlider({
   };
 
   const dialRadius = 60; // Radius of the dial
-  const moveIncrement = 0.05; // 5cm movement per tap
+  const moveIncrement = 0.025; // 2.5cm movement per tap
 
   return (
     <div>
