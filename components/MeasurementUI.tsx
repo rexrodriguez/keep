@@ -10,7 +10,6 @@ interface MeasurementUIProps {
   measurements: ComputedMeasurements | null;
   confidence: ConfidenceLevel | null;
   trackingWarning: string | null;
-  aiEnabled: boolean;
   stabilityMode: StabilityMode;
   onUndo: () => void;
   onReset: () => void;
@@ -20,8 +19,6 @@ interface MeasurementUIProps {
   onSetRotation: (rotation_deg: number) => void;
   onMoveBox: (deltaX: number, deltaZ: number) => void;
   onConfirmHeight: () => void;
-  onCaptureEstimate: () => void;
-  onClearTarget: () => void;
   onFindStorage: () => void;
   onSetStabilityMode: (mode: StabilityMode) => void;
   onExit: () => void;
@@ -32,7 +29,6 @@ export default function MeasurementUI({
   measurements,
   confidence,
   trackingWarning,
-  aiEnabled,
   stabilityMode,
   onUndo,
   onReset,
@@ -42,8 +38,6 @@ export default function MeasurementUI({
   onSetRotation,
   onMoveBox,
   onConfirmHeight,
-  onCaptureEstimate,
-  onClearTarget,
   onFindStorage,
   onSetStabilityMode,
   onExit,
@@ -54,7 +48,6 @@ export default function MeasurementUI({
   const isDrawing = context.state === 'DRAWING';
   const isReadyToDraw = context.state === 'READY_TO_DRAW';
   const showBottomActions = isHeightInput || isReview;
-  const hasLLMEstimate = context.llmEstimate !== null;
 
   // Convert dimensions to cm for display
   const widthCm = Math.round(context.width_m * 100);
@@ -91,15 +84,6 @@ export default function MeasurementUI({
           <StabilityModeToggle mode={stabilityMode} onChange={onSetStabilityMode} />
         </div>
 
-        {/* LLM estimate info */}
-        {hasLLMEstimate && context.llmEstimate && (
-          <div className="mt-2 bg-blue-500/20 border border-blue-500/40 rounded-lg px-3 py-2">
-            <p className="text-blue-200 text-sm text-center">
-              AI detected: {context.llmEstimate.objectDescription}
-            </p>
-          </div>
-        )}
-
         {/* Tracking warning */}
         {trackingWarning && !context.isEstimating && (
           <div className="mt-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-3 py-2">
@@ -125,30 +109,21 @@ export default function MeasurementUI({
       {/* Bottom panel - Dimension sliders or Review */}
       {showBottomActions && (
         <div className="pointer-events-auto bg-black/70 backdrop-blur-sm p-4 safe-area-bottom">
-          {/* Dimension rollers (for LLM mode, show all 3) */}
+          {/* Dimension rollers - always show all 3 */}
           {isHeightInput && (
-            <div className="mb-4 space-y-3">
-              {/* Width roller (only show if LLM mode) */}
-              {hasLLMEstimate && (
-                <DimensionRoller
-                  label="Width"
-                  value={widthCm}
-                  onChange={(cm) => onSetWidth(cm / 100)}
-                />
-              )}
-
-              {/* Depth roller (only show if LLM mode) */}
-              {hasLLMEstimate && (
-                <DimensionRoller
-                  label="Depth"
-                  value={depthCm}
-                  onChange={(cm) => onSetDepth(cm / 100)}
-                />
-              )}
-
-              {/* Height roller */}
+            <div className="mb-3 space-y-2">
               <DimensionRoller
-                label="Height"
+                label="W"
+                value={widthCm}
+                onChange={(cm) => onSetWidth(cm / 100)}
+              />
+              <DimensionRoller
+                label="D"
+                value={depthCm}
+                onChange={(cm) => onSetDepth(cm / 100)}
+              />
+              <DimensionRoller
+                label="H"
                 value={heightCm}
                 onChange={(cm) => onSetHeight(cm / 100)}
               />
@@ -207,7 +182,7 @@ export default function MeasurementUI({
                   onClick={onUndo}
                   className="flex-1 py-3 px-4 rounded-lg font-medium bg-white/10 text-white hover:bg-white/20 transition-colors"
                 >
-                  {hasLLMEstimate ? 'Redo' : 'Redraw'}
+                  Redo
                 </button>
                 <button
                   onClick={onConfirmHeight}
@@ -238,69 +213,23 @@ export default function MeasurementUI({
         </div>
       )}
 
-      {/* Ready to draw - show options based on whether target is marked and AI is enabled */}
-      {isReadyToDraw && !trackingWarning && !context.isEstimating && (
-        <div className="pointer-events-auto pb-8 px-4 space-y-3">
-          {/* AI mode: show capture button if target marked, or tap instruction */}
-          {aiEnabled && context.targetPoint ? (
-            <>
-              <button
-                onClick={onCaptureEstimate}
-                className="w-full py-4 px-6 rounded-xl font-medium bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-lg flex items-center justify-center gap-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Capture & Estimate with AI
-              </button>
-              <button
-                onClick={onClearTarget}
-                className="w-full py-2 px-4 rounded-lg font-medium bg-white/10 text-white/80 hover:bg-white/20"
-              >
-                Clear target
-              </button>
-            </>
-          ) : (
-            <>
-              {/* Show AI tap instruction only if AI is enabled */}
-              {aiEnabled && (
-                <div className="bg-purple-500/30 backdrop-blur-sm px-4 py-3 rounded-xl mx-auto">
-                  <p className="text-white text-sm font-medium text-center">
-                    Tap near the object to mark target for AI
-                  </p>
-                </div>
-              )}
-
-              {/* Manual drag hint */}
-              <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
-                <span className="text-white text-sm font-medium">
-                  {aiEnabled ? 'Or touch and drag to draw manually' : 'Touch and drag to draw rectangle'}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Drawing in progress */}
-      {isDrawing && (
+      {/* Ready to place - simple tap instruction */}
+      {isReadyToDraw && !trackingWarning && (
         <div className="pointer-events-none pb-8 px-4">
           <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm font-medium">
-              Drag to size rectangle...
+              Tap to place a box
             </span>
           </div>
         </div>
       )}
 
-      {/* Estimating spinner */}
-      {context.isEstimating && (
+      {/* Drawing/resizing in progress */}
+      {isDrawing && (
         <div className="pointer-events-none pb-8 px-4">
-          <div className="bg-purple-500/30 backdrop-blur-sm px-6 py-3 rounded-full mx-auto w-fit flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          <div className="bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm font-medium">
-              AI analyzing image...
+              Drag to resize...
             </span>
           </div>
         </div>
@@ -309,7 +238,7 @@ export default function MeasurementUI({
   );
 }
 
-// Horizontal roller component (like a combination lock)
+// Compact horizontal roller component (like a combination lock)
 function DimensionRoller({
   label,
   value,
@@ -367,27 +296,25 @@ function DimensionRoller({
         className={`absolute top-0 bottom-0 ${isMajor ? 'bg-white/60 w-0.5' : 'bg-white/30 w-px'}`}
         style={{
           left: `${normalizedPos}%`,
-          height: isMajor ? '100%' : '70%',
-          top: isMajor ? '0' : '15%',
+          height: isMajor ? '100%' : '60%',
+          top: isMajor ? '0' : '20%',
         }}
       />
     );
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-white/60 text-sm">{label}</span>
-        <span className="text-white text-xl font-bold">{value} cm</span>
-      </div>
+    <div className="flex items-center gap-3">
+      {/* Label */}
+      <span className="text-white/60 text-sm w-6">{label}</span>
 
       {/* Roller container */}
       <div
         ref={rollerRef}
-        className="relative h-12 rounded-lg overflow-hidden cursor-ew-resize select-none touch-none"
+        className="relative flex-1 h-8 rounded overflow-hidden cursor-ew-resize select-none touch-none"
         style={{
           background: 'linear-gradient(to bottom, #1a1a1a 0%, #3a3a3a 20%, #4a4a4a 50%, #3a3a3a 80%, #1a1a1a 100%)',
-          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5), inset 0 -2px 4px rgba(0,0,0,0.5)',
+          boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 3px rgba(0,0,0,0.5)',
         }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -401,9 +328,9 @@ function DimensionRoller({
 
         {/* Center indicator line */}
         <div
-          className="absolute left-1/2 top-0 bottom-0 w-1 bg-blue-500 -translate-x-1/2 z-10"
+          className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-blue-500 -translate-x-1/2 z-10"
           style={{
-            boxShadow: '0 0 8px rgba(59, 130, 246, 0.8)',
+            boxShadow: '0 0 6px rgba(59, 130, 246, 0.8)',
           }}
         />
 
@@ -415,6 +342,9 @@ function DimensionRoller({
           }}
         />
       </div>
+
+      {/* Value display */}
+      <span className="text-white font-bold w-16 text-right">{value} cm</span>
     </div>
   );
 }

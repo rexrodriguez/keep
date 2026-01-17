@@ -31,6 +31,7 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
+  | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
   | { type: 'START_DRAG'; point: MeasurementPoint }
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
@@ -58,14 +59,19 @@ export type StateAction =
 /**
  * Initial state
  */
+// Default box dimensions (40cm x 40cm x 40cm)
+const DEFAULT_WIDTH_M = 0.4;
+const DEFAULT_DEPTH_M = 0.4;
+const DEFAULT_HEIGHT_M = 0.4;
+
 export const initialContext: StateMachineContext = {
   state: 'IDLE',
   dragStart: null,
   dragEnd: null,
   targetPoint: null,
-  height_m: 0.5, // Default 50cm
-  width_m: 0.5,  // Default 50cm
-  depth_m: 0.5,  // Default 50cm
+  height_m: DEFAULT_HEIGHT_M,
+  width_m: DEFAULT_WIDTH_M,
+  depth_m: DEFAULT_DEPTH_M,
   rotation_deg: 0, // Default 0 degrees (no rotation)
   llmEstimate: null,
   isEstimating: false,
@@ -98,6 +104,47 @@ export function stateMachineReducer(
 
     case 'AR_FAILED':
       return { ...context, state: 'SUPPORTED_READY', error: action.error };
+
+    case 'PLACE_BOX':
+      // Tap to place a default-sized box centered on the tap point
+      if (context.state === 'READY_TO_DRAW') {
+        const center = action.point.position;
+        const halfWidth = DEFAULT_WIDTH_M / 2;
+        const halfDepth = DEFAULT_DEPTH_M / 2;
+
+        // Create dragStart and dragEnd as opposite corners of the box
+        const dragStart: MeasurementPoint = {
+          position: new THREE.Vector3(
+            center.x - halfWidth,
+            center.y,
+            center.z - halfDepth
+          ),
+          timestamp: Date.now(),
+          stability: action.point.stability,
+        };
+
+        const dragEnd: MeasurementPoint = {
+          position: new THREE.Vector3(
+            center.x + halfWidth,
+            center.y,
+            center.z + halfDepth
+          ),
+          timestamp: Date.now(),
+          stability: action.point.stability,
+        };
+
+        return {
+          ...context,
+          dragStart,
+          dragEnd,
+          width_m: DEFAULT_WIDTH_M,
+          depth_m: DEFAULT_DEPTH_M,
+          height_m: DEFAULT_HEIGHT_M,
+          rotation_deg: 0,
+          state: 'HEIGHT_INPUT',
+        };
+      }
+      return context;
 
     case 'START_DRAG':
       if (context.state === 'READY_TO_DRAW') {
@@ -294,9 +341,9 @@ export function stateMachineReducer(
         dragStart: null,
         dragEnd: null,
         targetPoint: null,
-        height_m: 0.5,
-        width_m: 0.5,
-        depth_m: 0.5,
+        height_m: DEFAULT_HEIGHT_M,
+        width_m: DEFAULT_WIDTH_M,
+        depth_m: DEFAULT_DEPTH_M,
         rotation_deg: 0,
         llmEstimate: null,
         state: 'READY_TO_DRAW',
@@ -330,9 +377,9 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
       dragStart: null,
       dragEnd: null,
       targetPoint: null,
-      height_m: 0.5,
-      width_m: 0.5,
-      depth_m: 0.5,
+      height_m: DEFAULT_HEIGHT_M,
+      width_m: DEFAULT_WIDTH_M,
+      depth_m: DEFAULT_DEPTH_M,
       rotation_deg: 0,
       llmEstimate: null,
       state: 'READY_TO_DRAW',
@@ -390,11 +437,11 @@ function getStateInfo(state: MeasurementState): {
     case 'AR_RUNNING':
       return { step: '', instruction: 'Point at a flat surface' };
     case 'READY_TO_DRAW':
-      return { step: '1/2', instruction: 'Drag to draw rectangle around object base' };
+      return { step: '1/2', instruction: 'Tap to place a box at the corner of your object' };
     case 'DRAWING':
-      return { step: '1/2', instruction: 'Release to set rectangle' };
+      return { step: '1/2', instruction: 'Dragging corner...' };
     case 'HEIGHT_INPUT':
-      return { step: '2/2', instruction: 'Adjust height' };
+      return { step: '2/2', instruction: 'Adjust dimensions' };
     case 'REVIEW':
       return { step: 'Done', instruction: 'Review your measurement' };
     case 'SEARCHING':

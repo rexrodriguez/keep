@@ -10,19 +10,15 @@ import { createReticle, updateReticle, setReticleColor } from '@/lib/three/retic
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
 import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
 import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
-import { captureXRCameraImage, captureRendererFallback } from '@/lib/webxr/camera-capture';
 import { raycastCornerHandles } from '@/lib/three/raycasting';
 import {
   stateMachineReducer,
   initialContext,
   StateAction,
-  canStartDrag,
   isDragging,
   StateMachineContext,
-  LLMEstimate,
 } from '@/lib/measurement/state-machine';
 import {
-  calculateMeasurementsFromDragRect,
   calculateMeasurementsFromLLM,
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
@@ -48,7 +44,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
-  const [aiEnabled, setAiEnabled] = useState(false);
   const [stabilityMode, setStabilityMode] = useState<StabilityMode>('balanced');
 
   // Current hit position for drag capture
@@ -64,14 +59,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
-  }, []);
-
-  // Check if AI features are available
-  useEffect(() => {
-    fetch('/api/config')
-      .then((res) => res.json())
-      .then((data) => setAiEnabled(data.hasOpenAIKey))
-      .catch(() => setAiEnabled(false));
   }, []);
 
   // Initialize AR session
@@ -153,46 +140,35 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       const showBox = context.dragStart && context.dragEnd;
 
       if (showBox) {
-        // In LLM mode, pass width/depth overrides so sliders affect the box
-        const isLLMMode = context.llmEstimate !== null;
+        // Always pass width/depth from state so rollers affect the box
         updateBoundingBox(
           sceneContextRef.current.scene,
           context.dragStart,
           context.dragEnd,
           context.height_m,
-          isLLMMode ? context.width_m : undefined,
-          isLLMMode ? context.depth_m : undefined,
+          context.width_m,
+          context.depth_m,
           context.rotation_deg
         );
       } else {
         disposeBoundingBox(sceneContextRef.current.scene);
       }
     }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, context.llmEstimate]);
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg]);
 
   // Update measurements when dimensions change
   useEffect(() => {
     if (context.dragStart && context.dragEnd && context.state !== 'DRAWING') {
-      // Check if we're in LLM mode (have an estimate)
-      if (context.llmEstimate) {
-        const data = calculateMeasurementsFromLLM(
-          context.dragStart,
-          context.width_m,
-          context.depth_m,
-          context.height_m,
-          context.llmEstimate.confidence
-        );
-        setMeasurements(toComputedMeasurements(data));
-        setConfidence(data.confidence);
-      } else {
-        const data = calculateMeasurementsFromDragRect(
-          context.dragStart,
-          context.dragEnd,
-          context.height_m
-        );
-        setMeasurements(toComputedMeasurements(data));
-        setConfidence(data.confidence);
-      }
+      // Always use width/depth/height from state
+      const data = calculateMeasurementsFromLLM(
+        context.dragStart,
+        context.width_m,
+        context.depth_m,
+        context.height_m,
+        context.llmEstimate?.confidence || 'MEDIUM'
+      );
+      setMeasurements(toComputedMeasurements(data));
+      setConfidence(data.confidence);
     } else if (!context.dragStart || !context.dragEnd) {
       setMeasurements(null);
       setConfidence(null);
@@ -299,7 +275,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       }
     }
 
-    if (!canStartDrag(context.state)) {
+    // Only track touch in READY_TO_DRAW state (for tap-to-place)
+    if (context.state !== 'READY_TO_DRAW') {
       return;
     }
 
@@ -313,15 +290,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
     };
-
-    // Start drag immediately (will be converted to tap if short enough)
-    const point: MeasurementPoint = {
-      position: currentHitRef.current.position.clone(),
-      timestamp: Date.now(),
-      stability: currentHitRef.current.stability,
-    };
-
-    dispatch({ type: 'START_DRAG', point });
   }, [context.state, dispatch]);
 
   // Handle touch move - update drag end point
@@ -441,7 +409,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     dispatch({ type: 'UPDATE_DRAG', point });
   }, [context.state, context.cornerDragIndex, context.dragStart, context.dragEnd, context.rotation_deg, dispatch]);
 
-  // Handle touch end - finish drag or set target
+  // Handle touch end - place box on tap or finish corner drag
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     // Don't handle if tap was on a button or UI element
     const target = e.target as HTMLElement;
@@ -451,7 +419,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
     const wasTouching = isTouchingRef.current;
     const touchStart = touchStartRef.current;
-    const hasDragged = hasDraggedRef.current;
 
     isTouchingRef.current = false;
     touchStartRef.current = null;
@@ -467,44 +434,17 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Determine if this was a tap (short duration, no movement) or drag
-    const duration = Date.now() - touchStart.time;
-    const isTap = duration < 300 && !hasDragged;
-
-    if (isTap) {
-      // Cancel any started drag
-      dispatch({ type: 'UNDO' });
-
-      // Only set target for AI if AI is enabled
-      if (aiEnabled && currentHitRef.current) {
-        const point: MeasurementPoint = {
-          position: touchStart.position.clone(),
-          timestamp: Date.now(),
-          stability: currentHitRef.current.stability,
-        };
-        dispatch({ type: 'SET_TARGET', point });
-      }
+    // In READY_TO_DRAW state, tap places a box
+    if (context.state === 'READY_TO_DRAW') {
+      const point: MeasurementPoint = {
+        position: touchStart.position.clone(),
+        timestamp: Date.now(),
+        stability: currentHitRef.current?.stability || 0.5,
+      };
+      dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-
-    // It was a drag - finish it
-    if (!isDragging(context.state)) {
-      return;
-    }
-
-    if (!currentHitRef.current || !context.dragStart) {
-      dispatch({ type: 'UNDO' });
-      return;
-    }
-
-    const point: MeasurementPoint = {
-      position: currentHitRef.current.position.clone(),
-      timestamp: Date.now(),
-      stability: currentHitRef.current.stability,
-    };
-
-    dispatch({ type: 'END_DRAG', point });
-  }, [context.state, context.dragStart, dispatch]);
+  }, [context.state, context.cornerDragIndex, dispatch]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
@@ -539,10 +479,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     dispatch({ type: 'CONFIRM_HEIGHT' });
   }, [dispatch]);
 
-  const handleClearTarget = useCallback(() => {
-    dispatch({ type: 'CLEAR_TARGET' });
-  }, [dispatch]);
-
   const handleSetStabilityMode = useCallback((mode: StabilityMode) => {
     setStabilityMode(mode);
     if (stabilizerRef.current) {
@@ -550,85 +486,16 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     }
   }, []);
 
-  // Handle LLM capture and estimation
-  const handleCaptureEstimate = useCallback(async () => {
-    if (!xrContextRef.current || !context.targetPoint) {
-      dispatch({ type: 'LLM_ESTIMATE_FAILED', error: 'Please tap to mark a target first' });
-      return;
-    }
-
-    dispatch({ type: 'START_LLM_ESTIMATE' });
-
-    try {
-      // Try to capture using raw camera access first
-      let image: string | null = null;
-
-      if (currentFrameRef.current && xrContextRef.current.glBinding) {
-        image = await captureXRCameraImage(
-          xrContextRef.current.renderer,
-          xrContextRef.current.glBinding,
-          currentFrameRef.current,
-          xrContextRef.current.localFloorSpace
-        );
-      }
-
-      // Fall back to renderer capture if raw camera access failed
-      if (!image) {
-        console.warn('Raw camera access failed, using renderer fallback');
-        image = captureRendererFallback(xrContextRef.current.renderer);
-      }
-
-      if (!image) {
-        dispatch({ type: 'LLM_ESTIMATE_FAILED', error: 'Failed to capture image' });
-        return;
-      }
-
-      // Send to API
-      const response = await fetch('/api/estimate-dimensions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success || !data.estimate) {
-        dispatch({ type: 'LLM_ESTIMATE_FAILED', error: data.error || 'Failed to estimate dimensions' });
-        return;
-      }
-
-      dispatch({
-        type: 'LLM_ESTIMATE_COMPLETE',
-        estimate: data.estimate as LLMEstimate,
-      });
-    } catch (error) {
-      console.error('LLM estimation error:', error);
-      dispatch({
-        type: 'LLM_ESTIMATE_FAILED',
-        error: error instanceof Error ? error.message : 'Network error',
-      });
-    }
-  }, [context.targetPoint, dispatch]);
-
   const handleFindStorage = useCallback(() => {
     if (context.dragStart && context.dragEnd) {
-      let data: MeasurementData;
-
-      if (context.llmEstimate) {
-        data = calculateMeasurementsFromLLM(
-          context.dragStart,
-          context.width_m,
-          context.depth_m,
-          context.height_m,
-          context.llmEstimate.confidence
-        );
-      } else {
-        data = calculateMeasurementsFromDragRect(
-          context.dragStart,
-          context.dragEnd,
-          context.height_m
-        );
-      }
+      // Always use width/depth/height from state
+      const data = calculateMeasurementsFromLLM(
+        context.dragStart,
+        context.width_m,
+        context.depth_m,
+        context.height_m,
+        context.llmEstimate?.confidence || 'MEDIUM'
+      );
 
       onFindStorage(data);
     }
@@ -655,7 +522,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         measurements={measurements}
         confidence={confidence}
         trackingWarning={trackingWarning}
-        aiEnabled={aiEnabled}
         stabilityMode={stabilityMode}
         onUndo={handleUndo}
         onReset={handleReset}
@@ -665,8 +531,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         onSetRotation={handleSetRotation}
         onMoveBox={handleMoveBox}
         onConfirmHeight={handleConfirmHeight}
-        onCaptureEstimate={handleCaptureEstimate}
-        onClearTarget={handleClearTarget}
         onFindStorage={handleFindStorage}
         onSetStabilityMode={handleSetStabilityMode}
         onExit={handleExit}

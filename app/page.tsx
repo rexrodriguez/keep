@@ -195,7 +195,7 @@ export default function Home() {
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   2
                 </span>
-                Touch a corner and drag your phone to the opposite corner to draw a box
+                Tap on the floor to place a box, then adjust dimensions
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
