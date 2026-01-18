@@ -13,7 +13,6 @@ export interface StateMachineContext {
   llmEstimate: LLMEstimate | null;      // LLM dimension estimate
   isEstimating: boolean;                 // LLM estimation in progress
   error: string | null;
-  cornerDragIndex: number | null;        // Which corner is being dragged (0-3)
 }
 
 export interface LLMEstimate {
@@ -35,9 +34,6 @@ export type StateAction =
   | { type: 'START_DRAG'; point: MeasurementPoint }
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
-  | { type: 'START_CORNER_DRAG'; cornerIndex: number }
-  | { type: 'UPDATE_CORNER_DRAG'; point: MeasurementPoint }
-  | { type: 'END_CORNER_DRAG' }
   | { type: 'SET_HEIGHT'; height_m: number }
   | { type: 'SET_WIDTH'; width_m: number }
   | { type: 'SET_DEPTH'; depth_m: number }
@@ -76,7 +72,6 @@ export const initialContext: StateMachineContext = {
   llmEstimate: null,
   isEstimating: false,
   error: null,
-  cornerDragIndex: null,
 };
 
 /**
@@ -183,33 +178,6 @@ export function stateMachineReducer(
           ...context,
           dragEnd: action.point,
           state: 'HEIGHT_INPUT',
-        };
-      }
-      return context;
-
-    case 'START_CORNER_DRAG':
-      if (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') {
-        return {
-          ...context,
-          cornerDragIndex: action.cornerIndex,
-          state: 'DRAWING', // Reuse DRAWING state for corner dragging
-        };
-      }
-      return context;
-
-    case 'UPDATE_CORNER_DRAG':
-      if (context.state === 'DRAWING' && context.cornerDragIndex !== null) {
-        // Corner drag will be handled specially in ARSession
-        return context;
-      }
-      return context;
-
-    case 'END_CORNER_DRAG':
-      if (context.state === 'DRAWING' && context.cornerDragIndex !== null) {
-        return {
-          ...context,
-          cornerDragIndex: null,
-          state: 'HEIGHT_INPUT', // Return to height input after corner drag
         };
       }
       return context;

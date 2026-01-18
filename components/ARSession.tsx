@@ -10,7 +10,6 @@ import { createReticle, updateReticle, setReticleColor } from '@/lib/three/retic
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
 import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
 import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
-import { raycastCornerHandles } from '@/lib/three/raycasting';
 import {
   stateMachineReducer,
   initialContext,
@@ -246,35 +245,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Check for corner handle touch first (in HEIGHT_INPUT or REVIEW states)
-    if ((context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') && sceneContextRef.current) {
-      const touch = e.touches[0];
-      const canvas = sceneContextRef.current.renderer.domElement;
-      const rect = canvas.getBoundingClientRect();
-      const screenX = touch.clientX - rect.left;
-      const screenY = touch.clientY - rect.top;
-
-      const cornerHit = raycastCornerHandles(
-        screenX,
-        screenY,
-        sceneContextRef.current.camera,
-        sceneContextRef.current.scene,
-        rect.width,
-        rect.height
-      );
-
-      if (cornerHit) {
-        isTouchingRef.current = true;
-        hasDraggedRef.current = true; // Corner drag is always a drag
-        touchStartRef.current = {
-          time: Date.now(),
-          position: cornerHit.worldPosition.clone(),
-        };
-        dispatch({ type: 'START_CORNER_DRAG', cornerIndex: cornerHit.cornerIndex });
-        return;
-      }
-    }
-
     // Only track touch in READY_TO_DRAW state (for tap-to-place)
     if (context.state !== 'READY_TO_DRAW') {
       return;
@@ -290,7 +260,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
     };
-  }, [context.state, dispatch]);
+  }, [context.state]);
 
   // Handle touch move - update drag end point
   const handleTouchMove = useCallback(() => {
@@ -326,80 +296,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Handle corner dragging separately
-    if (context.cornerDragIndex !== null) {
-      // Corner drag - transform using proper Euler rotation matrices
-      if (context.dragStart && context.dragEnd) {
-        const p1 = context.dragStart.position;
-        const p2 = context.dragEnd.position;
-
-        // Calculate current box center (stays fixed during resize)
-        const centerX = (p1.x + p2.x) / 2;
-        const centerY = Math.min(p1.y, p2.y);
-        const centerZ = (p1.z + p2.z) / 2;
-
-        // Get current rotation angle in radians
-        const theta = (context.rotation_deg * Math.PI) / 180;
-
-        // Create rotation matrix for Y-axis rotation (Euler)
-        // R_y(θ) = [cos(θ)  0  sin(θ)]
-        //          [  0     1    0   ]
-        //          [-sin(θ) 0  cos(θ)]
-        const cosTheta = Math.cos(theta);
-        const sinTheta = Math.sin(theta);
-
-        // Transform hit position to local space using inverse rotation
-        // Inverse of R_y(θ) is R_y(-θ)
-        const dx = hitToUse.position.x - centerX;
-        const dz = hitToUse.position.z - centerZ;
-
-        // Apply inverse rotation matrix: R_y(-θ)
-        const localX = cosTheta * dx + sinTheta * dz;
-        const localZ = -sinTheta * dx + cosTheta * dz;
-
-        // Calculate new dimensions from local position
-        // The dragged corner is at the extremum, so dimensions are 2x the local position
-        const newWidth = Math.abs(localX) * 2;
-        const newDepth = Math.abs(localZ) * 2;
-
-        // In local space, p1 is at (-w/2, -d/2) and p2 is at (+w/2, +d/2)
-        const halfWidth = newWidth / 2;
-        const halfDepth = newDepth / 2;
-
-        // Local coordinates for the two corners
-        const localP1 = { x: -halfWidth, z: -halfDepth };
-        const localP2 = { x: halfWidth, z: halfDepth };
-
-        // Transform both points back to world space using forward rotation
-        // Apply rotation matrix: R_y(θ)
-        const worldP1X = centerX + (cosTheta * localP1.x - sinTheta * localP1.z);
-        const worldP1Z = centerZ + (sinTheta * localP1.x + cosTheta * localP1.z);
-
-        const worldP2X = centerX + (cosTheta * localP2.x - sinTheta * localP2.z);
-        const worldP2Z = centerZ + (sinTheta * localP2.x + cosTheta * localP2.z);
-
-        const newDragStart: MeasurementPoint = {
-          ...context.dragStart,
-          position: new THREE.Vector3(worldP1X, centerY, worldP1Z),
-          timestamp: Date.now(),
-        };
-
-        const newDragEnd: MeasurementPoint = {
-          ...context.dragEnd,
-          position: new THREE.Vector3(worldP2X, centerY, worldP2Z),
-          timestamp: Date.now(),
-        };
-
-        // Update both points to maintain center and rotation
-        setContext((prev) => ({
-          ...prev,
-          dragStart: newDragStart,
-          dragEnd: newDragEnd,
-        }));
-      }
-      return;
-    }
-
     const point: MeasurementPoint = {
       position: hitToUse.position.clone(),
       timestamp: Date.now(),
@@ -407,9 +303,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     };
 
     dispatch({ type: 'UPDATE_DRAG', point });
-  }, [context.state, context.cornerDragIndex, context.dragStart, context.dragEnd, context.rotation_deg, dispatch]);
+  }, [context.state, dispatch]);
 
-  // Handle touch end - place box on tap or finish corner drag
+  // Handle touch end - place box on tap
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     // Don't handle if tap was on a button or UI element
     const target = e.target as HTMLElement;
@@ -428,12 +324,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Handle corner drag end
-    if (context.cornerDragIndex !== null) {
-      dispatch({ type: 'END_CORNER_DRAG' });
-      return;
-    }
-
     // In READY_TO_DRAW state, tap places a box
     if (context.state === 'READY_TO_DRAW') {
       const point: MeasurementPoint = {
@@ -444,7 +334,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, context.cornerDragIndex, dispatch]);
+  }, [context.state, dispatch]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });

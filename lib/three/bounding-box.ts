@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { MeasurementPoint } from '@/lib/types';
 
 /**
@@ -171,6 +172,77 @@ function addContactShadow(
 }
 
 /**
+ * Add subtle glow where box edges meet the floor
+ * Creates a grounding effect that makes the box feel connected to the surface
+ */
+function addFloorEdgeGlow(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  const floorY = -height / 2 + 0.002;
+  const glowWidth = 0.015; // 1.5cm glow width
+
+  // Create glow texture
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 8;
+  const ctx = canvas.getContext('2d')!;
+
+  // Gradient from cyan center to transparent edges
+  const gradient = ctx.createLinearGradient(0, 0, 0, 8);
+  gradient.addColorStop(0, 'rgba(0, 255, 255, 0)');
+  gradient.addColorStop(0.5, 'rgba(0, 255, 255, 0.3)');
+  gradient.addColorStop(1, 'rgba(0, 255, 255, 0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 8);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+
+  // Front edge glow
+  const frontGlowGeom = new THREE.PlaneGeometry(width, glowWidth);
+  const frontGlow = new THREE.Mesh(frontGlowGeom, glowMaterial);
+  frontGlow.rotation.x = -Math.PI / 2;
+  frontGlow.position.set(0, floorY, depth / 2 + glowWidth / 2);
+  frontGlow.name = 'floor-glow-front';
+  group.add(frontGlow);
+
+  // Back edge glow
+  const backGlow = new THREE.Mesh(frontGlowGeom.clone(), glowMaterial);
+  backGlow.rotation.x = -Math.PI / 2;
+  backGlow.position.set(0, floorY, -depth / 2 - glowWidth / 2);
+  backGlow.name = 'floor-glow-back';
+  group.add(backGlow);
+
+  // Left edge glow
+  const sideGlowGeom = new THREE.PlaneGeometry(depth, glowWidth);
+  const leftGlow = new THREE.Mesh(sideGlowGeom, glowMaterial);
+  leftGlow.rotation.x = -Math.PI / 2;
+  leftGlow.rotation.z = Math.PI / 2;
+  leftGlow.position.set(-width / 2 - glowWidth / 2, floorY, 0);
+  leftGlow.name = 'floor-glow-left';
+  group.add(leftGlow);
+
+  // Right edge glow
+  const rightGlow = new THREE.Mesh(sideGlowGeom.clone(), glowMaterial);
+  rightGlow.rotation.x = -Math.PI / 2;
+  rightGlow.rotation.z = Math.PI / 2;
+  rightGlow.position.set(width / 2 + glowWidth / 2, floorY, 0);
+  rightGlow.name = 'floor-glow-right';
+  group.add(rightGlow);
+}
+
+/**
  * Add scale reference ticks on the floor near the box
  * Shows 1-foot ruler marks to help users trust the AR scale
  */
@@ -304,6 +376,145 @@ function addScaleReference(
 }
 
 /**
+ * Add front edge highlight to indicate box orientation
+ * This helps users understand which way the box is facing
+ */
+function addFrontEdgeHighlight(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  // Create a brighter line along the front bottom edge
+  const frontEdgePoints = [
+    new THREE.Vector3(-width / 2, -height / 2, depth / 2),
+    new THREE.Vector3(width / 2, -height / 2, depth / 2),
+  ];
+  const frontEdgeGeom = new THREE.BufferGeometry().setFromPoints(frontEdgePoints);
+  const frontEdgeMat = new THREE.LineBasicMaterial({
+    color: 0x00ff88, // Bright green to stand out
+    transparent: true,
+    opacity: 0.8,
+  });
+  const frontEdge = new THREE.Line(frontEdgeGeom, frontEdgeMat);
+  frontEdge.name = 'front-edge-highlight';
+  group.add(frontEdge);
+
+  // Add small arrow indicator pointing forward from front edge center
+  const arrowSize = Math.min(width, depth) * 0.15;
+  const arrowPoints = [
+    new THREE.Vector3(0, -height / 2 + 0.002, depth / 2),
+    new THREE.Vector3(0, -height / 2 + 0.002, depth / 2 + arrowSize),
+    // Arrow head left
+    new THREE.Vector3(0, -height / 2 + 0.002, depth / 2 + arrowSize),
+    new THREE.Vector3(-arrowSize * 0.4, -height / 2 + 0.002, depth / 2 + arrowSize * 0.6),
+    // Arrow head right
+    new THREE.Vector3(0, -height / 2 + 0.002, depth / 2 + arrowSize),
+    new THREE.Vector3(arrowSize * 0.4, -height / 2 + 0.002, depth / 2 + arrowSize * 0.6),
+  ];
+  const arrowGeom = new THREE.BufferGeometry().setFromPoints(arrowPoints);
+  const arrowMat = new THREE.LineBasicMaterial({
+    color: 0x00ff88,
+    transparent: true,
+    opacity: 0.5,
+  });
+  const arrow = new THREE.LineSegments(arrowGeom, arrowMat);
+  arrow.name = 'front-arrow';
+  group.add(arrow);
+}
+
+/**
+ * Add rotation arc indicator on the floor
+ * Shows the current rotation angle visually
+ */
+function addRotationArc(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number,
+  rotation_deg: number
+): void {
+  // Only show arc if there's meaningful rotation
+  if (Math.abs(rotation_deg) < 5) return;
+
+  const floorY = -height / 2 + 0.003;
+  const arcRadius = Math.max(width, depth) * 0.6;
+
+  // Create arc from 0 to current rotation
+  const startAngle = -Math.PI / 2; // Points forward (negative Z in local, but we're showing from front)
+  const endAngle = startAngle + (rotation_deg * Math.PI) / 180;
+
+  const arcPoints: THREE.Vector3[] = [];
+  const segments = Math.max(8, Math.abs(Math.round(rotation_deg / 5)));
+  const angleStep = (endAngle - startAngle) / segments;
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = startAngle + i * angleStep;
+    arcPoints.push(
+      new THREE.Vector3(
+        Math.cos(angle) * arcRadius,
+        floorY,
+        Math.sin(angle) * arcRadius
+      )
+    );
+  }
+
+  const arcGeom = new THREE.BufferGeometry().setFromPoints(arcPoints);
+  const arcMat = new THREE.LineBasicMaterial({
+    color: 0xa855f7, // Purple to match rotation control
+    transparent: true,
+    opacity: 0.4,
+  });
+  const arc = new THREE.Line(arcGeom, arcMat);
+  arc.name = 'rotation-arc';
+
+  // Add to group BEFORE rotation is applied (so arc shows in world space)
+  // We need a separate group that doesn't rotate
+  const arcGroup = new THREE.Group();
+  arcGroup.name = 'rotation-arc-group';
+  arcGroup.add(arc);
+
+  // Add tick marks at 0° and current angle
+  const tickLength = 0.03;
+
+  // Start tick (0°)
+  const startTickPoints = [
+    new THREE.Vector3(
+      Math.cos(startAngle) * (arcRadius - tickLength),
+      floorY,
+      Math.sin(startAngle) * (arcRadius - tickLength)
+    ),
+    new THREE.Vector3(
+      Math.cos(startAngle) * (arcRadius + tickLength),
+      floorY,
+      Math.sin(startAngle) * (arcRadius + tickLength)
+    ),
+  ];
+  const startTickGeom = new THREE.BufferGeometry().setFromPoints(startTickPoints);
+  const startTick = new THREE.Line(startTickGeom, arcMat.clone());
+  arcGroup.add(startTick);
+
+  // End tick (current rotation)
+  const endTickPoints = [
+    new THREE.Vector3(
+      Math.cos(endAngle) * (arcRadius - tickLength),
+      floorY,
+      Math.sin(endAngle) * (arcRadius - tickLength)
+    ),
+    new THREE.Vector3(
+      Math.cos(endAngle) * (arcRadius + tickLength),
+      floorY,
+      Math.sin(endAngle) * (arcRadius + tickLength)
+    ),
+  ];
+  const endTickGeom = new THREE.BufferGeometry().setFromPoints(endTickPoints);
+  const endTick = new THREE.Line(endTickGeom, arcMat.clone());
+  arcGroup.add(endTick);
+
+  group.add(arcGroup);
+}
+
+/**
  * Create a bounding box with explicit dimensions at a given center position.
  * @param centerX - World X coordinate of box center
  * @param centerY - World Y coordinate of box center (middle height)
@@ -325,8 +536,12 @@ function createBoxAtCenter(
   const group = new THREE.Group();
   group.name = 'bounding-box';
 
-  // Create box geometry with explicit dimensions
-  const geometry = new THREE.BoxGeometry(width, height, depth);
+  // Calculate corner radius - proportional to smallest dimension, max 2cm
+  const minDim = Math.min(width, height, depth);
+  const cornerRadius = Math.min(minDim * 0.08, 0.02);
+
+  // Create rounded box geometry for softer, less CAD-like appearance
+  const geometry = new RoundedBoxGeometry(width, height, depth, 4, cornerRadius);
 
   // Translucent fill - blue with low opacity
   const fillMaterial = new THREE.MeshBasicMaterial({
@@ -339,8 +554,9 @@ function createBoxAtCenter(
   const fillMesh = new THREE.Mesh(geometry, fillMaterial);
   group.add(fillMesh);
 
-  // Wireframe edges - brighter blue
-  const edgesGeometry = new THREE.EdgesGeometry(geometry);
+  // Wireframe edges - brighter blue (use standard box for cleaner edges)
+  const edgeBoxGeom = new THREE.BoxGeometry(width, height, depth);
+  const edgesGeometry = new THREE.EdgesGeometry(edgeBoxGeom);
   const edgesMaterial = new THREE.LineBasicMaterial({
     color: 0x00ffff,
     linewidth: 2,
@@ -348,32 +564,20 @@ function createBoxAtCenter(
   const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
   group.add(edges);
 
-  // Add single corner handle at the far corner
-  const cornerRadius = 0.04; // 4cm sphere for better visibility
-  const cornerGeometry = new THREE.SphereGeometry(cornerRadius, 16, 16);
-  const cornerMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffaa00, // Orange handle
-    transparent: true,
-    opacity: 0.9,
-  });
-
-  const dragEndLocal = new THREE.Vector3(
-    width / 2,
-    -height / 2,
-    depth / 2
-  );
-
-  const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
-  cornerMesh.position.copy(dragEndLocal);
-  cornerMesh.name = 'corner-handle';
-  cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 };
-  group.add(cornerMesh);
-
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
 
+  // Add floor edge glow
+  addFloorEdgeGlow(group, width, height, depth);
+
   // Add scale reference (1-foot ruler ticks)
   addScaleReference(group, width, height, depth);
+
+  // Add front edge highlight for orientation
+  addFrontEdgeHighlight(group, width, height, depth);
+
+  // Add rotation arc indicator (shows rotation angle on floor)
+  addRotationArc(group, width, height, depth, rotation_deg);
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
@@ -413,8 +617,12 @@ export function createFloorBoundingBox(
   const centerY = Math.min(p1.y, p2.y) + height / 2;
   const centerZ = (p1.z + p2.z) / 2;
 
-  // Create box geometry - axis-aligned for now
-  const geometry = new THREE.BoxGeometry(width, height, depth);
+  // Calculate corner radius - proportional to smallest dimension, max 2cm
+  const minDim = Math.min(width, height, depth);
+  const cornerRadius = Math.min(minDim * 0.08, 0.02);
+
+  // Create rounded box geometry for softer, less CAD-like appearance
+  const geometry = new RoundedBoxGeometry(width, height, depth, 4, cornerRadius);
 
   // Translucent fill - blue with low opacity
   const fillMaterial = new THREE.MeshBasicMaterial({
@@ -427,8 +635,9 @@ export function createFloorBoundingBox(
   const fillMesh = new THREE.Mesh(geometry, fillMaterial);
   group.add(fillMesh);
 
-  // Wireframe edges - brighter blue
-  const edgesGeometry = new THREE.EdgesGeometry(geometry);
+  // Wireframe edges - brighter blue (use standard box for cleaner edges)
+  const edgeBoxGeom = new THREE.BoxGeometry(width, height, depth);
+  const edgesGeometry = new THREE.EdgesGeometry(edgeBoxGeom);
   const edgesMaterial = new THREE.LineBasicMaterial({
     color: 0x00ffff,
     linewidth: 2,
@@ -436,35 +645,20 @@ export function createFloorBoundingBox(
   const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
   group.add(edges);
 
-  // Add single corner handle at the dragEnd position (bottom corner opposite to dragStart)
-  // This represents the second point that was dragged
-  const cornerRadius = 0.04; // 4cm sphere for better visibility
-  const cornerGeometry = new THREE.SphereGeometry(cornerRadius, 16, 16);
-  const cornerMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffaa00, // Orange handle
-    transparent: true,
-    opacity: 0.9,
-  });
-
-  // Corner handle is always at the local (+width/2, +depth/2) position
-  // This ensures it stays in the same corner regardless of rotation
-  const dragEndLocal = new THREE.Vector3(
-    width / 2,   // Always positive (far corner in local space)
-    -height / 2,
-    depth / 2    // Always positive (far corner in local space)
-  );
-
-  const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
-  cornerMesh.position.copy(dragEndLocal);
-  cornerMesh.name = 'corner-handle';
-  cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 }; // Always index 0 since we only have one
-  group.add(cornerMesh);
-
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
 
+  // Add floor edge glow
+  addFloorEdgeGlow(group, width, height, depth);
+
   // Add scale reference (1-foot ruler ticks)
   addScaleReference(group, width, height, depth);
+
+  // Add front edge highlight for orientation
+  addFrontEdgeHighlight(group, width, height, depth);
+
+  // Add rotation arc indicator (shows rotation angle on floor)
+  addRotationArc(group, width, height, depth, rotation_deg);
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);

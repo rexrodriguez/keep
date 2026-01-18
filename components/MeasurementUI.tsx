@@ -51,8 +51,39 @@ export default function MeasurementUI({
   const depthInches = Math.round(context.depth_m * 39.3701);
   const heightInches = Math.round(context.height_m * 39.3701);
 
+  // Fade UI after inactivity to let AR breathe
+  const [isIdle, setIsIdle] = React.useState(false);
+  const idleTimeoutRef = React.useRef<number | null>(null);
+
+  const resetIdleTimer = React.useCallback(() => {
+    setIsIdle(false);
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+    }
+    // Fade after 3 seconds of inactivity
+    idleTimeoutRef.current = window.setTimeout(() => {
+      setIsIdle(true);
+    }, 3000);
+  }, []);
+
+  // Reset timer on dimension/rotation changes
+  React.useEffect(() => {
+    if (showBottomPanel) {
+      resetIdleTimer();
+    }
+    return () => {
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+      }
+    };
+  }, [showBottomPanel, widthInches, depthInches, heightInches, context.rotation_deg, resetIdleTimer]);
+
   return (
-    <div className="fixed inset-0 pointer-events-none flex flex-col">
+    <div
+      className="fixed inset-0 pointer-events-none flex flex-col"
+      onTouchStart={resetIdleTimer}
+      onTouchMove={resetIdleTimer}
+    >
       {/* Minimal top bar - just close button and warnings */}
       <div className="pointer-events-auto p-3 safe-area-top">
         <div className="flex items-start justify-between">
@@ -104,9 +135,14 @@ export default function MeasurementUI({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Bottom panel - Adjustment controls */}
+      {/* Bottom panel - Adjustment controls (fades when idle to let AR breathe) */}
       {showBottomPanel && (
-        <div className="pointer-events-auto bg-black/80 backdrop-blur-md rounded-t-2xl safe-area-bottom">
+        <div
+          className={`pointer-events-auto bg-black/80 backdrop-blur-md rounded-t-2xl safe-area-bottom transition-opacity duration-500 ${
+            isIdle ? 'opacity-40' : 'opacity-100'
+          }`}
+          onTouchStart={resetIdleTimer}
+        >
           {isHeightInput && (
             <AdjustmentPanel
               widthInches={widthInches}
@@ -242,6 +278,13 @@ function AdjustmentPanel({
           <span className="text-white/40 text-[10px] mt-1 block uppercase tracking-wider">Rotate</span>
         </div>
       </div>
+
+      {/* Pre-confirm summary */}
+      <PreConfirmSummary
+        widthInches={widthInches}
+        depthInches={depthInches}
+        heightInches={heightInches}
+      />
 
       {/* Action buttons */}
       <div className="flex gap-3">
@@ -386,6 +429,36 @@ function DimensionStepper({
       >
         +
       </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Pre-Confirm Summary - Shows final dimensions before confirm
+// ============================================================================
+
+function PreConfirmSummary({
+  widthInches,
+  depthInches,
+  heightInches,
+}: {
+  widthInches: number;
+  depthInches: number;
+  heightInches: number;
+}) {
+  // Calculate volume in cubic feet
+  // inches³ to ft³: divide by 1728 (12³)
+  const volumeCubicFeet = (widthInches * depthInches * heightInches) / 1728;
+
+  return (
+    <div className="bg-white/5 rounded-xl p-3 mb-4 text-center">
+      <div className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Final Size</div>
+      <div className="text-white text-lg font-medium">
+        {widthInches}″ W × {depthInches}″ D × {heightInches}″ H
+      </div>
+      <div className="text-white/50 text-sm mt-1">
+        Volume: {volumeCubicFeet.toFixed(2)} ft³
+      </div>
     </div>
   );
 }
