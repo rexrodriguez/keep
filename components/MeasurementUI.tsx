@@ -263,8 +263,15 @@ function AdjustmentPanel({
 }
 
 // ============================================================================
-// Dimension Stepper - Tap to adjust with +/- buttons and direct input
+// Dimension Stepper - Press-and-hold with acceleration
 // ============================================================================
+
+// Haptic feedback helper (Android vibration API)
+function triggerHaptic(intensity: 'light' | 'medium' = 'light') {
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    navigator.vibrate(intensity === 'light' ? 1 : 3);
+  }
+}
 
 function DimensionStepper({
   label,
@@ -286,10 +293,11 @@ function DimensionStepper({
     purple: 'text-purple-400',
   };
 
-  // Long-press for continuous adjustment
+  // Press-and-hold with acceleration
   const intervalRef = React.useRef<number | null>(null);
   const timeoutRef = React.useRef<number | null>(null);
   const localValueRef = React.useRef(value);
+  const tickCountRef = React.useRef(0);
 
   // Keep ref in sync with prop
   React.useEffect(() => {
@@ -305,38 +313,46 @@ function DimensionStepper({
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    tickCountRef.current = 0;
   };
 
-  const handleStartMinus = () => {
-    // Immediate adjustment
-    const newVal = Math.max(min, localValueRef.current - 1);
-    localValueRef.current = newVal;
-    onChange(newVal);
-
-    // Continuous adjustment after delay
-    timeoutRef.current = window.setTimeout(() => {
-      intervalRef.current = window.setInterval(() => {
-        const nextVal = Math.max(min, localValueRef.current - 1);
-        localValueRef.current = nextVal;
-        onChange(nextVal);
-      }, 50);
-    }, 300);
+  // Calculate step size based on hold duration (acceleration)
+  // 0-10 ticks: 1", 10-25 ticks: 2", 25-50 ticks: 6", 50+: 12"
+  const getStepSize = (ticks: number): number => {
+    if (ticks < 10) return 1;
+    if (ticks < 25) return 2;
+    if (ticks < 50) return 6;
+    return 12;
   };
 
-  const handleStartPlus = () => {
-    // Immediate adjustment
-    const newVal = Math.min(max, localValueRef.current + 1);
+  const startContinuousAdjust = (direction: 1 | -1) => {
+    // Immediate single step on tap
+    const newVal = Math.max(min, Math.min(max, localValueRef.current + direction));
     localValueRef.current = newVal;
     onChange(newVal);
+    triggerHaptic('light');
+    tickCountRef.current = 0;
 
-    // Continuous adjustment after delay
+    // Start continuous adjustment after initial delay
     timeoutRef.current = window.setTimeout(() => {
       intervalRef.current = window.setInterval(() => {
-        const nextVal = Math.min(max, localValueRef.current + 1);
-        localValueRef.current = nextVal;
-        onChange(nextVal);
-      }, 50);
-    }, 300);
+        tickCountRef.current++;
+        const step = getStepSize(tickCountRef.current);
+        const nextVal = Math.max(min, Math.min(max, localValueRef.current + direction * step));
+
+        if (nextVal !== localValueRef.current) {
+          localValueRef.current = nextVal;
+          onChange(nextVal);
+
+          // Haptic on acceleration thresholds
+          if (tickCountRef.current === 10 || tickCountRef.current === 25 || tickCountRef.current === 50) {
+            triggerHaptic('medium');
+          } else {
+            triggerHaptic('light');
+          }
+        }
+      }, 60); // ~16fps for smooth feel
+    }, 250); // Shorter initial delay for responsiveness
   };
 
   React.useEffect(() => {
@@ -349,7 +365,7 @@ function DimensionStepper({
   return (
     <div className="flex items-center gap-1">
       <button
-        onPointerDown={handleStartMinus}
+        onPointerDown={() => startContinuousAdjust(-1)}
         onPointerUp={stopAdjusting}
         onPointerLeave={stopAdjusting}
         onPointerCancel={stopAdjusting}
@@ -362,7 +378,7 @@ function DimensionStepper({
         <span className="text-white/30 text-[10px] ml-0.5">{label}</span>
       </div>
       <button
-        onPointerDown={handleStartPlus}
+        onPointerDown={() => startContinuousAdjust(1)}
         onPointerUp={stopAdjusting}
         onPointerLeave={stopAdjusting}
         onPointerCancel={stopAdjusting}
