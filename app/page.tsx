@@ -254,7 +254,7 @@ export default function Home() {
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   3
                 </span>
-                Drag the arrows to resize, rotate, and position the box around your item
+                Aim the reticle at an arrow handle, then drag to resize, rotate, or move the box
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
