@@ -26,6 +26,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="screen-orientation" content="portrait" />
       </head>
       <body className="bg-gray-900 text-white antialiased">
         {children}
