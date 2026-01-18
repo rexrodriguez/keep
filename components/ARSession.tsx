@@ -471,8 +471,34 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     dispatch({ type: 'SET_ROTATION', rotation_deg });
   }, [dispatch]);
 
-  const handleMoveBox = useCallback((deltaX: number, deltaZ: number) => {
-    dispatch({ type: 'MOVE_BOX', deltaX, deltaZ });
+  const handleMoveBox = useCallback((joystickX: number, joystickZ: number) => {
+    // Transform joystick input from camera-relative to world coordinates
+    // joystickX = left/right relative to camera view
+    // joystickZ = forward/back relative to camera view
+
+    const camera = sceneContextRef.current?.camera;
+    if (!camera) {
+      // Fallback to direct mapping if no camera
+      dispatch({ type: 'MOVE_BOX', deltaX: joystickX, deltaZ: joystickZ });
+      return;
+    }
+
+    // Get camera's forward direction projected onto XZ plane (ignore Y)
+    const cameraDir = new THREE.Vector3();
+    camera.getWorldDirection(cameraDir);
+    cameraDir.y = 0;
+    cameraDir.normalize();
+
+    // Camera's right direction (perpendicular to forward on XZ plane)
+    const cameraRight = new THREE.Vector3(-cameraDir.z, 0, cameraDir.x);
+
+    // Transform joystick input to world space:
+    // - joystickX moves along camera's right axis
+    // - joystickZ moves along camera's forward axis
+    const worldDeltaX = joystickX * cameraRight.x + joystickZ * cameraDir.x;
+    const worldDeltaZ = joystickX * cameraRight.z + joystickZ * cameraDir.z;
+
+    dispatch({ type: 'MOVE_BOX', deltaX: worldDeltaX, deltaZ: worldDeltaZ });
   }, [dispatch]);
 
   const handleConfirmHeight = useCallback(() => {
