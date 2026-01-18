@@ -100,6 +100,76 @@ function addDimensionLabels(
 }
 
 /**
+ * Create a soft contact shadow texture using canvas
+ * Creates a radial gradient that fades from dark center to transparent edges
+ */
+function createContactShadowTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d')!;
+
+  // Create radial gradient - dark center fading to transparent
+  const gradient = context.createRadialGradient(
+    size / 2, size / 2, 0,           // Inner circle (center)
+    size / 2, size / 2, size / 2     // Outer circle (edges)
+  );
+
+  // Soft shadow gradient stops
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0.35)');     // Center - darker
+  gradient.addColorStop(0.4, 'rgba(0, 0, 0, 0.25)');   // Mid
+  gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.1)');    // Fade
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');        // Edge - transparent
+
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * Add a contact shadow (floor footprint) under the box
+ * This grounds the box visually and makes it feel more "real"
+ */
+function addContactShadow(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  // Create shadow plane slightly larger than the box footprint
+  const shadowPadding = 0.08; // 8cm padding for soft edge
+  const shadowWidth = width + shadowPadding * 2;
+  const shadowDepth = depth + shadowPadding * 2;
+
+  const shadowGeometry = new THREE.PlaneGeometry(shadowWidth, shadowDepth);
+  const shadowTexture = createContactShadowTexture();
+
+  const shadowMaterial = new THREE.MeshBasicMaterial({
+    map: shadowTexture,
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial);
+
+  // Position at floor level (bottom of box), rotated to lie flat
+  shadowMesh.rotation.x = -Math.PI / 2; // Rotate to horizontal
+  shadowMesh.position.set(0, -height / 2 + 0.001, 0); // Slightly above floor to prevent z-fighting
+  shadowMesh.name = 'contact-shadow';
+
+  // Render shadow before (behind) other objects
+  shadowMesh.renderOrder = -1;
+
+  group.add(shadowMesh);
+}
+
+/**
  * Create a bounding box with explicit dimensions at a given center position.
  * @param centerX - World X coordinate of box center
  * @param centerY - World Y coordinate of box center (middle height)
@@ -164,6 +234,9 @@ function createBoxAtCenter(
   cornerMesh.name = 'corner-handle';
   cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 };
   group.add(cornerMesh);
+
+  // Add contact shadow (floor footprint)
+  addContactShadow(group, width, height, depth);
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
@@ -249,6 +322,9 @@ export function createFloorBoundingBox(
   cornerMesh.name = 'corner-handle';
   cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 }; // Always index 0 since we only have one
   group.add(cornerMesh);
+
+  // Add contact shadow (floor footprint)
+  addContactShadow(group, width, height, depth);
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
