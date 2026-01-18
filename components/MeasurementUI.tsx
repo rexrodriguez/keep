@@ -424,9 +424,12 @@ function Joystick({
 
       const normalizedX = x / maxRadius;
       const normalizedY = y / maxRadius;
-      const speed = 0.015; // meters per tick
+      const speed = 0.006; // meters per tick (reduced from 0.015)
 
-      onMoveRef.current(normalizedX * speed, normalizedY * speed);
+      // Map joystick axes to world movement:
+      // Joystick X (left/right) → deltaX (left/right on plane)
+      // Joystick Y (up/down) → deltaZ (forward/back), inverted so up = forward
+      onMoveRef.current(normalizedX * speed, -normalizedY * speed);
     }, 1000 / 60);
   }, []);
 
