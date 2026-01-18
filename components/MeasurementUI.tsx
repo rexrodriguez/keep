@@ -46,10 +46,10 @@ export default function MeasurementUI({
   const isReadyToDraw = context.state === 'READY_TO_DRAW';
   const showBottomPanel = isHeightInput || isReview;
 
-  // Convert dimensions to cm for display
-  const widthCm = Math.round(context.width_m * 100);
-  const depthCm = Math.round(context.depth_m * 100);
-  const heightCm = Math.round(context.height_m * 100);
+  // Convert dimensions to inches for display (1 meter = 39.3701 inches)
+  const widthInches = Math.round(context.width_m * 39.3701);
+  const depthInches = Math.round(context.depth_m * 39.3701);
+  const heightInches = Math.round(context.height_m * 39.3701);
 
   return (
     <div className="fixed inset-0 pointer-events-none flex flex-col">
@@ -69,12 +69,11 @@ export default function MeasurementUI({
           {showBottomPanel && measurements && (
             <div className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2">
               <div className="flex items-center gap-3 text-sm text-white">
-                <span>{measurements.width_cm.toFixed(0)}</span>
+                <span>{widthInches}"</span>
                 <span className="text-white/40">×</span>
-                <span>{measurements.depth_cm.toFixed(0)}</span>
+                <span>{depthInches}"</span>
                 <span className="text-white/40">×</span>
-                <span>{measurements.height_cm.toFixed(0)}</span>
-                <span className="text-white/40 text-xs">cm</span>
+                <span>{heightInches}"</span>
               </div>
             </div>
           )}
@@ -110,13 +109,13 @@ export default function MeasurementUI({
         <div className="pointer-events-auto bg-black/80 backdrop-blur-md rounded-t-2xl safe-area-bottom">
           {isHeightInput && (
             <AdjustmentPanel
-              widthCm={widthCm}
-              depthCm={depthCm}
-              heightCm={heightCm}
+              widthInches={widthInches}
+              depthInches={depthInches}
+              heightInches={heightInches}
               rotationDeg={context.rotation_deg}
-              onSetWidth={(cm) => onSetWidth(cm / 100)}
-              onSetDepth={(cm) => onSetDepth(cm / 100)}
-              onSetHeight={(cm) => onSetHeight(cm / 100)}
+              onSetWidth={(inches) => onSetWidth(inches * 0.0254)}
+              onSetDepth={(inches) => onSetDepth(inches * 0.0254)}
+              onSetHeight={(inches) => onSetHeight(inches * 0.0254)}
               onSetRotation={onSetRotation}
               onMoveBox={onMoveBox}
               onUndo={onUndo}
@@ -173,9 +172,9 @@ export default function MeasurementUI({
 // ============================================================================
 
 function AdjustmentPanel({
-  widthCm,
-  depthCm,
-  heightCm,
+  widthInches,
+  depthInches,
+  heightInches,
   rotationDeg,
   onSetWidth,
   onSetDepth,
@@ -185,13 +184,13 @@ function AdjustmentPanel({
   onUndo,
   onConfirm,
 }: {
-  widthCm: number;
-  depthCm: number;
-  heightCm: number;
+  widthInches: number;
+  depthInches: number;
+  heightInches: number;
   rotationDeg: number;
-  onSetWidth: (cm: number) => void;
-  onSetDepth: (cm: number) => void;
-  onSetHeight: (cm: number) => void;
+  onSetWidth: (inches: number) => void;
+  onSetDepth: (inches: number) => void;
+  onSetHeight: (inches: number) => void;
   onSetRotation: (deg: number) => void;
   onMoveBox: (deltaX: number, deltaZ: number) => void;
   onUndo: () => void;
@@ -203,19 +202,19 @@ function AdjustmentPanel({
       <div className="grid grid-cols-3 gap-2 mb-4">
         <DimensionStepper
           label="Width"
-          value={widthCm}
+          value={widthInches}
           onChange={onSetWidth}
           color="blue"
         />
         <DimensionStepper
           label="Depth"
-          value={depthCm}
+          value={depthInches}
           onChange={onSetDepth}
           color="green"
         />
         <DimensionStepper
           label="Height"
-          value={heightCm}
+          value={heightInches}
           onChange={onSetHeight}
           color="purple"
         />
@@ -262,11 +261,11 @@ function DimensionStepper({
   onChange,
   color,
   min = 1,
-  max = 500,
+  max = 200,
 }: {
   label: string;
   value: number;
-  onChange: (cm: number) => void;
+  onChange: (inches: number) => void;
   color: 'blue' | 'green' | 'purple';
   min?: number;
   max?: number;
@@ -357,7 +356,7 @@ function DimensionStepper({
         </button>
         <div className="flex-1 text-center">
           <span className="text-white text-lg font-bold">{value}</span>
-          <span className="text-white/50 text-xs ml-0.5">cm</span>
+          <span className="text-white/50 text-xs ml-0.5">in</span>
         </div>
         <button
           onPointerDown={handleStartPlus}
@@ -628,6 +627,20 @@ function RotationDial({
 // Review Panel - Show final measurements and actions
 // ============================================================================
 
+// Helper to format inches as feet and inches (e.g., 27" -> 2'3")
+function formatFeetInches(totalInches: number): string {
+  const feet = Math.floor(totalInches / 12);
+  const inches = Math.round(totalInches % 12);
+  if (feet === 0) return `${inches}"`;
+  if (inches === 0) return `${feet}'`;
+  return `${feet}'${inches}"`;
+}
+
+// Helper to calculate volume in cubic feet
+function calculateCubicFeet(widthIn: number, depthIn: number, heightIn: number): number {
+  return (widthIn * depthIn * heightIn) / 1728; // 1728 cubic inches per cubic foot
+}
+
 function ReviewPanel({
   measurements,
   confidence,
@@ -639,6 +652,12 @@ function ReviewPanel({
   onRedo: () => void;
   onFindStorage: () => void;
 }) {
+  // Convert cm to inches
+  const widthIn = measurements.width_cm / 2.54;
+  const depthIn = measurements.depth_cm / 2.54;
+  const heightIn = measurements.height_cm / 2.54;
+  const volumeCuFt = calculateCubicFeet(widthIn, depthIn, heightIn);
+
   return (
     <div className="p-4">
       {/* Measurements summary */}
@@ -661,20 +680,20 @@ function ReviewPanel({
         </div>
         <div className="grid grid-cols-4 gap-3 text-center">
           <div>
-            <div className="text-white text-xl font-bold">{measurements.width_cm.toFixed(0)}</div>
-            <div className="text-white/50 text-xs">Width cm</div>
+            <div className="text-white text-xl font-bold">{formatFeetInches(widthIn)}</div>
+            <div className="text-white/50 text-xs">Width</div>
           </div>
           <div>
-            <div className="text-white text-xl font-bold">{measurements.depth_cm.toFixed(0)}</div>
-            <div className="text-white/50 text-xs">Depth cm</div>
+            <div className="text-white text-xl font-bold">{formatFeetInches(depthIn)}</div>
+            <div className="text-white/50 text-xs">Depth</div>
           </div>
           <div>
-            <div className="text-white text-xl font-bold">{measurements.height_cm.toFixed(0)}</div>
-            <div className="text-white/50 text-xs">Height cm</div>
+            <div className="text-white text-xl font-bold">{formatFeetInches(heightIn)}</div>
+            <div className="text-white/50 text-xs">Height</div>
           </div>
           <div>
-            <div className="text-white text-xl font-bold">{measurements.volume_m3.toFixed(2)}</div>
-            <div className="text-white/50 text-xs">Vol m³</div>
+            <div className="text-white text-xl font-bold">{volumeCuFt.toFixed(1)}</div>
+            <div className="text-white/50 text-xs">cu ft</div>
           </div>
         </div>
       </div>
