@@ -5,38 +5,6 @@ import { ComputedMeasurements, ConfidenceLevel } from '@/lib/types';
 import { StateMachineContext } from '@/lib/measurement/state-machine';
 import { StabilityMode } from '@/lib/measurement/stabilization';
 
-// Hook to detect landscape orientation
-function useOrientation(): 'portrait' | 'landscape' {
-  const [orientation, setOrientation] = React.useState<'portrait' | 'landscape'>('portrait');
-
-  React.useEffect(() => {
-    const checkOrientation = () => {
-      // Use window dimensions as most reliable method
-      const isLandscape = window.innerWidth > window.innerHeight;
-      setOrientation(isLandscape ? 'landscape' : 'portrait');
-    };
-
-    // Initial check
-    checkOrientation();
-
-    // Listen for resize events (handles rotation)
-    window.addEventListener('resize', checkOrientation);
-
-    // Also listen for orientation change event
-    window.addEventListener('orientationchange', () => {
-      // Small delay to let dimensions update
-      setTimeout(checkOrientation, 100);
-    });
-
-    return () => {
-      window.removeEventListener('resize', checkOrientation);
-      window.removeEventListener('orientationchange', checkOrientation);
-    };
-  }, []);
-
-  return orientation;
-}
-
 interface MeasurementUIProps {
   context: StateMachineContext;
   measurements: ComputedMeasurements | null;
@@ -72,9 +40,6 @@ export default function MeasurementUI({
   onFindStorage,
   onExit,
 }: MeasurementUIProps) {
-  const orientation = useOrientation();
-  const isLandscape = orientation === 'landscape';
-
   const isHeightInput = context.state === 'HEIGHT_INPUT';
   const isReview = context.state === 'REVIEW';
   const isDrawing = context.state === 'DRAWING';
@@ -130,155 +95,84 @@ export default function MeasurementUI({
 
   return (
     <div
-      className={`fixed inset-0 pointer-events-none ${isLandscape ? 'flex flex-row' : 'flex flex-col'}`}
+      className="fixed inset-0 pointer-events-none flex flex-col"
       onTouchStart={resetIdleTimer}
       onTouchMove={resetIdleTimer}
     >
-      {/* Main content area */}
-      <div className={`flex flex-col ${isLandscape ? 'flex-1' : ''}`}>
-        {/* Minimal top bar - just close button and warnings */}
-        <div className="pointer-events-auto p-3 safe-area-top">
-          <div className="flex items-start justify-between">
-            <button
-              onClick={onExit}
-              className="bg-black/50 backdrop-blur-sm text-white/80 hover:text-white p-2 rounded-full"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-
-            {/* Floating dimension display when adjusting (portrait only - in landscape it's on side panel) */}
-            {!isLandscape && showBottomPanel && measurements && (
-              <div className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2">
-                <div className="flex items-center gap-3 text-sm text-white">
-                  <span>{widthInches}"</span>
-                  <span className="text-white/40">×</span>
-                  <span>{depthInches}"</span>
-                  <span className="text-white/40">×</span>
-                  <span>{heightInches}"</span>
-                </div>
-              </div>
-            )}
-
-            {/* Spacer for symmetry */}
-            <div className="w-9" />
-          </div>
-
-          {/* Tracking warning - only show when relevant */}
-          {trackingWarning && !context.isEstimating && (isReadyToDraw || isDrawing) && (
-            <div className="mt-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-3 py-2 mx-auto max-w-xs">
-              <p className="text-yellow-200 text-xs text-center">
-                {trackingWarning}
-              </p>
-            </div>
-          )}
-
-          {/* Error message */}
-          {context.error && (
-            <div className="mt-2 bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mx-auto max-w-xs">
-              <p className="text-red-200 text-xs text-center">
-                {context.error}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Spacer / Center area */}
-        <div className="flex-1 flex items-center justify-center">
-          {/* Confirmation popup - appears briefly when dimensions are confirmed */}
-          {showConfirmPopup && (
-            <div className="bg-black/80 backdrop-blur-md rounded-2xl px-6 py-4 text-center animate-fade-in-out">
-              <div className="text-white/60 text-xs uppercase tracking-wider mb-2">Confirmed</div>
-              <div className="text-white text-2xl font-semibold">
-                <span className="text-cyan-400">{widthInches}″</span>
-                <span className="text-white/40 mx-1">×</span>
-                <span className="text-cyan-400">{depthInches}″</span>
-                <span className="text-white/40 mx-1">×</span>
-                <span className="text-purple-400">{heightInches}″</span>
-              </div>
-              <div className="text-white/50 text-sm mt-1">
-                {((widthInches * depthInches * heightInches) / 1728).toFixed(2)} ft³
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Bottom panel - Portrait mode only */}
-        {!isLandscape && showBottomPanel && (
-          <div
-            className={`pointer-events-auto bg-black/80 backdrop-blur-md rounded-t-2xl safe-area-bottom transition-opacity duration-500 ${
-              isIdle ? 'opacity-40' : 'opacity-100'
-            }`}
-            onTouchStart={resetIdleTimer}
+      {/* Minimal top bar - just close button and warnings */}
+      <div className="pointer-events-auto p-3 safe-area-top">
+        <div className="flex items-start justify-between">
+          <button
+            onClick={onExit}
+            className="bg-black/50 backdrop-blur-sm text-white/80 hover:text-white p-2 rounded-full"
           >
-            {isHeightInput && (
-              <AdjustmentPanel
-                widthInches={widthInches}
-                depthInches={depthInches}
-                heightInches={heightInches}
-                rotationDeg={context.rotation_deg}
-                onSetWidth={(inches) => onSetWidth(inches * 0.0254)}
-                onSetDepth={(inches) => onSetDepth(inches * 0.0254)}
-                onSetHeight={(inches) => onSetHeight(inches * 0.0254)}
-                onSetRotation={onSetRotation}
-                onMoveBox={onMoveBox}
-                onUndo={onUndo}
-                onConfirm={onConfirmHeight}
-                isLandscape={false}
-              />
-            )}
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
 
-            {isReview && measurements && (
-              <ReviewPanel
-                measurements={measurements}
-                confidence={confidence}
-                onRedo={onReset}
-                onFindStorage={onFindStorage}
-                isLandscape={false}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Floating hints for initial states */}
-        {isReadyToDraw && !trackingWarning && (
-          <div className="pointer-events-none pb-8 px-4">
-            <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
-              <span className="text-white text-sm">
-                Tap to place a box
-              </span>
+          {/* Floating dimension display when adjusting */}
+          {showBottomPanel && measurements && (
+            <div className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2">
+              <div className="flex items-center gap-3 text-sm text-white">
+                <span>{widthInches}"</span>
+                <span className="text-white/40">×</span>
+                <span>{depthInches}"</span>
+                <span className="text-white/40">×</span>
+                <span>{heightInches}"</span>
+              </div>
             </div>
+          )}
+
+          {/* Spacer for symmetry */}
+          <div className="w-9" />
+        </div>
+
+        {/* Tracking warning - only show when relevant */}
+        {trackingWarning && !context.isEstimating && (isReadyToDraw || isDrawing) && (
+          <div className="mt-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-3 py-2 mx-auto max-w-xs">
+            <p className="text-yellow-200 text-xs text-center">
+              {trackingWarning}
+            </p>
           </div>
         )}
 
-        {isDrawing && (
-          <div className="pointer-events-none pb-8 px-4">
-            <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
-              <span className="text-white text-sm">
-                Drag to resize
-              </span>
+        {/* Error message */}
+        {context.error && (
+          <div className="mt-2 bg-red-500/20 border border-red-500/40 rounded-lg px-3 py-2 mx-auto max-w-xs">
+            <p className="text-red-200 text-xs text-center">
+              {context.error}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Spacer */}
+      <div className="flex-1 flex items-center justify-center">
+        {/* Confirmation popup - appears briefly when dimensions are confirmed */}
+        {showConfirmPopup && (
+          <div className="bg-black/80 backdrop-blur-md rounded-2xl px-6 py-4 text-center animate-fade-in-out">
+            <div className="text-white/60 text-xs uppercase tracking-wider mb-2">Confirmed</div>
+            <div className="text-white text-2xl font-semibold">
+              <span className="text-cyan-400">{widthInches}″</span>
+              <span className="text-white/40 mx-1">×</span>
+              <span className="text-cyan-400">{depthInches}″</span>
+              <span className="text-white/40 mx-1">×</span>
+              <span className="text-purple-400">{heightInches}″</span>
             </div>
-          </div>
-        )}
-
-        {context.isEstimating && (
-          <div className="pointer-events-none pb-8 px-4">
-            <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit flex items-center gap-2">
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span className="text-white text-sm">Analyzing...</span>
+            <div className="text-white/50 text-sm mt-1">
+              {((widthInches * depthInches * heightInches) / 1728).toFixed(2)} ft³
             </div>
           </div>
         )}
       </div>
 
-      {/* Side panel - Landscape mode only */}
-      {isLandscape && showBottomPanel && (
+      {/* Bottom panel - Adjustment controls (fades when idle to let AR breathe) */}
+      {showBottomPanel && (
         <div
-          className={`pointer-events-auto bg-black/80 backdrop-blur-md rounded-l-2xl transition-opacity duration-500 flex flex-col ${
+          className={`pointer-events-auto bg-black/80 backdrop-blur-md rounded-t-2xl safe-area-bottom transition-opacity duration-500 ${
             isIdle ? 'opacity-40' : 'opacity-100'
           }`}
-          style={{ width: '280px' }}
           onTouchStart={resetIdleTimer}
         >
           {isHeightInput && (
@@ -294,7 +188,6 @@ export default function MeasurementUI({
               onMoveBox={onMoveBox}
               onUndo={onUndo}
               onConfirm={onConfirmHeight}
-              isLandscape={true}
             />
           )}
 
@@ -304,9 +197,38 @@ export default function MeasurementUI({
               confidence={confidence}
               onRedo={onReset}
               onFindStorage={onFindStorage}
-              isLandscape={true}
             />
           )}
+        </div>
+      )}
+
+      {/* Floating hints for initial states */}
+      {isReadyToDraw && !trackingWarning && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
+            <span className="text-white text-sm">
+              Tap to place a box
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isDrawing && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
+            <span className="text-white text-sm">
+              Drag to resize
+            </span>
+          </div>
+        </div>
+      )}
+
+      {context.isEstimating && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <span className="text-white text-sm">Analyzing...</span>
+          </div>
         </div>
       )}
     </div>
@@ -329,7 +251,6 @@ function AdjustmentPanel({
   onMoveBox,
   onUndo,
   onConfirm,
-  isLandscape,
 }: {
   widthInches: number;
   depthInches: number;
@@ -342,78 +263,7 @@ function AdjustmentPanel({
   onMoveBox: (deltaX: number, deltaZ: number) => void;
   onUndo: () => void;
   onConfirm: () => void;
-  isLandscape: boolean;
 }) {
-  if (isLandscape) {
-    // Landscape layout - vertical stacking, compact
-    return (
-      <div className="p-3 flex flex-col h-full">
-        {/* Dimension display at top */}
-        <div className="bg-white/5 rounded-lg px-3 py-2 mb-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-sm text-white">
-            <span className="text-cyan-400">{widthInches}"</span>
-            <span className="text-white/40">×</span>
-            <span className="text-cyan-400">{depthInches}"</span>
-            <span className="text-white/40">×</span>
-            <span className="text-purple-400">{heightInches}"</span>
-          </div>
-        </div>
-
-        {/* Dimensions - stacked vertically */}
-        <div className="space-y-2 mb-3">
-          {/* Footprint group */}
-          <div className="bg-cyan-500/10 rounded-xl p-2">
-            <div className="text-cyan-400/60 text-[10px] uppercase tracking-wider mb-1 text-center">Footprint</div>
-            <div className="flex justify-center gap-2">
-              <DimensionStepper label="W" value={widthInches} onChange={onSetWidth} color="cyan" />
-              <DimensionStepper label="D" value={depthInches} onChange={onSetDepth} color="cyan" />
-            </div>
-          </div>
-
-          {/* Height */}
-          <div className="bg-purple-500/10 rounded-xl p-2">
-            <div className="text-purple-400/60 text-[10px] uppercase tracking-wider mb-1 text-center">Height</div>
-            <div className="flex justify-center">
-              <DimensionStepper label="H" value={heightInches} onChange={onSetHeight} color="purple" />
-            </div>
-          </div>
-        </div>
-
-        {/* Position controls - smaller, side by side */}
-        <div className="flex items-center justify-center gap-4 mb-3">
-          <div className="text-center scale-75 origin-center">
-            <Joystick onMove={onMoveBox} />
-            <span className="text-white/40 text-[9px] mt-0.5 block uppercase tracking-wider">Move</span>
-          </div>
-          <div className="text-center scale-75 origin-center">
-            <RotationDial value={rotationDeg} onChange={onSetRotation} />
-            <span className="text-white/40 text-[9px] mt-0.5 block uppercase tracking-wider">Rotate</span>
-          </div>
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Action buttons */}
-        <div className="flex gap-2">
-          <button
-            onClick={onUndo}
-            className="flex-1 py-2 px-3 rounded-xl font-medium bg-white/10 text-white text-sm active:bg-white/20 transition-colors"
-          >
-            Redo
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2 px-3 rounded-xl font-medium bg-blue-500 text-white text-sm active:bg-blue-600 transition-colors"
-          >
-            Confirm
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Portrait layout - original horizontal layout
   return (
     <div className="p-4">
       {/* Dimensions - Footprint (W×D) grouped, Height separate */}
@@ -867,13 +717,11 @@ function ReviewPanel({
   confidence,
   onRedo,
   onFindStorage,
-  isLandscape,
 }: {
   measurements: ComputedMeasurements;
   confidence: ConfidenceLevel | null;
   onRedo: () => void;
   onFindStorage: () => void;
-  isLandscape: boolean;
 }) {
   // Convert cm to inches
   const widthIn = measurements.width_cm / 2.54;
@@ -881,71 +729,6 @@ function ReviewPanel({
   const heightIn = measurements.height_cm / 2.54;
   const volumeCuFt = calculateCubicFeet(widthIn, depthIn, heightIn);
 
-  if (isLandscape) {
-    // Landscape layout - compact vertical stacking
-    return (
-      <div className="p-3 flex flex-col h-full">
-        {/* Measurements summary */}
-        <div className="bg-white/5 rounded-xl p-3 mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-white/60 text-xs">Dimensions</span>
-            {confidence && (
-              <span
-                className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  confidence === 'HIGH'
-                    ? 'bg-green-500/20 text-green-400'
-                    : confidence === 'MEDIUM'
-                    ? 'bg-yellow-500/20 text-yellow-400'
-                    : 'bg-red-500/20 text-red-400'
-                }`}
-              >
-                {confidence.toLowerCase()}
-              </span>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-center">
-            <div>
-              <div className="text-white text-lg font-bold">{formatFeetInches(widthIn)}</div>
-              <div className="text-white/50 text-[10px]">Width</div>
-            </div>
-            <div>
-              <div className="text-white text-lg font-bold">{formatFeetInches(depthIn)}</div>
-              <div className="text-white/50 text-[10px]">Depth</div>
-            </div>
-            <div>
-              <div className="text-white text-lg font-bold">{formatFeetInches(heightIn)}</div>
-              <div className="text-white/50 text-[10px]">Height</div>
-            </div>
-            <div>
-              <div className="text-white text-lg font-bold">{volumeCuFt.toFixed(1)}</div>
-              <div className="text-white/50 text-[10px]">cu ft</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Action buttons - stacked in landscape */}
-        <div className="space-y-2">
-          <button
-            onClick={onFindStorage}
-            className="w-full py-2 px-3 rounded-xl font-medium bg-blue-500 text-white text-sm active:bg-blue-600 transition-colors"
-          >
-            Find Storage
-          </button>
-          <button
-            onClick={onRedo}
-            className="w-full py-2 px-3 rounded-xl font-medium bg-white/10 text-white text-sm active:bg-white/20 transition-colors"
-          >
-            Measure Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Portrait layout
   return (
     <div className="p-4">
       {/* Measurements summary */}
