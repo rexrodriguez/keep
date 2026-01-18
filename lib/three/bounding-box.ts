@@ -2,6 +2,81 @@ import * as THREE from 'three';
 import { MeasurementPoint } from '@/lib/types';
 
 /**
+ * Create a bounding box with explicit dimensions at a given center position.
+ * @param centerX - World X coordinate of box center
+ * @param centerY - World Y coordinate of box center (middle height)
+ * @param centerZ - World Z coordinate of box center
+ * @param width - Box width (local X dimension)
+ * @param height - Box height (local Y dimension)
+ * @param depth - Box depth (local Z dimension)
+ * @param rotation_deg - Rotation around Y axis in degrees
+ */
+function createBoxAtCenter(
+  centerX: number,
+  centerY: number,
+  centerZ: number,
+  width: number,
+  height: number,
+  depth: number,
+  rotation_deg: number
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'bounding-box';
+
+  // Create box geometry with explicit dimensions
+  const geometry = new THREE.BoxGeometry(width, height, depth);
+
+  // Translucent fill - blue with low opacity
+  const fillMaterial = new THREE.MeshBasicMaterial({
+    color: 0x00aaff,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const fillMesh = new THREE.Mesh(geometry, fillMaterial);
+  group.add(fillMesh);
+
+  // Wireframe edges - brighter blue
+  const edgesGeometry = new THREE.EdgesGeometry(geometry);
+  const edgesMaterial = new THREE.LineBasicMaterial({
+    color: 0x00ffff,
+    linewidth: 2,
+  });
+  const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+  group.add(edges);
+
+  // Add single corner handle at the far corner
+  const cornerRadius = 0.04; // 4cm sphere for better visibility
+  const cornerGeometry = new THREE.SphereGeometry(cornerRadius, 16, 16);
+  const cornerMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffaa00, // Orange handle
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  const dragEndLocal = new THREE.Vector3(
+    width / 2,
+    -height / 2,
+    depth / 2
+  );
+
+  const cornerMesh = new THREE.Mesh(cornerGeometry, cornerMaterial);
+  cornerMesh.position.copy(dragEndLocal);
+  cornerMesh.name = 'corner-handle';
+  cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 };
+  group.add(cornerMesh);
+
+  // Position the group at the center
+  group.position.set(centerX, centerY, centerZ);
+
+  // Apply rotation around Y axis
+  group.rotation.y = (rotation_deg * Math.PI) / 180;
+
+  return group;
+}
+
+/**
  * Create or update a bounding box from two floor points and a height value.
  * The box is positioned between the two floor points and extends upward.
  * @param rotation_deg - Optional rotation in degrees (applied around Y axis)
@@ -125,28 +200,27 @@ export function updateBoundingBox(
   const p1 = floorPoint1.position;
   const p2 = floorPoint2.position;
 
-  // In LLM mode with overrides, use positive offsets from p1 as anchor
-  // Otherwise preserve the actual drag direction
+  // When we have explicit width/depth overrides, use the new createBoxAtCenter function
+  // This properly handles rotation by using explicit dimensions instead of calculating from points
   if (overrideWidth !== undefined && overrideDepth !== undefined) {
     const actualWidth = Math.max(overrideWidth, minDim);
     const actualDepth = Math.max(overrideDepth, minDim);
     const actualHeight = Math.max(height, minDim);
 
-    // Create adjusted points - use p1 as anchor with positive offsets
-    const adjustedP1: MeasurementPoint = {
-      ...floorPoint1,
-      position: p1.clone(),
-    };
-    const adjustedP2: MeasurementPoint = {
-      ...floorPoint2,
-      position: new THREE.Vector3(
-        p1.x + actualWidth,
-        p2.y,
-        p1.z + actualDepth
-      ),
-    };
+    // Calculate center of current box
+    const centerX = (p1.x + p2.x) / 2;
+    const centerY = Math.min(p1.y, p2.y) + actualHeight / 2;
+    const centerZ = (p1.z + p2.z) / 2;
 
-    const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg);
+    const box = createBoxAtCenter(
+      centerX,
+      centerY,
+      centerZ,
+      actualWidth,
+      actualHeight,
+      actualDepth,
+      rotation_deg
+    );
     scene.add(box);
     return;
   }
