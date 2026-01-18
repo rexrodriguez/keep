@@ -95,7 +95,7 @@ export default function MeasurementUI({
 
   return (
     <div
-      className="fixed inset-0 pointer-events-none flex flex-col"
+      className="fixed inset-0 pointer-events-none flex flex-col justify-between"
       onTouchStart={resetIdleTimer}
       onTouchMove={resetIdleTimer}
     >
