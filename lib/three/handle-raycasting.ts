@@ -38,27 +38,50 @@ export function raycastHandles(
     return null;
   }
 
-  // Collect all handle meshes
-  const handles: THREE.Object3D[] = [];
+  // Collect all meshes within handle groups (raycast needs actual meshes)
+  const handleMeshes: THREE.Object3D[] = [];
   boundingBox.traverse((child) => {
-    if (child.name.startsWith('handle-')) {
-      handles.push(child);
+    // Include meshes that are either handles themselves or children of handle groups
+    if (child instanceof THREE.Mesh) {
+      // Check if this mesh or any ancestor is a handle
+      let current: THREE.Object3D | null = child;
+      while (current && current !== boundingBox) {
+        if (current.name.startsWith('handle-')) {
+          handleMeshes.push(child);
+          break;
+        }
+        current = current.parent;
+      }
     }
   });
 
-  if (handles.length === 0) {
+  if (handleMeshes.length === 0) {
     return null;
   }
 
   // Raycast against handle meshes
-  const intersects = raycaster.intersectObjects(handles, false);
+  const intersects = raycaster.intersectObjects(handleMeshes, false);
 
   if (intersects.length === 0) {
     return null;
   }
 
   const hit = intersects[0];
-  const userData = hit.object.userData;
+
+  // Find the handle group/object that contains this mesh (walk up the parent chain)
+  let handleObject: THREE.Object3D | null = hit.object;
+  while (handleObject && handleObject !== boundingBox) {
+    if (handleObject.name.startsWith('handle-') && handleObject.userData.handleType) {
+      break;
+    }
+    handleObject = handleObject.parent;
+  }
+
+  if (!handleObject || !handleObject.userData.handleType) {
+    return null;
+  }
+
+  const userData = handleObject.userData;
 
   // Get local position relative to bounding box
   const localPos = hit.point.clone();

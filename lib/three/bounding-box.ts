@@ -607,61 +607,159 @@ function addInteractionHandles(
     side: THREE.DoubleSide,
   });
 
-  // Edge hit region thickness (3cm for finger-friendly touch)
-  const edgeThickness = 0.03;
+  // VISIBLE arrow handles for edges - these are both visual AND interactive
+  // Each face gets a visible arrow pointing outward that users can drag
+  const arrowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee, // Cyan for width/depth
+    transparent: true,
+    opacity: 0.8,
+    depthTest: false,
+  });
 
-  // Front edge - controls depth (drag forward/back)
-  const frontEdgeGeom = new THREE.BoxGeometry(width * 0.8, edgeThickness, edgeThickness);
-  const frontEdge = new THREE.Mesh(frontEdgeGeom, hitMaterial.clone());
-  frontEdge.position.set(0, -hh, hd);
-  frontEdge.userData = { handleType: 'edge', edge: 'front', axis: 'depth', direction: 1 };
-  frontEdge.name = 'handle-edge-front';
-  group.add(frontEdge);
+  const arrowLength = 0.08; // 8cm arrow
+  const arrowRadius = 0.025; // 2.5cm radius cone
 
-  // Back edge - controls depth
-  const backEdgeGeom = new THREE.BoxGeometry(width * 0.8, edgeThickness, edgeThickness);
-  const backEdge = new THREE.Mesh(backEdgeGeom, hitMaterial.clone());
-  backEdge.position.set(0, -hh, -hd);
-  backEdge.userData = { handleType: 'edge', edge: 'back', axis: 'depth', direction: -1 };
-  backEdge.name = 'handle-edge-back';
-  group.add(backEdge);
+  // Front arrow - controls depth (drag forward/back)
+  const frontArrowGroup = new THREE.Group();
+  frontArrowGroup.name = 'handle-edge-front';
+  frontArrowGroup.userData = { handleType: 'edge', edge: 'front', axis: 'depth', direction: 1 };
 
-  // Left edge - controls width
-  const leftEdgeGeom = new THREE.BoxGeometry(edgeThickness, edgeThickness, depth * 0.8);
-  const leftEdge = new THREE.Mesh(leftEdgeGeom, hitMaterial.clone());
-  leftEdge.position.set(-hw, -hh, 0);
-  leftEdge.userData = { handleType: 'edge', edge: 'left', axis: 'width', direction: -1 };
-  leftEdge.name = 'handle-edge-left';
-  group.add(leftEdge);
+  const frontCone = new THREE.Mesh(
+    new THREE.ConeGeometry(arrowRadius, arrowLength, 8),
+    arrowMaterial.clone()
+  );
+  frontCone.rotation.x = Math.PI / 2; // Point forward
+  frontArrowGroup.add(frontCone);
 
-  // Right edge - controls width
-  const rightEdgeGeom = new THREE.BoxGeometry(edgeThickness, edgeThickness, depth * 0.8);
-  const rightEdge = new THREE.Mesh(rightEdgeGeom, hitMaterial.clone());
-  rightEdge.position.set(hw, -hh, 0);
-  rightEdge.userData = { handleType: 'edge', edge: 'right', axis: 'width', direction: 1 };
-  rightEdge.name = 'handle-edge-right';
-  group.add(rightEdge);
+  // Add invisible hit box around arrow for easier touch
+  const frontHitBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    hitMaterial.clone()
+  );
+  frontArrowGroup.add(frontHitBox);
 
-  // Top face hit region - controls height
-  const topFaceGeom = new THREE.PlaneGeometry(width * 0.7, depth * 0.7);
-  const topFace = new THREE.Mesh(topFaceGeom, hitMaterial.clone());
-  topFace.rotation.x = -Math.PI / 2;
-  topFace.position.set(0, hh, 0);
-  topFace.userData = { handleType: 'topFace' };
-  topFace.name = 'handle-top-face';
-  group.add(topFace);
+  frontArrowGroup.position.set(0, 0, hd + arrowLength / 2 + 0.02);
+  group.add(frontArrowGroup);
+
+  // Back arrow - controls depth
+  const backArrowGroup = new THREE.Group();
+  backArrowGroup.name = 'handle-edge-back';
+  backArrowGroup.userData = { handleType: 'edge', edge: 'back', axis: 'depth', direction: -1 };
+
+  const backCone = new THREE.Mesh(
+    new THREE.ConeGeometry(arrowRadius, arrowLength, 8),
+    arrowMaterial.clone()
+  );
+  backCone.rotation.x = -Math.PI / 2; // Point backward
+  backArrowGroup.add(backCone);
+
+  const backHitBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    hitMaterial.clone()
+  );
+  backArrowGroup.add(backHitBox);
+
+  backArrowGroup.position.set(0, 0, -hd - arrowLength / 2 - 0.02);
+  group.add(backArrowGroup);
+
+  // Left arrow - controls width
+  const leftArrowGroup = new THREE.Group();
+  leftArrowGroup.name = 'handle-edge-left';
+  leftArrowGroup.userData = { handleType: 'edge', edge: 'left', axis: 'width', direction: -1 };
+
+  const leftCone = new THREE.Mesh(
+    new THREE.ConeGeometry(arrowRadius, arrowLength, 8),
+    arrowMaterial.clone()
+  );
+  leftCone.rotation.z = Math.PI / 2; // Point left
+  leftArrowGroup.add(leftCone);
+
+  const leftHitBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    hitMaterial.clone()
+  );
+  leftArrowGroup.add(leftHitBox);
+
+  leftArrowGroup.position.set(-hw - arrowLength / 2 - 0.02, 0, 0);
+  group.add(leftArrowGroup);
+
+  // Right arrow - controls width
+  const rightArrowGroup = new THREE.Group();
+  rightArrowGroup.name = 'handle-edge-right';
+  rightArrowGroup.userData = { handleType: 'edge', edge: 'right', axis: 'width', direction: 1 };
+
+  const rightCone = new THREE.Mesh(
+    new THREE.ConeGeometry(arrowRadius, arrowLength, 8),
+    arrowMaterial.clone()
+  );
+  rightCone.rotation.z = -Math.PI / 2; // Point right
+  rightArrowGroup.add(rightCone);
+
+  const rightHitBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.12, 0.12),
+    hitMaterial.clone()
+  );
+  rightArrowGroup.add(rightHitBox);
+
+  rightArrowGroup.position.set(hw + arrowLength / 2 + 0.02, 0, 0);
+  group.add(rightArrowGroup);
+
+  // Top face - VISIBLE upward arrow for height control
+  const heightArrowMaterial = new THREE.MeshBasicMaterial({
+    color: 0xc084fc, // Purple for height
+    transparent: true,
+    opacity: 0.8,
+    depthTest: false,
+  });
+
+  const topArrowGroup = new THREE.Group();
+  topArrowGroup.name = 'handle-top-face';
+  topArrowGroup.userData = { handleType: 'topFace' };
+
+  // Upward pointing cone
+  const topCone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.03, 0.1, 8),
+    heightArrowMaterial.clone()
+  );
+  topArrowGroup.add(topCone);
+
+  // Stem below the cone
+  const topStem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.01, 0.01, 0.05, 8),
+    heightArrowMaterial.clone()
+  );
+  topStem.position.y = -0.075;
+  topArrowGroup.add(topStem);
+
+  // Invisible hit box for easier touch
+  const topHitBox = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, 0.2, 0.15),
+    hitMaterial.clone()
+  );
+  topArrowGroup.add(topHitBox);
+
+  topArrowGroup.position.set(0, hh + 0.08, 0);
+  group.add(topArrowGroup);
 
   // Bottom face hit region - controls position (move box)
-  const bottomFaceGeom = new THREE.PlaneGeometry(width * 0.5, depth * 0.5);
+  // Use a thicker box at floor level
+  const bottomFaceGeom = new THREE.BoxGeometry(width * 0.4, 0.05, depth * 0.4);
   const bottomFace = new THREE.Mesh(bottomFaceGeom, hitMaterial.clone());
-  bottomFace.rotation.x = -Math.PI / 2;
-  bottomFace.position.set(0, -hh + 0.001, 0);
+  bottomFace.position.set(0, -hh + 0.025, 0);
   bottomFace.userData = { handleType: 'bottomFace' };
   bottomFace.name = 'handle-bottom-face';
   group.add(bottomFace);
 
   // UPPER corner handles for ROTATION (4 corners at top of box)
-  const cornerRadius = 0.05; // 5cm radius sphere for easier touch
+  // VISIBLE purple spheres with rotation arc icons
+  const rotationHandleMat = new THREE.MeshBasicMaterial({
+    color: 0xc084fc, // Purple for rotation
+    transparent: true,
+    opacity: 0.7,
+    depthTest: false,
+  });
+
+  const cornerRadius = 0.04; // 4cm visible sphere
   const upperCornerPositions: [number, number, number, number][] = [
     [-hw, hh, hd, 0],   // top-front-left
     [hw, hh, hd, 1],    // top-front-right
@@ -670,15 +768,46 @@ function addInteractionHandles(
   ];
 
   for (const [x, y, z, index] of upperCornerPositions) {
-    const cornerGeom = new THREE.SphereGeometry(cornerRadius);
-    const corner = new THREE.Mesh(cornerGeom, hitMaterial.clone());
-    corner.position.set(x, y, z);
-    corner.userData = { handleType: 'cornerTop', cornerIndex: index };
-    corner.name = `handle-corner-top-${index}`;
-    group.add(corner);
+    const cornerGroup = new THREE.Group();
+    cornerGroup.name = `handle-corner-top-${index}`;
+    cornerGroup.userData = { handleType: 'cornerTop', cornerIndex: index };
+
+    // Visible sphere
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(cornerRadius),
+      rotationHandleMat.clone()
+    );
+    cornerGroup.add(sphere);
+
+    // Small rotation arc around the sphere
+    const arc = new THREE.Mesh(
+      new THREE.TorusGeometry(cornerRadius + 0.015, 0.005, 8, 12, Math.PI * 0.7),
+      rotationHandleMat.clone()
+    );
+    arc.rotation.x = -Math.PI / 2;
+    arc.rotation.z = (index * Math.PI) / 2;
+    cornerGroup.add(arc);
+
+    // Invisible hit box for easier touch
+    const hitBox = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08),
+      hitMaterial.clone()
+    );
+    cornerGroup.add(hitBox);
+
+    cornerGroup.position.set(x, y + 0.02, z);
+    group.add(cornerGroup);
   }
 
   // LOWER corner handles for MOVEMENT (4 corners at floor level)
+  // VISIBLE cyan spheres with move arrows
+  const moveHandleMat = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee, // Cyan for movement
+    transparent: true,
+    opacity: 0.7,
+    depthTest: false,
+  });
+
   const lowerCornerPositions: [number, number, number, number][] = [
     [-hw, -hh, hd, 0],   // bottom-front-left
     [hw, -hh, hd, 1],    // bottom-front-right
@@ -687,228 +816,42 @@ function addInteractionHandles(
   ];
 
   for (const [x, y, z, index] of lowerCornerPositions) {
-    const cornerGeom = new THREE.SphereGeometry(cornerRadius);
-    const corner = new THREE.Mesh(cornerGeom, hitMaterial.clone());
-    corner.position.set(x, y, z);
-    corner.userData = { handleType: 'cornerBottom', cornerIndex: index };
-    corner.name = `handle-corner-bottom-${index}`;
-    group.add(corner);
-  }
-}
+    const cornerGroup = new THREE.Group();
+    cornerGroup.name = `handle-corner-bottom-${index}`;
+    cornerGroup.userData = { handleType: 'cornerBottom', cornerIndex: index };
 
-/**
- * Add visible handle indicators that show affordances for direct manipulation
- * These highlight when handles are active
- */
-function addVisualHandleIndicators(
-  group: THREE.Group,
-  width: number,
-  height: number,
-  depth: number
-): void {
-  const hw = width / 2;
-  const hh = height / 2;
-  const hd = depth / 2;
-
-  // Edge indicator material (cyan, semi-transparent)
-  const edgeIndicatorMat = new THREE.MeshBasicMaterial({
-    color: 0x22d3ee,
-    transparent: true,
-    opacity: 0.4,
-    depthTest: false,
-  });
-
-  // Small spheres at edge midpoints
-  const indicatorRadius = 0.015; // 1.5cm
-
-  // Front edge indicator
-  const frontIndicator = new THREE.Mesh(
-    new THREE.SphereGeometry(indicatorRadius),
-    edgeIndicatorMat.clone()
-  );
-  frontIndicator.position.set(0, -hh, hd);
-  frontIndicator.name = 'indicator-edge-front';
-  group.add(frontIndicator);
-
-  // Back edge indicator
-  const backIndicator = new THREE.Mesh(
-    new THREE.SphereGeometry(indicatorRadius),
-    edgeIndicatorMat.clone()
-  );
-  backIndicator.position.set(0, -hh, -hd);
-  backIndicator.name = 'indicator-edge-back';
-  group.add(backIndicator);
-
-  // Left edge indicator
-  const leftIndicator = new THREE.Mesh(
-    new THREE.SphereGeometry(indicatorRadius),
-    edgeIndicatorMat.clone()
-  );
-  leftIndicator.position.set(-hw, -hh, 0);
-  leftIndicator.name = 'indicator-edge-left';
-  group.add(leftIndicator);
-
-  // Right edge indicator
-  const rightIndicator = new THREE.Mesh(
-    new THREE.SphereGeometry(indicatorRadius),
-    edgeIndicatorMat.clone()
-  );
-  rightIndicator.position.set(hw, -hh, 0);
-  rightIndicator.name = 'indicator-edge-right';
-  group.add(rightIndicator);
-
-  // Top face indicator (upward arrow sprite)
-  const topIndicatorMat = new THREE.MeshBasicMaterial({
-    color: 0xc084fc,
-    transparent: true,
-    opacity: 0.5,
-    depthTest: false,
-  });
-  const topIndicator = new THREE.Mesh(
-    new THREE.ConeGeometry(0.02, 0.04, 8),
-    topIndicatorMat
-  );
-  topIndicator.position.set(0, hh + 0.03, 0);
-  topIndicator.name = 'indicator-top-face';
-  group.add(topIndicator);
-
-  // Bottom face indicator (move icon - 4 arrows)
-  const bottomIndicatorMat = new THREE.MeshBasicMaterial({
-    color: 0x22d3ee,
-    transparent: true,
-    opacity: 0.4,
-    depthTest: false,
-  });
-
-  // Create a simple cross shape for move icon
-  const moveIconGroup = new THREE.Group();
-  moveIconGroup.name = 'indicator-bottom-face';
-
-  const arrowSize = Math.min(width, depth) * 0.1;
-  const arrowGeom = new THREE.ConeGeometry(arrowSize * 0.3, arrowSize, 4);
-
-  // Up arrow (forward)
-  const upArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
-  upArrow.rotation.x = -Math.PI / 2;
-  upArrow.position.set(0, 0, arrowSize);
-  moveIconGroup.add(upArrow);
-
-  // Down arrow (back)
-  const downArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
-  downArrow.rotation.x = Math.PI / 2;
-  downArrow.position.set(0, 0, -arrowSize);
-  moveIconGroup.add(downArrow);
-
-  // Left arrow
-  const leftArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
-  leftArrow.rotation.z = Math.PI / 2;
-  leftArrow.position.set(-arrowSize, 0, 0);
-  moveIconGroup.add(leftArrow);
-
-  // Right arrow
-  const rightArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
-  rightArrow.rotation.z = -Math.PI / 2;
-  rightArrow.position.set(arrowSize, 0, 0);
-  moveIconGroup.add(rightArrow);
-
-  moveIconGroup.position.set(0, -hh + 0.005, 0);
-  group.add(moveIconGroup);
-
-  // UPPER corner indicators for ROTATION (purple arc icons at top)
-  const rotationIndicatorMat = new THREE.MeshBasicMaterial({
-    color: 0xc084fc, // Purple for rotation
-    transparent: true,
-    opacity: 0.6,
-    depthTest: false,
-  });
-
-  const upperCornerPositions: [number, number, number, number][] = [
-    [-hw, hh + 0.005, hd, 0],   // top-front-left
-    [hw, hh + 0.005, hd, 1],    // top-front-right
-    [hw, hh + 0.005, -hd, 2],   // top-back-right
-    [-hw, hh + 0.005, -hd, 3],  // top-back-left
-  ];
-
-  for (const [x, y, z, index] of upperCornerPositions) {
-    // Create a rotation arc icon (curved arrow)
-    const cornerIndicator = new THREE.Mesh(
-      new THREE.TorusGeometry(0.025, 0.005, 8, 12, Math.PI * 0.8),
-      rotationIndicatorMat.clone()
+    // Visible sphere
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(cornerRadius),
+      moveHandleMat.clone()
     );
-    cornerIndicator.rotation.x = -Math.PI / 2;
-    // Rotate each corner indicator to face outward
-    cornerIndicator.rotation.z = (index * Math.PI) / 2 + Math.PI / 4;
-    cornerIndicator.position.set(x, y, z);
-    cornerIndicator.name = `indicator-corner-top-${index}`;
-    group.add(cornerIndicator);
+    cornerGroup.add(sphere);
 
-    // Add a small arrow head to indicate rotation direction
-    const arrowHead = new THREE.Mesh(
-      new THREE.ConeGeometry(0.008, 0.015, 4),
-      rotationIndicatorMat.clone()
-    );
-    // Position at the end of the arc
-    const arcEndAngle = Math.PI * 0.8;
-    const arrowAngle = (index * Math.PI) / 2 + Math.PI / 4 + arcEndAngle;
-    arrowHead.position.set(
-      x + Math.cos(arrowAngle) * 0.025,
-      y,
-      z + Math.sin(arrowAngle) * 0.025
-    );
-    arrowHead.rotation.z = arrowAngle + Math.PI / 2;
-    arrowHead.rotation.x = -Math.PI / 2;
-    arrowHead.name = `indicator-corner-top-arrow-${index}`;
-    group.add(arrowHead);
-  }
-
-  // LOWER corner indicators for MOVEMENT (cyan move arrows at bottom)
-  const moveIndicatorMat = new THREE.MeshBasicMaterial({
-    color: 0x22d3ee, // Cyan for movement
-    transparent: true,
-    opacity: 0.6,
-    depthTest: false,
-  });
-
-  const lowerCornerPositions: [number, number, number, number][] = [
-    [-hw, -hh + 0.005, hd, 0],   // bottom-front-left
-    [hw, -hh + 0.005, hd, 1],    // bottom-front-right
-    [hw, -hh + 0.005, -hd, 2],   // bottom-back-right
-    [-hw, -hh + 0.005, -hd, 3],  // bottom-back-left
-  ];
-
-  for (const [x, y, z, index] of lowerCornerPositions) {
-    // Create a four-way arrow icon for movement
-    const moveIconGroup = new THREE.Group();
-    moveIconGroup.name = `indicator-corner-bottom-${index}`;
-
-    const arrowSize = 0.018;
-    const arrowGeom = new THREE.ConeGeometry(arrowSize * 0.5, arrowSize, 4);
-
-    // Four arrows pointing outward
+    // Four small arrows pointing outward (move icon)
+    const miniArrowGeom = new THREE.ConeGeometry(0.012, 0.025, 4);
     const directions = [
-      { dx: 1, dz: 0, rot: -Math.PI / 2 },  // right
-      { dx: -1, dz: 0, rot: Math.PI / 2 },  // left
-      { dx: 0, dz: 1, rot: 0 },             // forward
-      { dx: 0, dz: -1, rot: Math.PI },      // back
+      { rx: 0, rz: -Math.PI / 2, ox: 0.05, oz: 0 },  // right
+      { rx: 0, rz: Math.PI / 2, ox: -0.05, oz: 0 },  // left
+      { rx: Math.PI / 2, rz: 0, ox: 0, oz: 0.05 },   // forward
+      { rx: -Math.PI / 2, rz: 0, ox: 0, oz: -0.05 }, // back
     ];
-
     for (const dir of directions) {
-      const arrow = new THREE.Mesh(arrowGeom, moveIndicatorMat.clone());
-      arrow.position.set(dir.dx * arrowSize, 0, dir.dz * arrowSize);
-      arrow.rotation.x = -Math.PI / 2;
-      arrow.rotation.y = dir.rot;
-      moveIconGroup.add(arrow);
+      const arrow = new THREE.Mesh(miniArrowGeom, moveHandleMat.clone());
+      arrow.rotation.x = dir.rx;
+      arrow.rotation.z = dir.rz;
+      arrow.position.set(dir.ox, 0, dir.oz);
+      cornerGroup.add(arrow);
     }
 
-    // Add center dot
-    const centerDot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.006),
-      moveIndicatorMat.clone()
+    // Invisible hit box for easier touch
+    const hitBox = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08),
+      hitMaterial.clone()
     );
-    moveIconGroup.add(centerDot);
+    cornerGroup.add(hitBox);
 
-    moveIconGroup.position.set(x, y, z);
-    group.add(moveIconGroup);
+    cornerGroup.position.set(x, y + 0.04, z); // Raise slightly above floor
+    group.add(cornerGroup);
   }
 }
 
@@ -1027,11 +970,8 @@ function createBoxAtCenter(
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
 
-  // Add interaction handles for direct manipulation
+  // Add interaction handles for direct manipulation (now visible)
   addInteractionHandles(group, width, height, depth);
-
-  // Add visual indicators for handles
-  addVisualHandleIndicators(group, width, height, depth);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -1107,11 +1047,8 @@ export function createFloorBoundingBox(
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
 
-  // Add interaction handles for direct manipulation
+  // Add interaction handles for direct manipulation (now visible)
   addInteractionHandles(group, width, height, depth);
-
-  // Add visual indicators for handles
-  addVisualHandleIndicators(group, width, height, depth);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
