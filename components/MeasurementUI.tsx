@@ -198,37 +198,48 @@ function AdjustmentPanel({
 }) {
   return (
     <div className="p-4">
-      {/* Dimension inputs - simple stepper style */}
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        <DimensionStepper
-          label="Width"
-          value={widthInches}
-          onChange={onSetWidth}
-          color="blue"
-        />
-        <DimensionStepper
-          label="Depth"
-          value={depthInches}
-          onChange={onSetDepth}
-          color="green"
-        />
-        <DimensionStepper
-          label="Height"
-          value={heightInches}
-          onChange={onSetHeight}
-          color="purple"
-        />
+      {/* Dimensions - Footprint (W×D) grouped, Height separate */}
+      <div className="flex gap-3 mb-4">
+        {/* Footprint group - Width & Depth in cyan/teal */}
+        <div className="flex-1 bg-cyan-500/10 rounded-xl p-3">
+          <div className="text-cyan-400/60 text-[10px] uppercase tracking-wider mb-2 text-center">Footprint</div>
+          <div className="flex gap-2">
+            <DimensionStepper
+              label="W"
+              value={widthInches}
+              onChange={onSetWidth}
+              color="cyan"
+            />
+            <DimensionStepper
+              label="D"
+              value={depthInches}
+              onChange={onSetDepth}
+              color="cyan"
+            />
+          </div>
+        </div>
+
+        {/* Height - distinct purple */}
+        <div className="bg-purple-500/10 rounded-xl p-3">
+          <div className="text-purple-400/60 text-[10px] uppercase tracking-wider mb-2 text-center">Height</div>
+          <DimensionStepper
+            label="H"
+            value={heightInches}
+            onChange={onSetHeight}
+            color="purple"
+          />
+        </div>
       </div>
 
       {/* Position controls - joystick and rotation */}
       <div className="flex items-center justify-center gap-6 mb-4">
         <div className="text-center">
           <Joystick onMove={onMoveBox} />
-          <span className="text-white/50 text-xs mt-1 block">Move</span>
+          <span className="text-white/40 text-[10px] mt-1 block uppercase tracking-wider">Move</span>
         </div>
         <div className="text-center">
           <RotationDial value={rotationDeg} onChange={onSetRotation} />
-          <span className="text-white/50 text-xs mt-1 block">Rotate</span>
+          <span className="text-white/40 text-[10px] mt-1 block uppercase tracking-wider">Rotate</span>
         </div>
       </div>
 
@@ -266,20 +277,13 @@ function DimensionStepper({
   label: string;
   value: number;
   onChange: (inches: number) => void;
-  color: 'blue' | 'green' | 'purple';
+  color: 'cyan' | 'purple';
   min?: number;
   max?: number;
 }) {
   const colorClasses = {
-    blue: 'bg-blue-500/20 border-blue-500/30 text-blue-400',
-    green: 'bg-green-500/20 border-green-500/30 text-green-400',
-    purple: 'bg-purple-500/20 border-purple-500/30 text-purple-400',
-  };
-
-  const buttonColorClasses = {
-    blue: 'active:bg-blue-500/30',
-    green: 'active:bg-green-500/30',
-    purple: 'active:bg-purple-500/30',
+    cyan: 'text-cyan-400',
+    purple: 'text-purple-400',
   };
 
   // Long-press for continuous adjustment
@@ -341,33 +345,31 @@ function DimensionStepper({
     };
   }, []);
 
+  // Minimal chrome - number is the hero
   return (
-    <div className={`rounded-xl border ${colorClasses[color]} p-2`}>
-      <div className="text-xs text-center mb-1 opacity-70">{label}</div>
-      <div className="flex items-center justify-between gap-1">
-        <button
-          onPointerDown={handleStartMinus}
-          onPointerUp={stopAdjusting}
-          onPointerLeave={stopAdjusting}
-          onPointerCancel={stopAdjusting}
-          className={`w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-lg font-bold ${buttonColorClasses[color]} select-none touch-none`}
-        >
-          −
-        </button>
-        <div className="flex-1 text-center">
-          <span className="text-white text-lg font-bold">{value}</span>
-          <span className="text-white/50 text-xs ml-0.5">in</span>
-        </div>
-        <button
-          onPointerDown={handleStartPlus}
-          onPointerUp={stopAdjusting}
-          onPointerLeave={stopAdjusting}
-          onPointerCancel={stopAdjusting}
-          className={`w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-lg font-bold ${buttonColorClasses[color]} select-none touch-none`}
-        >
-          +
-        </button>
+    <div className="flex items-center gap-1">
+      <button
+        onPointerDown={handleStartMinus}
+        onPointerUp={stopAdjusting}
+        onPointerLeave={stopAdjusting}
+        onPointerCancel={stopAdjusting}
+        className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${colorClasses[color]} opacity-50 active:opacity-100 select-none touch-none`}
+      >
+        −
+      </button>
+      <div className="text-center min-w-[3rem]">
+        <span className={`text-xl font-semibold ${colorClasses[color]}`}>{value}</span>
+        <span className="text-white/30 text-[10px] ml-0.5">{label}</span>
       </div>
+      <button
+        onPointerDown={handleStartPlus}
+        onPointerUp={stopAdjusting}
+        onPointerLeave={stopAdjusting}
+        onPointerCancel={stopAdjusting}
+        className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${colorClasses[color]} opacity-50 active:opacity-100 select-none touch-none`}
+      >
+        +
+      </button>
     </div>
   );
 }

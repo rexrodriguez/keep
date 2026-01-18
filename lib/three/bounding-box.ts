@@ -73,6 +73,7 @@ function createTextSprite(
 
 /**
  * Add dimension labels to a box group
+ * Width & Depth use cyan (footprint), Height uses purple (vertical)
  */
 function addDimensionLabels(
   group: THREE.Group,
@@ -80,19 +81,19 @@ function addDimensionLabels(
   height: number,
   depth: number
 ): void {
-  // Width label - on front edge at bottom
-  const widthLabel = createTextSprite(formatInches(width), '#60a5fa'); // blue-400
+  // Width label - on front edge at bottom (cyan - footprint)
+  const widthLabel = createTextSprite(formatInches(width), '#22d3ee'); // cyan-400
   widthLabel.position.set(0, -height / 2, depth / 2 + 0.05);
   widthLabel.name = 'label-width';
   group.add(widthLabel);
 
-  // Depth label - on right edge at bottom
-  const depthLabel = createTextSprite(formatInches(depth), '#4ade80'); // green-400
+  // Depth label - on right edge at bottom (cyan - footprint)
+  const depthLabel = createTextSprite(formatInches(depth), '#22d3ee'); // cyan-400
   depthLabel.position.set(width / 2 + 0.05, -height / 2, 0);
   depthLabel.name = 'label-depth';
   group.add(depthLabel);
 
-  // Height label - on front-right vertical edge
+  // Height label - on front-right vertical edge (purple - vertical)
   const heightLabel = createTextSprite(formatInches(height), '#c084fc'); // purple-400
   heightLabel.position.set(width / 2 + 0.05, 0, depth / 2 + 0.05);
   heightLabel.name = 'label-height';
