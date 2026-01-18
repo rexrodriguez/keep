@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export type HandleType = 'edge' | 'topFace' | 'bottomFace' | 'corner';
+export type HandleType = 'edge' | 'topFace' | 'bottomFace' | 'cornerTop' | 'cornerBottom';
 export type EdgeType = 'front' | 'back' | 'left' | 'right';
 export type AxisType = 'width' | 'depth';
 
@@ -129,7 +129,8 @@ export function highlightHandle(
         (handleType === 'edge' && child.name === `indicator-edge-${handleId}`) ||
         (handleType === 'topFace' && child.name === 'indicator-top-face') ||
         (handleType === 'bottomFace' && child.name === 'indicator-bottom-face') ||
-        (handleType === 'corner' && child.name === `indicator-corner-${handleId}`);
+        (handleType === 'cornerTop' && child.name === `indicator-corner-top-${handleId}`) ||
+        (handleType === 'cornerBottom' && child.name === `indicator-corner-bottom-${handleId}`);
 
       if (isTarget) {
         material.opacity = 1.0;

@@ -330,8 +330,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           handleHit.edge || handleHit.cornerIndex?.toString()
         );
 
-        // If corner handle, show rotation guide
-        if (handleHit.type === 'corner' && context.dragStart && context.dragEnd) {
+        // If upper corner handle (rotation), show rotation guide
+        if (handleHit.type === 'cornerTop' && context.dragStart && context.dragEnd) {
           const p1 = context.dragStart.position;
           const p2 = context.dragEnd.position;
           const centerX = (p1.x + p2.x) / 2;
@@ -442,8 +442,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
           dispatch({ type: 'MOVE_BOX', deltaX, deltaZ });
         }
-      } else if (handle.type === 'corner') {
-        // Corner drag - calculate rotation from screen position around box center
+      } else if (handle.type === 'cornerTop') {
+        // Upper corner drag - calculate rotation from screen position around box center
         const boxCenterScreen = getBoxCenterScreen();
         if (boxCenterScreen) {
           const newRotation = calculateRotationFromCornerDrag(
@@ -454,6 +454,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           );
 
           dispatch({ type: 'SET_ROTATION', rotation_deg: newRotation });
+        }
+      } else if (handle.type === 'cornerBottom') {
+        // Lower corner drag - move box position (same as bottom face)
+        const currentWorldPos = raycastToFloorPlane(
+          touch.clientX,
+          touch.clientY,
+          sceneContextRef.current.camera,
+          window.innerWidth,
+          window.innerHeight,
+          handle.startWorldPos.y
+        );
+
+        if (currentWorldPos) {
+          const deltaX = currentWorldPos.x - handle.startWorldPos.x;
+          const deltaZ = currentWorldPos.z - handle.startWorldPos.z;
+
+          // Update start position for continuous movement
+          handle.startWorldPos.copy(currentWorldPos);
+
+          dispatch({ type: 'MOVE_BOX', deltaX, deltaZ });
         }
       }
 
@@ -509,8 +529,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
 
     // End any active handle manipulation
     if (activeHandleRef.current && sceneContextRef.current) {
-      // Remove rotation guide if it was shown
-      if (activeHandleRef.current.type === 'corner') {
+      // Remove rotation guide if it was shown (only for upper corners)
+      if (activeHandleRef.current.type === 'cornerTop') {
         removeRotationGuide(sceneContextRef.current.scene);
       }
 

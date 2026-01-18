@@ -251,7 +251,7 @@ function AdjustmentPanel({
         {isManipulating ? (
           <span className="text-white/70">Adjusting...</span>
         ) : (
-          <span>Drag edges to resize • Drag corners to rotate</span>
+          <span>Edges resize • Top corners rotate • Bottom corners move</span>
         )}
       </div>
 

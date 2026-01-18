@@ -660,21 +660,38 @@ function addInteractionHandles(
   bottomFace.name = 'handle-bottom-face';
   group.add(bottomFace);
 
-  // Corner handles for rotation (4 corners at floor level)
-  const cornerRadius = 0.04; // 4cm radius sphere for touch
-  const cornerPositions: [number, number, number, number][] = [
-    [-hw, -hh, hd, 0],   // front-left
-    [hw, -hh, hd, 1],    // front-right
-    [hw, -hh, -hd, 2],   // back-right
-    [-hw, -hh, -hd, 3],  // back-left
+  // UPPER corner handles for ROTATION (4 corners at top of box)
+  const cornerRadius = 0.05; // 5cm radius sphere for easier touch
+  const upperCornerPositions: [number, number, number, number][] = [
+    [-hw, hh, hd, 0],   // top-front-left
+    [hw, hh, hd, 1],    // top-front-right
+    [hw, hh, -hd, 2],   // top-back-right
+    [-hw, hh, -hd, 3],  // top-back-left
   ];
 
-  for (const [x, y, z, index] of cornerPositions) {
+  for (const [x, y, z, index] of upperCornerPositions) {
     const cornerGeom = new THREE.SphereGeometry(cornerRadius);
     const corner = new THREE.Mesh(cornerGeom, hitMaterial.clone());
     corner.position.set(x, y, z);
-    corner.userData = { handleType: 'corner', cornerIndex: index };
-    corner.name = `handle-corner-${index}`;
+    corner.userData = { handleType: 'cornerTop', cornerIndex: index };
+    corner.name = `handle-corner-top-${index}`;
+    group.add(corner);
+  }
+
+  // LOWER corner handles for MOVEMENT (4 corners at floor level)
+  const lowerCornerPositions: [number, number, number, number][] = [
+    [-hw, -hh, hd, 0],   // bottom-front-left
+    [hw, -hh, hd, 1],    // bottom-front-right
+    [hw, -hh, -hd, 2],   // bottom-back-right
+    [-hw, -hh, -hd, 3],  // bottom-back-left
+  ];
+
+  for (const [x, y, z, index] of lowerCornerPositions) {
+    const cornerGeom = new THREE.SphereGeometry(cornerRadius);
+    const corner = new THREE.Mesh(cornerGeom, hitMaterial.clone());
+    corner.position.set(x, y, z);
+    corner.userData = { handleType: 'cornerBottom', cornerIndex: index };
+    corner.name = `handle-corner-bottom-${index}`;
     group.add(corner);
   }
 }
@@ -797,32 +814,101 @@ function addVisualHandleIndicators(
   moveIconGroup.position.set(0, -hh + 0.005, 0);
   group.add(moveIconGroup);
 
-  // Corner indicators for rotation (small arc icons)
-  const cornerIndicatorMat = new THREE.MeshBasicMaterial({
-    color: 0xc084fc,
+  // UPPER corner indicators for ROTATION (purple arc icons at top)
+  const rotationIndicatorMat = new THREE.MeshBasicMaterial({
+    color: 0xc084fc, // Purple for rotation
     transparent: true,
-    opacity: 0.5,
+    opacity: 0.6,
     depthTest: false,
   });
 
-  const cornerPositions: [number, number, number, number][] = [
-    [-hw, -hh + 0.005, hd, 0],
-    [hw, -hh + 0.005, hd, 1],
-    [hw, -hh + 0.005, -hd, 2],
-    [-hw, -hh + 0.005, -hd, 3],
+  const upperCornerPositions: [number, number, number, number][] = [
+    [-hw, hh + 0.005, hd, 0],   // top-front-left
+    [hw, hh + 0.005, hd, 1],    // top-front-right
+    [hw, hh + 0.005, -hd, 2],   // top-back-right
+    [-hw, hh + 0.005, -hd, 3],  // top-back-left
   ];
 
-  for (const [x, y, z, index] of cornerPositions) {
+  for (const [x, y, z, index] of upperCornerPositions) {
+    // Create a rotation arc icon (curved arrow)
     const cornerIndicator = new THREE.Mesh(
-      new THREE.TorusGeometry(0.02, 0.004, 8, 8, Math.PI * 0.75),
-      cornerIndicatorMat.clone()
+      new THREE.TorusGeometry(0.025, 0.005, 8, 12, Math.PI * 0.8),
+      rotationIndicatorMat.clone()
     );
     cornerIndicator.rotation.x = -Math.PI / 2;
     // Rotate each corner indicator to face outward
     cornerIndicator.rotation.z = (index * Math.PI) / 2 + Math.PI / 4;
     cornerIndicator.position.set(x, y, z);
-    cornerIndicator.name = `indicator-corner-${index}`;
+    cornerIndicator.name = `indicator-corner-top-${index}`;
     group.add(cornerIndicator);
+
+    // Add a small arrow head to indicate rotation direction
+    const arrowHead = new THREE.Mesh(
+      new THREE.ConeGeometry(0.008, 0.015, 4),
+      rotationIndicatorMat.clone()
+    );
+    // Position at the end of the arc
+    const arcEndAngle = Math.PI * 0.8;
+    const arrowAngle = (index * Math.PI) / 2 + Math.PI / 4 + arcEndAngle;
+    arrowHead.position.set(
+      x + Math.cos(arrowAngle) * 0.025,
+      y,
+      z + Math.sin(arrowAngle) * 0.025
+    );
+    arrowHead.rotation.z = arrowAngle + Math.PI / 2;
+    arrowHead.rotation.x = -Math.PI / 2;
+    arrowHead.name = `indicator-corner-top-arrow-${index}`;
+    group.add(arrowHead);
+  }
+
+  // LOWER corner indicators for MOVEMENT (cyan move arrows at bottom)
+  const moveIndicatorMat = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee, // Cyan for movement
+    transparent: true,
+    opacity: 0.6,
+    depthTest: false,
+  });
+
+  const lowerCornerPositions: [number, number, number, number][] = [
+    [-hw, -hh + 0.005, hd, 0],   // bottom-front-left
+    [hw, -hh + 0.005, hd, 1],    // bottom-front-right
+    [hw, -hh + 0.005, -hd, 2],   // bottom-back-right
+    [-hw, -hh + 0.005, -hd, 3],  // bottom-back-left
+  ];
+
+  for (const [x, y, z, index] of lowerCornerPositions) {
+    // Create a four-way arrow icon for movement
+    const moveIconGroup = new THREE.Group();
+    moveIconGroup.name = `indicator-corner-bottom-${index}`;
+
+    const arrowSize = 0.018;
+    const arrowGeom = new THREE.ConeGeometry(arrowSize * 0.5, arrowSize, 4);
+
+    // Four arrows pointing outward
+    const directions = [
+      { dx: 1, dz: 0, rot: -Math.PI / 2 },  // right
+      { dx: -1, dz: 0, rot: Math.PI / 2 },  // left
+      { dx: 0, dz: 1, rot: 0 },             // forward
+      { dx: 0, dz: -1, rot: Math.PI },      // back
+    ];
+
+    for (const dir of directions) {
+      const arrow = new THREE.Mesh(arrowGeom, moveIndicatorMat.clone());
+      arrow.position.set(dir.dx * arrowSize, 0, dir.dz * arrowSize);
+      arrow.rotation.x = -Math.PI / 2;
+      arrow.rotation.y = dir.rot;
+      moveIconGroup.add(arrow);
+    }
+
+    // Add center dot
+    const centerDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.006),
+      moveIndicatorMat.clone()
+    );
+    moveIconGroup.add(centerDot);
+
+    moveIconGroup.position.set(x, y, z);
+    group.add(moveIconGroup);
   }
 }
 
