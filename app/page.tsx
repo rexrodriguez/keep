@@ -248,19 +248,19 @@ export default function Home() {
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   2
                 </span>
-                Tap on the base of your item to place a measurement box
+                Tap to place a measurement box on the floor
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   3
                 </span>
-                Adjust size and position of the virtual box using the on-screen controls
+                Drag the arrows to resize, rotate, and position the box around your item
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   4
                 </span>
-                Confirm dimensions and find matching storage units
+                Confirm dimensions and find matching storage units nearby
               </li>
             </ol>
           </div>
