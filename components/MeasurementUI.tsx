@@ -383,7 +383,148 @@ function DimensionRoller({
   );
 }
 
-// Rotation roller component (circular dial) with position controls
+// Joystick component for continuous position control
+function Joystick({
+  onMove,
+}: {
+  onMove: (deltaX: number, deltaZ: number) => void;
+}) {
+  const areaRef = React.useRef<HTMLDivElement>(null);
+  const thumbRef = React.useRef<HTMLDivElement>(null);
+  const intervalRef = React.useRef<number | null>(null);
+  const positionRef = React.useRef({ x: 0, y: 0 });
+  const onMoveRef = React.useRef(onMove);
+  const [isActive, setIsActive] = React.useState(false);
+
+  // Keep onMove ref updated to avoid stale closure
+  React.useEffect(() => {
+    onMoveRef.current = onMove;
+  }, [onMove]);
+
+  const maxRadius = 40; // Max distance thumb can move from center
+
+  const updateThumbPosition = React.useCallback((clientX: number, clientY: number) => {
+    if (!areaRef.current || !thumbRef.current) return;
+
+    const rect = areaRef.current.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    let dx = clientX - centerX;
+    let dy = clientY - centerY;
+
+    // Clamp to max radius
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > maxRadius) {
+      dx = (dx / distance) * maxRadius;
+      dy = (dy / distance) * maxRadius;
+    }
+
+    positionRef.current = { x: dx, y: dy };
+    thumbRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
+  }, []);
+
+  const startContinuousMove = React.useCallback(() => {
+    if (intervalRef.current) return;
+
+    intervalRef.current = window.setInterval(() => {
+      const { x, y } = positionRef.current;
+      if (x === 0 && y === 0) return;
+
+      // Normalize to -1 to 1 range and apply as movement
+      // Speed: ~2cm per tick at full deflection (60fps = ~1.2m/s max)
+      const normalizedX = x / maxRadius;
+      const normalizedY = y / maxRadius;
+      const speed = 0.02; // meters per tick
+
+      // Use ref to get latest callback
+      // X maps to deltaX, Y maps to deltaZ (forward/back on plane)
+      onMoveRef.current(normalizedX * speed, normalizedY * speed);
+    }, 1000 / 60); // 60fps
+  }, []);
+
+  const stopContinuousMove = React.useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    positionRef.current = { x: 0, y: 0 };
+    if (thumbRef.current) {
+      thumbRef.current.style.transform = 'translate(0px, 0px)';
+    }
+    setIsActive(false);
+  }, []);
+
+  const handlePointerDown = React.useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setIsActive(true);
+    updateThumbPosition(e.clientX, e.clientY);
+    startContinuousMove();
+  }, [updateThumbPosition, startContinuousMove]);
+
+  const handlePointerMove = React.useCallback((e: React.PointerEvent) => {
+    if (!isActive) return;
+    updateThumbPosition(e.clientX, e.clientY);
+  }, [isActive, updateThumbPosition]);
+
+  const handlePointerUp = React.useCallback(() => {
+    stopContinuousMove();
+  }, [stopContinuousMove]);
+
+  React.useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div
+      ref={areaRef}
+      className="relative w-24 h-24 rounded-full cursor-pointer select-none touch-none"
+      style={{
+        background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
+        border: '2px solid rgba(255,255,255,0.2)',
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
+      {/* Inner guide ring */}
+      <div
+        className="absolute rounded-full border border-white/10"
+        style={{
+          width: maxRadius * 2,
+          height: maxRadius * 2,
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+        }}
+      />
+      {/* Thumb */}
+      <div
+        ref={thumbRef}
+        className={`absolute rounded-full transition-colors ${
+          isActive ? 'bg-blue-500 shadow-lg shadow-blue-500/50' : 'bg-white/60'
+        }`}
+        style={{
+          width: 32,
+          height: 32,
+          left: '50%',
+          top: '50%',
+          marginLeft: -16,
+          marginTop: -16,
+        }}
+      />
+    </div>
+  );
+}
+
+// Rotation roller component (circular dial) with joystick position control
 function RotationSlider({
   value,
   onChange,
@@ -428,8 +569,7 @@ function RotationSlider({
     onChange(Math.round(angle));
   };
 
-  const dialRadius = 60; // Radius of the dial
-  const moveIncrement = 0.025; // 2.5cm movement per tap
+  const dialRadius = 48; // Slightly smaller dial to fit with joystick
 
   return (
     <div>
@@ -438,114 +578,71 @@ function RotationSlider({
         <span className="text-white text-lg font-bold">{value}°</span>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Circular roller dial */}
-        <div
-          ref={rollerRef}
-          className="relative shrink-0 cursor-pointer select-none touch-none"
-          style={{ width: dialRadius * 2, height: dialRadius * 2 }}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-        >
-          {/* Outer ring */}
-          <div className="absolute inset-0 rounded-full bg-white/10 border-2 border-white/20" />
-
-          {/* Degree markers every 45° */}
-          {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
-            const rad = (deg - 90) * (Math.PI / 180);
-            const x = dialRadius + Math.cos(rad) * (dialRadius - 12);
-            const y = dialRadius + Math.sin(rad) * (dialRadius - 12);
-            return (
-              <div
-                key={deg}
-                className="absolute w-1.5 h-1.5 rounded-full bg-white/40"
-                style={{
-                  left: x - 3,
-                  top: y - 3,
-                }}
-              />
-            );
-          })}
-
-          {/* Indicator line */}
+      <div className="flex items-center justify-around gap-4">
+        {/* Circular rotation dial */}
+        <div className="text-center">
           <div
-            className="absolute bg-purple-500 rounded-full"
-            style={{
-              width: 4,
-              height: dialRadius - 16,
-              left: dialRadius - 2,
-              top: 8,
-              transformOrigin: `center ${dialRadius - 8}px`,
-              transform: `rotate(${value}deg)`,
-              transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-            }}
-          />
-
-          {/* Center knob */}
-          <div
-            className="absolute rounded-full bg-purple-500 shadow-lg"
-            style={{
-              width: 20,
-              height: 20,
-              left: dialRadius - 10,
-              top: dialRadius - 10,
-            }}
-          />
-        </div>
-
-        {/* Directional arrows for position control */}
-        <div className="flex-1 grid grid-cols-3 grid-rows-3 gap-1">
-          {/* Top row */}
-          <div />
-          <button
-            onClick={() => onMoveBox(0, -moveIncrement)}
-            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
+            ref={rollerRef}
+            className="relative shrink-0 cursor-pointer select-none touch-none mx-auto"
+            style={{ width: dialRadius * 2, height: dialRadius * 2 }}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
           >
-            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-            </svg>
-          </button>
-          <div />
+            {/* Outer ring */}
+            <div className="absolute inset-0 rounded-full bg-white/10 border-2 border-white/20" />
 
-          {/* Middle row */}
-          <button
-            onClick={() => onMoveBox(-moveIncrement, 0)}
-            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
-          >
-            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-          <div className="flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-white/40" />
+            {/* Degree markers every 45° */}
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
+              const rad = (deg - 90) * (Math.PI / 180);
+              const x = dialRadius + Math.cos(rad) * (dialRadius - 10);
+              const y = dialRadius + Math.sin(rad) * (dialRadius - 10);
+              return (
+                <div
+                  key={deg}
+                  className="absolute w-1 h-1 rounded-full bg-white/40"
+                  style={{
+                    left: x - 2,
+                    top: y - 2,
+                  }}
+                />
+              );
+            })}
+
+            {/* Indicator line */}
+            <div
+              className="absolute bg-purple-500 rounded-full"
+              style={{
+                width: 3,
+                height: dialRadius - 14,
+                left: dialRadius - 1.5,
+                top: 7,
+                transformOrigin: `center ${dialRadius - 7}px`,
+                transform: `rotate(${value}deg)`,
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+              }}
+            />
+
+            {/* Center knob */}
+            <div
+              className="absolute rounded-full bg-purple-500 shadow-lg"
+              style={{
+                width: 16,
+                height: 16,
+                left: dialRadius - 8,
+                top: dialRadius - 8,
+              }}
+            />
           </div>
-          <button
-            onClick={() => onMoveBox(moveIncrement, 0)}
-            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
-          >
-            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          {/* Bottom row */}
-          <div />
-          <button
-            onClick={() => onMoveBox(0, moveIncrement)}
-            className="bg-white/10 hover:bg-white/20 active:bg-white/30 rounded p-2 transition-colors"
-          >
-            <svg className="w-5 h-5 text-white mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          <div />
+          <span className="text-white/40 text-xs mt-1 block">Rotate</span>
         </div>
-      </div>
 
-      <div className="text-center mt-1">
-        <span className="text-white/40 text-xs">Arrows move box by 5cm</span>
+        {/* Joystick for position control */}
+        <div className="text-center">
+          <Joystick onMove={onMoveBox} />
+          <span className="text-white/40 text-xs mt-1 block">Move</span>
+        </div>
       </div>
     </div>
   );
