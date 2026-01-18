@@ -11,13 +11,9 @@ interface MeasurementUIProps {
   confidence: ConfidenceLevel | null;
   trackingWarning: string | null;
   stabilityMode: StabilityMode;
+  isManipulating?: boolean;
   onUndo: () => void;
   onReset: () => void;
-  onSetWidth: (width_m: number) => void;
-  onSetDepth: (depth_m: number) => void;
-  onSetHeight: (height_m: number) => void;
-  onSetRotation: (rotation_deg: number) => void;
-  onMoveBox: (deltaX: number, deltaZ: number) => void;
   onConfirmHeight: () => void;
   onFindStorage: () => void;
   onSetStabilityMode: (mode: StabilityMode) => void;
@@ -29,13 +25,9 @@ export default function MeasurementUI({
   measurements,
   confidence,
   trackingWarning,
+  isManipulating = false,
   onUndo,
   onReset,
-  onSetWidth,
-  onSetDepth,
-  onSetHeight,
-  onSetRotation,
-  onMoveBox,
   onConfirmHeight,
   onFindStorage,
   onExit,
@@ -181,11 +173,7 @@ export default function MeasurementUI({
               depthInches={depthInches}
               heightInches={heightInches}
               rotationDeg={context.rotation_deg}
-              onSetWidth={(inches) => onSetWidth(inches * 0.0254)}
-              onSetDepth={(inches) => onSetDepth(inches * 0.0254)}
-              onSetHeight={(inches) => onSetHeight(inches * 0.0254)}
-              onSetRotation={onSetRotation}
-              onMoveBox={onMoveBox}
+              isManipulating={isManipulating}
               onUndo={onUndo}
               onConfirm={onConfirmHeight}
             />
@@ -236,7 +224,7 @@ export default function MeasurementUI({
 }
 
 // ============================================================================
-// Adjustment Panel - All-in-one controls for dimensions and position
+// Adjustment Panel - Simplified for direct manipulation
 // ============================================================================
 
 function AdjustmentPanel({
@@ -244,11 +232,7 @@ function AdjustmentPanel({
   depthInches,
   heightInches,
   rotationDeg,
-  onSetWidth,
-  onSetDepth,
-  onSetHeight,
-  onSetRotation,
-  onMoveBox,
+  isManipulating,
   onUndo,
   onConfirm,
 }: {
@@ -256,59 +240,46 @@ function AdjustmentPanel({
   depthInches: number;
   heightInches: number;
   rotationDeg: number;
-  onSetWidth: (inches: number) => void;
-  onSetDepth: (inches: number) => void;
-  onSetHeight: (inches: number) => void;
-  onSetRotation: (deg: number) => void;
-  onMoveBox: (deltaX: number, deltaZ: number) => void;
+  isManipulating: boolean;
   onUndo: () => void;
   onConfirm: () => void;
 }) {
   return (
     <div className="p-4">
-      {/* Dimensions - Footprint (W×D) grouped, Height separate */}
-      <div className="flex gap-3 mb-4">
-        {/* Footprint group - Width & Depth in cyan/teal */}
-        <div className="flex-1 bg-cyan-500/10 rounded-xl p-3">
-          <div className="text-cyan-400/60 text-[10px] uppercase tracking-wider mb-2 text-center">Footprint</div>
-          <div className="flex gap-2">
-            <DimensionStepper
-              label="W"
-              value={widthInches}
-              onChange={onSetWidth}
-              color="cyan"
-            />
-            <DimensionStepper
-              label="D"
-              value={depthInches}
-              onChange={onSetDepth}
-              color="cyan"
-            />
-          </div>
-        </div>
-
-        {/* Height - distinct purple */}
-        <div className="bg-purple-500/10 rounded-xl p-3">
-          <div className="text-purple-400/60 text-[10px] uppercase tracking-wider mb-2 text-center">Height</div>
-          <DimensionStepper
-            label="H"
-            value={heightInches}
-            onChange={onSetHeight}
-            color="purple"
-          />
-        </div>
+      {/* Instruction hint */}
+      <div className="text-center text-white/50 text-sm mb-4">
+        {isManipulating ? (
+          <span className="text-white/70">Adjusting...</span>
+        ) : (
+          <span>Drag edges to resize • Drag corners to rotate</span>
+        )}
       </div>
 
-      {/* Position controls - joystick and rotation */}
-      <div className="flex items-center justify-center gap-6 mb-4">
+      {/* Current dimensions display */}
+      <div className="flex justify-center gap-6 mb-4">
         <div className="text-center">
-          <Joystick onMove={onMoveBox} />
-          <span className="text-white/40 text-[10px] mt-1 block uppercase tracking-wider">Move</span>
+          <span className="text-2xl font-semibold text-cyan-400">{widthInches}</span>
+          <span className="text-white/40 text-sm ml-1">W</span>
         </div>
+        <div className="text-white/30 text-2xl">×</div>
         <div className="text-center">
-          <RotationDial value={rotationDeg} onChange={onSetRotation} />
-          <span className="text-white/40 text-[10px] mt-1 block uppercase tracking-wider">Rotate</span>
+          <span className="text-2xl font-semibold text-cyan-400">{depthInches}</span>
+          <span className="text-white/40 text-sm ml-1">D</span>
         </div>
+        <div className="text-white/30 text-2xl">×</div>
+        <div className="text-center">
+          <span className="text-2xl font-semibold text-purple-400">{heightInches}</span>
+          <span className="text-white/40 text-sm ml-1">H</span>
+        </div>
+        {rotationDeg !== 0 && (
+          <>
+            <div className="text-white/30 text-2xl">•</div>
+            <div className="text-center">
+              <span className="text-2xl font-semibold text-purple-400">{rotationDeg}</span>
+              <span className="text-white/40 text-sm ml-1">°</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Action buttons */}
@@ -325,370 +296,6 @@ function AdjustmentPanel({
         >
           Confirm
         </button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// Dimension Stepper - Press-and-hold with acceleration
-// ============================================================================
-
-function DimensionStepper({
-  label,
-  value,
-  onChange,
-  color,
-  min = 1,
-  max = 200,
-}: {
-  label: string;
-  value: number;
-  onChange: (inches: number) => void;
-  color: 'cyan' | 'purple';
-  min?: number;
-  max?: number;
-}) {
-  const colorClasses = {
-    cyan: 'text-cyan-400',
-    purple: 'text-purple-400',
-  };
-
-  // Press-and-hold with acceleration
-  const intervalRef = React.useRef<number | null>(null);
-  const timeoutRef = React.useRef<number | null>(null);
-  const localValueRef = React.useRef(value);
-  const tickCountRef = React.useRef(0);
-
-  // Keep ref in sync with prop
-  React.useEffect(() => {
-    localValueRef.current = value;
-  }, [value]);
-
-  const stopAdjusting = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    tickCountRef.current = 0;
-  };
-
-  // Calculate step size based on hold duration (acceleration)
-  // 0-10 ticks: 1", 10-25 ticks: 2", 25-50 ticks: 6", 50+: 12"
-  const getStepSize = (ticks: number): number => {
-    if (ticks < 10) return 1;
-    if (ticks < 25) return 2;
-    if (ticks < 50) return 6;
-    return 12;
-  };
-
-  const startContinuousAdjust = (direction: 1 | -1) => {
-    // Immediate single step on tap
-    const newVal = Math.max(min, Math.min(max, localValueRef.current + direction));
-    localValueRef.current = newVal;
-    onChange(newVal);
-    tickCountRef.current = 0;
-
-    // Start continuous adjustment after initial delay
-    timeoutRef.current = window.setTimeout(() => {
-      intervalRef.current = window.setInterval(() => {
-        tickCountRef.current++;
-        const step = getStepSize(tickCountRef.current);
-        const nextVal = Math.max(min, Math.min(max, localValueRef.current + direction * step));
-
-        if (nextVal !== localValueRef.current) {
-          localValueRef.current = nextVal;
-          onChange(nextVal);
-        }
-      }, 60); // ~16fps for smooth feel
-    }, 250); // Shorter initial delay for responsiveness
-  };
-
-  React.useEffect(() => {
-    return () => {
-      stopAdjusting();
-    };
-  }, []);
-
-  // Minimal chrome - number is the hero
-  return (
-    <div className="flex items-center gap-1">
-      <button
-        onPointerDown={() => startContinuousAdjust(-1)}
-        onPointerUp={stopAdjusting}
-        onPointerLeave={stopAdjusting}
-        onPointerCancel={stopAdjusting}
-        className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${colorClasses[color]} opacity-50 active:opacity-100 select-none touch-none`}
-      >
-        −
-      </button>
-      <div className="text-center min-w-[3rem]">
-        <span className={`text-xl font-semibold ${colorClasses[color]}`}>{value}</span>
-        <span className="text-white/30 text-[10px] ml-0.5">{label}</span>
-      </div>
-      <button
-        onPointerDown={() => startContinuousAdjust(1)}
-        onPointerUp={stopAdjusting}
-        onPointerLeave={stopAdjusting}
-        onPointerCancel={stopAdjusting}
-        className={`w-7 h-7 rounded-full flex items-center justify-center text-sm ${colorClasses[color]} opacity-50 active:opacity-100 select-none touch-none`}
-      >
-        +
-      </button>
-    </div>
-  );
-}
-
-// ============================================================================
-// Joystick - Continuous position control
-// ============================================================================
-
-function Joystick({
-  onMove,
-}: {
-  onMove: (deltaX: number, deltaZ: number) => void;
-}) {
-  const areaRef = React.useRef<HTMLDivElement>(null);
-  const thumbRef = React.useRef<HTMLDivElement>(null);
-  const intervalRef = React.useRef<number | null>(null);
-  const positionRef = React.useRef({ x: 0, y: 0 });
-  const onMoveRef = React.useRef(onMove);
-  const [isActive, setIsActive] = React.useState(false);
-
-  React.useEffect(() => {
-    onMoveRef.current = onMove;
-  }, [onMove]);
-
-  const maxRadius = 36;
-
-  const updateThumbPosition = React.useCallback((clientX: number, clientY: number) => {
-    if (!areaRef.current || !thumbRef.current) return;
-
-    const rect = areaRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-
-    let dx = clientX - centerX;
-    let dy = clientY - centerY;
-
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance > maxRadius) {
-      dx = (dx / distance) * maxRadius;
-      dy = (dy / distance) * maxRadius;
-    }
-
-    positionRef.current = { x: dx, y: dy };
-    thumbRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
-  }, []);
-
-  const startContinuousMove = React.useCallback(() => {
-    if (intervalRef.current) return;
-
-    intervalRef.current = window.setInterval(() => {
-      const { x, y } = positionRef.current;
-      if (x === 0 && y === 0) return;
-
-      const normalizedX = x / maxRadius;
-      const normalizedY = y / maxRadius;
-      const speed = 0.006; // meters per tick (reduced from 0.015)
-
-      // Map joystick axes to world movement:
-      // Joystick X (left/right) → deltaX (left/right on plane)
-      // Joystick Y (up/down) → deltaZ (forward/back), inverted so up = forward
-      onMoveRef.current(normalizedX * speed, -normalizedY * speed);
-    }, 1000 / 60);
-  }, []);
-
-  const stopContinuousMove = React.useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-    positionRef.current = { x: 0, y: 0 };
-    if (thumbRef.current) {
-      thumbRef.current.style.transform = 'translate(0px, 0px)';
-    }
-    setIsActive(false);
-  }, []);
-
-  const handlePointerDown = React.useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setIsActive(true);
-    updateThumbPosition(e.clientX, e.clientY);
-    startContinuousMove();
-  }, [updateThumbPosition, startContinuousMove]);
-
-  const handlePointerMove = React.useCallback((e: React.PointerEvent) => {
-    if (!isActive) return;
-    updateThumbPosition(e.clientX, e.clientY);
-  }, [isActive, updateThumbPosition]);
-
-  const handlePointerUp = React.useCallback(() => {
-    stopContinuousMove();
-  }, [stopContinuousMove]);
-
-  React.useEffect(() => {
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
-
-  return (
-    <div
-      ref={areaRef}
-      className="relative w-20 h-20 rounded-full cursor-pointer select-none touch-none"
-      style={{
-        background: 'radial-gradient(circle, rgba(59,130,246,0.15) 0%, rgba(59,130,246,0.05) 100%)',
-        border: '2px solid rgba(59,130,246,0.3)',
-      }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-    >
-      {/* Direction indicators */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <svg className="w-full h-full text-blue-500/20" viewBox="0 0 80 80">
-          <path d="M40 12 L44 20 L36 20 Z" fill="currentColor" />
-          <path d="M40 68 L44 60 L36 60 Z" fill="currentColor" />
-          <path d="M12 40 L20 36 L20 44 Z" fill="currentColor" />
-          <path d="M68 40 L60 36 L60 44 Z" fill="currentColor" />
-        </svg>
-      </div>
-      {/* Thumb */}
-      <div
-        ref={thumbRef}
-        className={`absolute rounded-full transition-colors ${
-          isActive ? 'bg-blue-500 shadow-lg shadow-blue-500/50' : 'bg-blue-400/80'
-        }`}
-        style={{
-          width: 28,
-          height: 28,
-          left: '50%',
-          top: '50%',
-          marginLeft: -14,
-          marginTop: -14,
-        }}
-      />
-    </div>
-  );
-}
-
-// ============================================================================
-// Rotation Dial - Touch to set rotation angle
-// ============================================================================
-
-function RotationDial({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (deg: number) => void;
-}) {
-  const dialRef = React.useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = React.useState(false);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    setIsDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-    updateRotation(e);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    updateRotation(e);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    setIsDragging(false);
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-
-  const updateRotation = (e: React.PointerEvent) => {
-    if (!dialRef.current) return;
-    const rect = dialRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const dx = e.clientX - centerX;
-    const dy = e.clientY - centerY;
-
-    let angle = Math.atan2(dx, -dy) * (180 / Math.PI);
-    if (angle < 0) angle += 360;
-
-    onChange(Math.round(angle));
-  };
-
-  const dialRadius = 40;
-
-  return (
-    <div
-      ref={dialRef}
-      className="relative cursor-pointer select-none touch-none"
-      style={{ width: dialRadius * 2, height: dialRadius * 2 }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-    >
-      {/* Outer ring */}
-      <div
-        className="absolute inset-0 rounded-full"
-        style={{
-          background: 'radial-gradient(circle, rgba(168,85,247,0.15) 0%, rgba(168,85,247,0.05) 100%)',
-          border: '2px solid rgba(168,85,247,0.3)',
-        }}
-      />
-
-      {/* Degree markers */}
-      {[0, 90, 180, 270].map((deg) => {
-        const rad = (deg - 90) * (Math.PI / 180);
-        const x = dialRadius + Math.cos(rad) * (dialRadius - 8);
-        const y = dialRadius + Math.sin(rad) * (dialRadius - 8);
-        return (
-          <div
-            key={deg}
-            className="absolute w-1 h-1 rounded-full bg-purple-400/50"
-            style={{
-              left: x - 2,
-              top: y - 2,
-            }}
-          />
-        );
-      })}
-
-      {/* Indicator line */}
-      <div
-        className="absolute bg-purple-500 rounded-full"
-        style={{
-          width: 3,
-          height: dialRadius - 12,
-          left: dialRadius - 1.5,
-          top: 6,
-          transformOrigin: `center ${dialRadius - 6}px`,
-          transform: `rotate(${value}deg)`,
-          transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-        }}
-      />
-
-      {/* Center with value */}
-      <div
-        className="absolute rounded-full bg-purple-500/80 flex items-center justify-center"
-        style={{
-          width: 28,
-          height: 28,
-          left: dialRadius - 14,
-          top: dialRadius - 14,
-        }}
-      >
-        <span className="text-white text-xs font-bold">{value}°</span>
       </div>
     </div>
   );

@@ -8,7 +8,19 @@ import { startARSession, endARSession, XRSessionContext } from '@/lib/webxr/sess
 import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
 import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
-import { updateBoundingBox, disposeBoundingBox } from '@/lib/three/bounding-box';
+import { updateBoundingBox, disposeBoundingBox, addRotationGuide, removeRotationGuide } from '@/lib/three/bounding-box';
+import {
+  raycastHandles,
+  raycastToFloorPlane,
+  highlightHandle,
+  unhighlightAllHandles,
+  calculateAxisDelta,
+  screenDeltaToWorldHeight,
+  calculateRotationFromCornerDrag,
+  worldToScreen,
+  HandleHitResult,
+  HandleType,
+} from '@/lib/three/handle-raycasting';
 import { PoseStabilizer, StabilityMode } from '@/lib/measurement/stabilization';
 import {
   stateMachineReducer,
@@ -55,6 +67,19 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
   const hasDraggedRef = useRef(false);
+
+  // Active handle tracking for direct manipulation
+  const activeHandleRef = useRef<{
+    type: HandleType;
+    data: HandleHitResult;
+    startWorldPos: THREE.Vector3;
+    startScreenPos: { x: number; y: number };
+    startDimension: number;
+    startRotation: number;
+  } | null>(null);
+
+  // Track if we're currently manipulating a handle
+  const [isManipulating, setIsManipulating] = useState(false);
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
@@ -237,7 +262,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     }
   }, []);
 
-  // Handle touch start - begin tracking touch
+  // Get box center in screen coordinates (for rotation calculation)
+  const getBoxCenterScreen = useCallback((): { x: number; y: number } | null => {
+    if (!sceneContextRef.current || !context.dragStart || !context.dragEnd) return null;
+
+    const p1 = context.dragStart.position;
+    const p2 = context.dragEnd.position;
+    const centerX = (p1.x + p2.x) / 2;
+    const centerY = Math.min(p1.y, p2.y) + context.height_m / 2;
+    const centerZ = (p1.z + p2.z) / 2;
+
+    const boxCenter = new THREE.Vector3(centerX, centerY, centerZ);
+    return worldToScreen(
+      boxCenter,
+      sceneContextRef.current.camera,
+      window.innerWidth,
+      window.innerHeight
+    );
+  }, [context.dragStart, context.dragEnd, context.height_m]);
+
+  // Handle touch start - check for handle hit or tap-to-place
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     // Don't handle if tap was on a button or UI element
     const target = e.target as HTMLElement;
@@ -245,7 +289,64 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Only track touch in READY_TO_DRAW state (for tap-to-place)
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    // In HEIGHT_INPUT state, check for handle interaction first
+    if (context.state === 'HEIGHT_INPUT' && sceneContextRef.current) {
+      const handleHit = raycastHandles(
+        touch.clientX,
+        touch.clientY,
+        sceneContextRef.current.camera,
+        sceneContextRef.current.scene,
+        window.innerWidth,
+        window.innerHeight
+      );
+
+      if (handleHit) {
+        // Determine which dimension we're starting with
+        let startDimension = 0;
+        if (handleHit.type === 'edge') {
+          startDimension = handleHit.axis === 'width' ? context.width_m : context.depth_m;
+        } else if (handleHit.type === 'topFace') {
+          startDimension = context.height_m;
+        }
+
+        activeHandleRef.current = {
+          type: handleHit.type,
+          data: handleHit,
+          startWorldPos: handleHit.worldPosition.clone(),
+          startScreenPos: { x: touch.clientX, y: touch.clientY },
+          startDimension,
+          startRotation: context.rotation_deg,
+        };
+
+        setIsManipulating(true);
+
+        // Highlight the active handle
+        highlightHandle(
+          sceneContextRef.current.scene,
+          handleHit.type,
+          handleHit.edge || handleHit.cornerIndex?.toString()
+        );
+
+        // If corner handle, show rotation guide
+        if (handleHit.type === 'corner' && context.dragStart && context.dragEnd) {
+          const p1 = context.dragStart.position;
+          const p2 = context.dragEnd.position;
+          const centerX = (p1.x + p2.x) / 2;
+          const floorY = Math.min(p1.y, p2.y);
+          const centerZ = (p1.z + p2.z) / 2;
+          const radius = Math.max(context.width_m, context.depth_m) * 0.7;
+
+          addRotationGuide(sceneContextRef.current.scene, centerX, floorY, centerZ, radius);
+        }
+
+        return;
+      }
+    }
+
+    // READY_TO_DRAW state - tap-to-place
     if (context.state !== 'READY_TO_DRAW') {
       return;
     }
@@ -260,10 +361,106 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
     };
-  }, [context.state]);
+  }, [context.state, context.width_m, context.depth_m, context.height_m, context.rotation_deg, context.dragStart, context.dragEnd]);
 
-  // Handle touch move - update drag end point
-  const handleTouchMove = useCallback(() => {
+  // Handle touch move - update handle drag or box drawing
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    // Handle active manipulation
+    if (activeHandleRef.current && sceneContextRef.current) {
+      const handle = activeHandleRef.current;
+
+      if (handle.type === 'edge') {
+        // Edge drag - raycast to floor to get current world position
+        const currentWorldPos = raycastToFloorPlane(
+          touch.clientX,
+          touch.clientY,
+          sceneContextRef.current.camera,
+          window.innerWidth,
+          window.innerHeight,
+          handle.startWorldPos.y
+        );
+
+        if (currentWorldPos && handle.data.axis && handle.data.direction !== undefined) {
+          const delta = calculateAxisDelta(
+            handle.startWorldPos,
+            currentWorldPos,
+            handle.data.axis,
+            handle.data.direction,
+            context.rotation_deg
+          );
+
+          const newDimension = Math.max(0.0254, Math.min(5.08, handle.startDimension + delta));
+
+          if (handle.data.axis === 'width') {
+            dispatch({ type: 'SET_WIDTH', width_m: newDimension });
+          } else {
+            dispatch({ type: 'SET_DEPTH', depth_m: newDimension });
+          }
+        }
+      } else if (handle.type === 'topFace') {
+        // Top face drag - map screen Y delta to height
+        const deltaScreenY = handle.startScreenPos.y - touch.clientY; // Inverted: drag up = increase
+
+        if (context.dragStart && context.dragEnd) {
+          const p1 = context.dragStart.position;
+          const p2 = context.dragEnd.position;
+          const boxCenter = new THREE.Vector3(
+            (p1.x + p2.x) / 2,
+            Math.min(p1.y, p2.y) + context.height_m / 2,
+            (p1.z + p2.z) / 2
+          );
+
+          const deltaMeters = screenDeltaToWorldHeight(
+            deltaScreenY,
+            sceneContextRef.current.camera,
+            boxCenter
+          );
+
+          const newHeight = Math.max(0.0254, Math.min(5.08, handle.startDimension + deltaMeters));
+          dispatch({ type: 'SET_HEIGHT', height_m: newHeight });
+        }
+      } else if (handle.type === 'bottomFace') {
+        // Bottom face drag - move box position
+        const currentWorldPos = raycastToFloorPlane(
+          touch.clientX,
+          touch.clientY,
+          sceneContextRef.current.camera,
+          window.innerWidth,
+          window.innerHeight,
+          handle.startWorldPos.y
+        );
+
+        if (currentWorldPos) {
+          const deltaX = currentWorldPos.x - handle.startWorldPos.x;
+          const deltaZ = currentWorldPos.z - handle.startWorldPos.z;
+
+          // Update start position for continuous movement
+          handle.startWorldPos.copy(currentWorldPos);
+
+          dispatch({ type: 'MOVE_BOX', deltaX, deltaZ });
+        }
+      } else if (handle.type === 'corner') {
+        // Corner drag - calculate rotation from screen position around box center
+        const boxCenterScreen = getBoxCenterScreen();
+        if (boxCenterScreen) {
+          const newRotation = calculateRotationFromCornerDrag(
+            handle.startScreenPos,
+            { x: touch.clientX, y: touch.clientY },
+            boxCenterScreen,
+            handle.startRotation
+          );
+
+          dispatch({ type: 'SET_ROTATION', rotation_deg: newRotation });
+        }
+      }
+
+      return;
+    }
+
+    // Original drag logic for DRAWING state
     if (!isTouchingRef.current) {
       return;
     }
@@ -272,8 +469,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Use current hit if available, otherwise fall back to last valid hit (Option 3: Aggressive caching)
-    // Allow cached hit up to 100ms old during active dragging
     let hitToUse = currentHitRef.current;
     if (!hitToUse && lastValidHitRef.current) {
       const age = performance.now() - lastValidHitRef.current.timestamp;
@@ -286,7 +481,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
       return;
     }
 
-    // Check if we've moved enough to count as a drag (> 3cm)
     const distance = hitToUse.position.distanceTo(touchStartRef.current.position);
     if (distance > 0.03) {
       hasDraggedRef.current = true;
@@ -303,13 +497,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     };
 
     dispatch({ type: 'UPDATE_DRAG', point });
-  }, [context.state, dispatch]);
+  }, [context.state, context.rotation_deg, context.dragStart, context.dragEnd, context.height_m, dispatch, getBoxCenterScreen]);
 
-  // Handle touch end - place box on tap
+  // Handle touch end - finish handle manipulation or tap-to-place
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     // Don't handle if tap was on a button or UI element
     const target = e.target as HTMLElement;
     if (target.tagName === 'BUTTON' || target.closest('button') || target.tagName === 'INPUT') {
+      return;
+    }
+
+    // End any active handle manipulation
+    if (activeHandleRef.current && sceneContextRef.current) {
+      // Remove rotation guide if it was shown
+      if (activeHandleRef.current.type === 'corner') {
+        removeRotationGuide(sceneContextRef.current.scene);
+      }
+
+      unhighlightAllHandles(sceneContextRef.current.scene);
+      activeHandleRef.current = null;
+      setIsManipulating(false);
       return;
     }
 
@@ -343,52 +550,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const handleReset = useCallback(() => {
     dispatch({ type: 'RESET' });
     stabilizerRef.current.reset();
-  }, [dispatch]);
-
-  const handleSetWidth = useCallback((width_m: number) => {
-    dispatch({ type: 'SET_WIDTH', width_m });
-  }, [dispatch]);
-
-  const handleSetDepth = useCallback((depth_m: number) => {
-    dispatch({ type: 'SET_DEPTH', depth_m });
-  }, [dispatch]);
-
-  const handleSetHeight = useCallback((height_m: number) => {
-    dispatch({ type: 'SET_HEIGHT', height_m });
-  }, [dispatch]);
-
-  const handleSetRotation = useCallback((rotation_deg: number) => {
-    dispatch({ type: 'SET_ROTATION', rotation_deg });
-  }, [dispatch]);
-
-  const handleMoveBox = useCallback((joystickX: number, joystickZ: number) => {
-    // Transform joystick input from camera-relative to world coordinates
-    // joystickX = left/right relative to camera view
-    // joystickZ = forward/back relative to camera view
-
-    const camera = sceneContextRef.current?.camera;
-    if (!camera) {
-      // Fallback to direct mapping if no camera
-      dispatch({ type: 'MOVE_BOX', deltaX: joystickX, deltaZ: joystickZ });
-      return;
-    }
-
-    // Get camera's forward direction projected onto XZ plane (ignore Y)
-    const cameraDir = new THREE.Vector3();
-    camera.getWorldDirection(cameraDir);
-    cameraDir.y = 0;
-    cameraDir.normalize();
-
-    // Camera's right direction (perpendicular to forward on XZ plane)
-    const cameraRight = new THREE.Vector3(-cameraDir.z, 0, cameraDir.x);
-
-    // Transform joystick input to world space:
-    // - joystickX moves along camera's right axis
-    // - joystickZ moves along camera's forward axis
-    const worldDeltaX = joystickX * cameraRight.x + joystickZ * cameraDir.x;
-    const worldDeltaZ = joystickX * cameraRight.z + joystickZ * cameraDir.z;
-
-    dispatch({ type: 'MOVE_BOX', deltaX: worldDeltaX, deltaZ: worldDeltaZ });
   }, [dispatch]);
 
   const handleConfirmHeight = useCallback(() => {
@@ -439,13 +600,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         confidence={confidence}
         trackingWarning={trackingWarning}
         stabilityMode={stabilityMode}
+        isManipulating={isManipulating}
         onUndo={handleUndo}
         onReset={handleReset}
-        onSetWidth={handleSetWidth}
-        onSetDepth={handleSetDepth}
-        onSetHeight={handleSetHeight}
-        onSetRotation={handleSetRotation}
-        onMoveBox={handleMoveBox}
         onConfirmHeight={handleConfirmHeight}
         onFindStorage={handleFindStorage}
         onSetStabilityMode={handleSetStabilityMode}

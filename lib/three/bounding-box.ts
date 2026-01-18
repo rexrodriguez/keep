@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { MeasurementPoint } from '@/lib/types';
 
+// Re-export handle types for external use
+export type { HandleType, EdgeType, AxisType } from './handle-raycasting';
+
 /**
  * Format meters to inches display string
  */
@@ -585,6 +588,299 @@ function addRotationArc(
 }
 
 /**
+ * Add invisible hit regions for direct manipulation of edges, faces, and corners
+ * These are larger than visual elements for finger-friendly touch targets
+ */
+function addInteractionHandles(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  const hw = width / 2;
+  const hh = height / 2;
+  const hd = depth / 2;
+
+  // Invisible material for hit regions
+  const hitMaterial = new THREE.MeshBasicMaterial({
+    visible: false,
+    side: THREE.DoubleSide,
+  });
+
+  // Edge hit region thickness (3cm for finger-friendly touch)
+  const edgeThickness = 0.03;
+
+  // Front edge - controls depth (drag forward/back)
+  const frontEdgeGeom = new THREE.BoxGeometry(width * 0.8, edgeThickness, edgeThickness);
+  const frontEdge = new THREE.Mesh(frontEdgeGeom, hitMaterial.clone());
+  frontEdge.position.set(0, -hh, hd);
+  frontEdge.userData = { handleType: 'edge', edge: 'front', axis: 'depth', direction: 1 };
+  frontEdge.name = 'handle-edge-front';
+  group.add(frontEdge);
+
+  // Back edge - controls depth
+  const backEdgeGeom = new THREE.BoxGeometry(width * 0.8, edgeThickness, edgeThickness);
+  const backEdge = new THREE.Mesh(backEdgeGeom, hitMaterial.clone());
+  backEdge.position.set(0, -hh, -hd);
+  backEdge.userData = { handleType: 'edge', edge: 'back', axis: 'depth', direction: -1 };
+  backEdge.name = 'handle-edge-back';
+  group.add(backEdge);
+
+  // Left edge - controls width
+  const leftEdgeGeom = new THREE.BoxGeometry(edgeThickness, edgeThickness, depth * 0.8);
+  const leftEdge = new THREE.Mesh(leftEdgeGeom, hitMaterial.clone());
+  leftEdge.position.set(-hw, -hh, 0);
+  leftEdge.userData = { handleType: 'edge', edge: 'left', axis: 'width', direction: -1 };
+  leftEdge.name = 'handle-edge-left';
+  group.add(leftEdge);
+
+  // Right edge - controls width
+  const rightEdgeGeom = new THREE.BoxGeometry(edgeThickness, edgeThickness, depth * 0.8);
+  const rightEdge = new THREE.Mesh(rightEdgeGeom, hitMaterial.clone());
+  rightEdge.position.set(hw, -hh, 0);
+  rightEdge.userData = { handleType: 'edge', edge: 'right', axis: 'width', direction: 1 };
+  rightEdge.name = 'handle-edge-right';
+  group.add(rightEdge);
+
+  // Top face hit region - controls height
+  const topFaceGeom = new THREE.PlaneGeometry(width * 0.7, depth * 0.7);
+  const topFace = new THREE.Mesh(topFaceGeom, hitMaterial.clone());
+  topFace.rotation.x = -Math.PI / 2;
+  topFace.position.set(0, hh, 0);
+  topFace.userData = { handleType: 'topFace' };
+  topFace.name = 'handle-top-face';
+  group.add(topFace);
+
+  // Bottom face hit region - controls position (move box)
+  const bottomFaceGeom = new THREE.PlaneGeometry(width * 0.5, depth * 0.5);
+  const bottomFace = new THREE.Mesh(bottomFaceGeom, hitMaterial.clone());
+  bottomFace.rotation.x = -Math.PI / 2;
+  bottomFace.position.set(0, -hh + 0.001, 0);
+  bottomFace.userData = { handleType: 'bottomFace' };
+  bottomFace.name = 'handle-bottom-face';
+  group.add(bottomFace);
+
+  // Corner handles for rotation (4 corners at floor level)
+  const cornerRadius = 0.04; // 4cm radius sphere for touch
+  const cornerPositions: [number, number, number, number][] = [
+    [-hw, -hh, hd, 0],   // front-left
+    [hw, -hh, hd, 1],    // front-right
+    [hw, -hh, -hd, 2],   // back-right
+    [-hw, -hh, -hd, 3],  // back-left
+  ];
+
+  for (const [x, y, z, index] of cornerPositions) {
+    const cornerGeom = new THREE.SphereGeometry(cornerRadius);
+    const corner = new THREE.Mesh(cornerGeom, hitMaterial.clone());
+    corner.position.set(x, y, z);
+    corner.userData = { handleType: 'corner', cornerIndex: index };
+    corner.name = `handle-corner-${index}`;
+    group.add(corner);
+  }
+}
+
+/**
+ * Add visible handle indicators that show affordances for direct manipulation
+ * These highlight when handles are active
+ */
+function addVisualHandleIndicators(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  const hw = width / 2;
+  const hh = height / 2;
+  const hd = depth / 2;
+
+  // Edge indicator material (cyan, semi-transparent)
+  const edgeIndicatorMat = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee,
+    transparent: true,
+    opacity: 0.4,
+    depthTest: false,
+  });
+
+  // Small spheres at edge midpoints
+  const indicatorRadius = 0.015; // 1.5cm
+
+  // Front edge indicator
+  const frontIndicator = new THREE.Mesh(
+    new THREE.SphereGeometry(indicatorRadius),
+    edgeIndicatorMat.clone()
+  );
+  frontIndicator.position.set(0, -hh, hd);
+  frontIndicator.name = 'indicator-edge-front';
+  group.add(frontIndicator);
+
+  // Back edge indicator
+  const backIndicator = new THREE.Mesh(
+    new THREE.SphereGeometry(indicatorRadius),
+    edgeIndicatorMat.clone()
+  );
+  backIndicator.position.set(0, -hh, -hd);
+  backIndicator.name = 'indicator-edge-back';
+  group.add(backIndicator);
+
+  // Left edge indicator
+  const leftIndicator = new THREE.Mesh(
+    new THREE.SphereGeometry(indicatorRadius),
+    edgeIndicatorMat.clone()
+  );
+  leftIndicator.position.set(-hw, -hh, 0);
+  leftIndicator.name = 'indicator-edge-left';
+  group.add(leftIndicator);
+
+  // Right edge indicator
+  const rightIndicator = new THREE.Mesh(
+    new THREE.SphereGeometry(indicatorRadius),
+    edgeIndicatorMat.clone()
+  );
+  rightIndicator.position.set(hw, -hh, 0);
+  rightIndicator.name = 'indicator-edge-right';
+  group.add(rightIndicator);
+
+  // Top face indicator (upward arrow sprite)
+  const topIndicatorMat = new THREE.MeshBasicMaterial({
+    color: 0xc084fc,
+    transparent: true,
+    opacity: 0.5,
+    depthTest: false,
+  });
+  const topIndicator = new THREE.Mesh(
+    new THREE.ConeGeometry(0.02, 0.04, 8),
+    topIndicatorMat
+  );
+  topIndicator.position.set(0, hh + 0.03, 0);
+  topIndicator.name = 'indicator-top-face';
+  group.add(topIndicator);
+
+  // Bottom face indicator (move icon - 4 arrows)
+  const bottomIndicatorMat = new THREE.MeshBasicMaterial({
+    color: 0x22d3ee,
+    transparent: true,
+    opacity: 0.4,
+    depthTest: false,
+  });
+
+  // Create a simple cross shape for move icon
+  const moveIconGroup = new THREE.Group();
+  moveIconGroup.name = 'indicator-bottom-face';
+
+  const arrowSize = Math.min(width, depth) * 0.1;
+  const arrowGeom = new THREE.ConeGeometry(arrowSize * 0.3, arrowSize, 4);
+
+  // Up arrow (forward)
+  const upArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
+  upArrow.rotation.x = -Math.PI / 2;
+  upArrow.position.set(0, 0, arrowSize);
+  moveIconGroup.add(upArrow);
+
+  // Down arrow (back)
+  const downArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
+  downArrow.rotation.x = Math.PI / 2;
+  downArrow.position.set(0, 0, -arrowSize);
+  moveIconGroup.add(downArrow);
+
+  // Left arrow
+  const leftArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
+  leftArrow.rotation.z = Math.PI / 2;
+  leftArrow.position.set(-arrowSize, 0, 0);
+  moveIconGroup.add(leftArrow);
+
+  // Right arrow
+  const rightArrow = new THREE.Mesh(arrowGeom, bottomIndicatorMat.clone());
+  rightArrow.rotation.z = -Math.PI / 2;
+  rightArrow.position.set(arrowSize, 0, 0);
+  moveIconGroup.add(rightArrow);
+
+  moveIconGroup.position.set(0, -hh + 0.005, 0);
+  group.add(moveIconGroup);
+
+  // Corner indicators for rotation (small arc icons)
+  const cornerIndicatorMat = new THREE.MeshBasicMaterial({
+    color: 0xc084fc,
+    transparent: true,
+    opacity: 0.5,
+    depthTest: false,
+  });
+
+  const cornerPositions: [number, number, number, number][] = [
+    [-hw, -hh + 0.005, hd, 0],
+    [hw, -hh + 0.005, hd, 1],
+    [hw, -hh + 0.005, -hd, 2],
+    [-hw, -hh + 0.005, -hd, 3],
+  ];
+
+  for (const [x, y, z, index] of cornerPositions) {
+    const cornerIndicator = new THREE.Mesh(
+      new THREE.TorusGeometry(0.02, 0.004, 8, 8, Math.PI * 0.75),
+      cornerIndicatorMat.clone()
+    );
+    cornerIndicator.rotation.x = -Math.PI / 2;
+    // Rotate each corner indicator to face outward
+    cornerIndicator.rotation.z = (index * Math.PI) / 2 + Math.PI / 4;
+    cornerIndicator.position.set(x, y, z);
+    cornerIndicator.name = `indicator-corner-${index}`;
+    group.add(cornerIndicator);
+  }
+}
+
+/**
+ * Add a rotation guide circle that appears during corner rotation
+ * This is added separately and can be shown/hidden
+ */
+export function addRotationGuide(
+  scene: THREE.Scene,
+  centerX: number,
+  floorY: number,
+  centerZ: number,
+  radius: number
+): THREE.Line {
+  // Create circle geometry
+  const segments = 64;
+  const points: THREE.Vector3[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    points.push(
+      new THREE.Vector3(
+        centerX + Math.cos(angle) * radius,
+        floorY + 0.002,
+        centerZ + Math.sin(angle) * radius
+      )
+    );
+  }
+
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({
+    color: 0xc084fc,
+    transparent: true,
+    opacity: 0.3,
+  });
+
+  const circle = new THREE.Line(geometry, material);
+  circle.name = 'rotation-guide';
+  scene.add(circle);
+
+  return circle;
+}
+
+/**
+ * Remove the rotation guide from the scene
+ */
+export function removeRotationGuide(scene: THREE.Scene): void {
+  const guide = scene.getObjectByName('rotation-guide');
+  if (guide) {
+    scene.remove(guide);
+    if (guide instanceof THREE.Line) {
+      guide.geometry.dispose();
+      (guide.material as THREE.Material).dispose();
+    }
+  }
+}
+
+/**
  * Create a bounding box with explicit dimensions at a given center position.
  * @param centerX - World X coordinate of box center
  * @param centerY - World Y coordinate of box center (middle height)
@@ -644,6 +940,12 @@ function createBoxAtCenter(
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
+
+  // Add interaction handles for direct manipulation
+  addInteractionHandles(group, width, height, depth);
+
+  // Add visual indicators for handles
+  addVisualHandleIndicators(group, width, height, depth);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -718,6 +1020,12 @@ export function createFloorBoundingBox(
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
+
+  // Add interaction handles for direct manipulation
+  addInteractionHandles(group, width, height, depth);
+
+  // Add visual indicators for handles
+  addVisualHandleIndicators(group, width, height, depth);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
