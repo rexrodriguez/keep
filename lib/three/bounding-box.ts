@@ -171,6 +171,139 @@ function addContactShadow(
 }
 
 /**
+ * Add scale reference ticks on the floor near the box
+ * Shows 1-foot ruler marks to help users trust the AR scale
+ */
+function addScaleReference(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  const ONE_FOOT = 0.3048; // 1 foot in meters
+  const floorY = -height / 2 + 0.002; // Slightly above shadow
+
+  // Create tick mark geometry (small vertical line on floor)
+  const createTick = (length: number = 0.02): THREE.Line => {
+    const points = [
+      new THREE.Vector3(0, 0, -length / 2),
+      new THREE.Vector3(0, 0, length / 2),
+    ];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.3,
+    });
+    return new THREE.Line(geometry, material);
+  };
+
+  // Create "1 ft" label sprite
+  const createFootLabel = (): THREE.Sprite => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = 64;
+    canvas.height = 32;
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.font = 'bold 18px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('1 ft', 32, 16);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.08, 0.04, 1);
+    return sprite;
+  };
+
+  // Place ruler along the front edge (width direction) if box is wide enough
+  if (width >= ONE_FOOT * 0.8) {
+    const rulerGroup = new THREE.Group();
+    rulerGroup.name = 'scale-ruler-width';
+
+    // Start tick
+    const startTick = createTick(0.03);
+    startTick.position.set(-width / 2 - 0.05, 0, 0);
+    rulerGroup.add(startTick);
+
+    // End tick (1 foot from start)
+    const endTick = createTick(0.03);
+    endTick.position.set(-width / 2 - 0.05 + ONE_FOOT, 0, 0);
+    rulerGroup.add(endTick);
+
+    // Connecting line
+    const linePoints = [
+      new THREE.Vector3(-width / 2 - 0.05, 0, 0),
+      new THREE.Vector3(-width / 2 - 0.05 + ONE_FOOT, 0, 0),
+    ];
+    const lineGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.2,
+    });
+    const line = new THREE.Line(lineGeom, lineMat);
+    rulerGroup.add(line);
+
+    // Label
+    const label = createFootLabel();
+    label.position.set(-width / 2 - 0.05 + ONE_FOOT / 2, 0.02, 0);
+    rulerGroup.add(label);
+
+    // Position ruler on floor, along front edge
+    rulerGroup.position.set(0, floorY, depth / 2 + 0.08);
+    group.add(rulerGroup);
+  }
+
+  // Place ruler along the right edge (depth direction) if box is deep enough
+  if (depth >= ONE_FOOT * 0.8) {
+    const rulerGroup = new THREE.Group();
+    rulerGroup.name = 'scale-ruler-depth';
+
+    // Start tick
+    const startTick = createTick(0.03);
+    startTick.rotation.y = Math.PI / 2;
+    startTick.position.set(0, 0, -depth / 2 - 0.05);
+    rulerGroup.add(startTick);
+
+    // End tick (1 foot from start)
+    const endTick = createTick(0.03);
+    endTick.rotation.y = Math.PI / 2;
+    endTick.position.set(0, 0, -depth / 2 - 0.05 + ONE_FOOT);
+    rulerGroup.add(endTick);
+
+    // Connecting line
+    const linePoints = [
+      new THREE.Vector3(0, 0, -depth / 2 - 0.05),
+      new THREE.Vector3(0, 0, -depth / 2 - 0.05 + ONE_FOOT),
+    ];
+    const lineGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.2,
+    });
+    const line = new THREE.Line(lineGeom, lineMat);
+    rulerGroup.add(line);
+
+    // Label
+    const label = createFootLabel();
+    label.position.set(0.02, 0.02, -depth / 2 - 0.05 + ONE_FOOT / 2);
+    rulerGroup.add(label);
+
+    // Position ruler on floor, along right edge
+    rulerGroup.position.set(width / 2 + 0.08, floorY, 0);
+    group.add(rulerGroup);
+  }
+}
+
+/**
  * Create a bounding box with explicit dimensions at a given center position.
  * @param centerX - World X coordinate of box center
  * @param centerY - World Y coordinate of box center (middle height)
@@ -238,6 +371,9 @@ function createBoxAtCenter(
 
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
+
+  // Add scale reference (1-foot ruler ticks)
+  addScaleReference(group, width, height, depth);
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
@@ -326,6 +462,9 @@ export function createFloorBoundingBox(
 
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
+
+  // Add scale reference (1-foot ruler ticks)
+  addScaleReference(group, width, height, depth);
 
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
