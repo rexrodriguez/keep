@@ -276,8 +276,9 @@ export function calculateRotationFromCornerDrag(
     currentScreenPos.x - boxCenterScreen.x
   );
 
-  // Calculate delta angle
-  let deltaAngle = currentAngle - startAngle;
+  // Calculate delta angle (negated for intuitive rotation direction)
+  // When dragging clockwise on screen, box should rotate clockwise when viewed from above
+  let deltaAngle = startAngle - currentAngle;
 
   // Convert to degrees
   let deltaDegrees = (deltaAngle * 180) / Math.PI;
