@@ -2,6 +2,104 @@ import * as THREE from 'three';
 import { MeasurementPoint } from '@/lib/types';
 
 /**
+ * Format meters to inches display string
+ */
+function formatInches(meters: number): string {
+  const inches = Math.round(meters * 39.3701);
+  return `${inches}"`;
+}
+
+/**
+ * Create a text sprite (billboard) for dimension labels
+ */
+function createTextSprite(
+  text: string,
+  color: string = '#00ffff'
+): THREE.Sprite {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d')!;
+
+  // High-res canvas for crisp text
+  const fontSize = 48;
+  canvas.width = 256;
+  canvas.height = 64;
+
+  // Background pill
+  context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  const padding = 12;
+  const textWidth = context.measureText(text).width || 100;
+  context.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+  const actualTextWidth = context.measureText(text).width;
+  const pillWidth = Math.min(actualTextWidth + padding * 2, canvas.width);
+  const pillHeight = fontSize + padding;
+  const pillX = (canvas.width - pillWidth) / 2;
+  const pillY = (canvas.height - pillHeight) / 2;
+
+  // Draw rounded rectangle
+  const radius = pillHeight / 2;
+  context.beginPath();
+  context.moveTo(pillX + radius, pillY);
+  context.lineTo(pillX + pillWidth - radius, pillY);
+  context.arc(pillX + pillWidth - radius, pillY + radius, radius, -Math.PI / 2, Math.PI / 2);
+  context.lineTo(pillX + radius, pillY + pillHeight);
+  context.arc(pillX + radius, pillY + radius, radius, Math.PI / 2, -Math.PI / 2);
+  context.closePath();
+  context.fill();
+
+  // Draw text
+  context.fillStyle = color;
+  context.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+  // Create sprite
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+
+  const spriteMaterial = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,  // Always visible
+    depthWrite: false,
+  });
+
+  const sprite = new THREE.Sprite(spriteMaterial);
+  // Scale sprite to reasonable size in world space (adjust based on canvas aspect)
+  sprite.scale.set(0.15, 0.0375, 1);  // 256:64 aspect ratio
+
+  return sprite;
+}
+
+/**
+ * Add dimension labels to a box group
+ */
+function addDimensionLabels(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  // Width label - on front edge at bottom
+  const widthLabel = createTextSprite(formatInches(width), '#60a5fa'); // blue-400
+  widthLabel.position.set(0, -height / 2, depth / 2 + 0.05);
+  widthLabel.name = 'label-width';
+  group.add(widthLabel);
+
+  // Depth label - on right edge at bottom
+  const depthLabel = createTextSprite(formatInches(depth), '#4ade80'); // green-400
+  depthLabel.position.set(width / 2 + 0.05, -height / 2, 0);
+  depthLabel.name = 'label-depth';
+  group.add(depthLabel);
+
+  // Height label - on front-right vertical edge
+  const heightLabel = createTextSprite(formatInches(height), '#c084fc'); // purple-400
+  heightLabel.position.set(width / 2 + 0.05, 0, depth / 2 + 0.05);
+  heightLabel.name = 'label-height';
+  group.add(heightLabel);
+}
+
+/**
  * Create a bounding box with explicit dimensions at a given center position.
  * @param centerX - World X coordinate of box center
  * @param centerY - World Y coordinate of box center (middle height)
@@ -66,6 +164,9 @@ function createBoxAtCenter(
   cornerMesh.name = 'corner-handle';
   cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 };
   group.add(cornerMesh);
+
+  // Add dimension labels
+  addDimensionLabels(group, width, height, depth);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -149,6 +250,9 @@ export function createFloorBoundingBox(
   cornerMesh.userData = { isCornerHandle: true, cornerIndex: 0 }; // Always index 0 since we only have one
   group.add(cornerMesh);
 
+  // Add dimension labels
+  addDimensionLabels(group, width, height, depth);
+
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
 
@@ -186,6 +290,13 @@ export function updateBoundingBox(
         } else {
           child.material.dispose();
         }
+      }
+      // Dispose sprite textures and materials
+      if (child instanceof THREE.Sprite) {
+        if (child.material.map) {
+          child.material.map.dispose();
+        }
+        child.material.dispose();
       }
     });
   }
@@ -265,6 +376,13 @@ export function disposeBoundingBox(scene: THREE.Scene): void {
         } else {
           child.material.dispose();
         }
+      }
+      // Dispose sprite textures and materials
+      if (child instanceof THREE.Sprite) {
+        if (child.material.map) {
+          child.material.map.dispose();
+        }
+        child.material.dispose();
       }
     });
   }
