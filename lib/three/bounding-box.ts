@@ -102,6 +102,76 @@ function addDimensionLabels(
 }
 
 /**
+ * Add colored box edges - cyan for horizontal (W/D), purple for vertical (H)
+ * This matches the UI control colors for visual consistency
+ */
+function addColoredEdges(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  const hw = width / 2;
+  const hh = height / 2;
+  const hd = depth / 2;
+
+  // Define the 8 corners
+  const corners = [
+    new THREE.Vector3(-hw, -hh, -hd), // 0: bottom-back-left
+    new THREE.Vector3(hw, -hh, -hd),  // 1: bottom-back-right
+    new THREE.Vector3(hw, -hh, hd),   // 2: bottom-front-right
+    new THREE.Vector3(-hw, -hh, hd),  // 3: bottom-front-left
+    new THREE.Vector3(-hw, hh, -hd),  // 4: top-back-left
+    new THREE.Vector3(hw, hh, -hd),   // 5: top-back-right
+    new THREE.Vector3(hw, hh, hd),    // 6: top-front-right
+    new THREE.Vector3(-hw, hh, hd),   // 7: top-front-left
+  ];
+
+  // Horizontal edges (cyan - footprint color) - 8 edges on top and bottom
+  const horizontalEdges = [
+    // Bottom face
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    // Top face
+    [4, 5], [5, 6], [6, 7], [7, 4],
+  ];
+
+  const cyanMaterial = new THREE.LineBasicMaterial({
+    color: 0x22d3ee, // cyan-400 to match UI
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  const horizontalPoints: THREE.Vector3[] = [];
+  for (const [a, b] of horizontalEdges) {
+    horizontalPoints.push(corners[a], corners[b]);
+  }
+  const horizontalGeom = new THREE.BufferGeometry().setFromPoints(horizontalPoints);
+  const horizontalLines = new THREE.LineSegments(horizontalGeom, cyanMaterial);
+  horizontalLines.name = 'edges-horizontal';
+  group.add(horizontalLines);
+
+  // Vertical edges (purple - height color) - 4 edges connecting top and bottom
+  const verticalEdges = [
+    [0, 4], [1, 5], [2, 6], [3, 7],
+  ];
+
+  const purpleMaterial = new THREE.LineBasicMaterial({
+    color: 0xc084fc, // purple-400 to match UI
+    transparent: true,
+    opacity: 0.9,
+  });
+
+  const verticalPoints: THREE.Vector3[] = [];
+  for (const [a, b] of verticalEdges) {
+    verticalPoints.push(corners[a], corners[b]);
+  }
+  const verticalGeom = new THREE.BufferGeometry().setFromPoints(verticalPoints);
+  const verticalLines = new THREE.LineSegments(verticalGeom, purpleMaterial);
+  verticalLines.name = 'edges-vertical';
+  group.add(verticalLines);
+}
+
+/**
  * Create a soft contact shadow texture using canvas
  * Creates a radial gradient that fades from dark center to transparent edges
  */
@@ -554,15 +624,8 @@ function createBoxAtCenter(
   const fillMesh = new THREE.Mesh(geometry, fillMaterial);
   group.add(fillMesh);
 
-  // Wireframe edges - brighter blue (use standard box for cleaner edges)
-  const edgeBoxGeom = new THREE.BoxGeometry(width, height, depth);
-  const edgesGeometry = new THREE.EdgesGeometry(edgeBoxGeom);
-  const edgesMaterial = new THREE.LineBasicMaterial({
-    color: 0x00ffff,
-    linewidth: 2,
-  });
-  const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-  group.add(edges);
+  // Colored edges - cyan for horizontal (W/D), purple for vertical (H)
+  addColoredEdges(group, width, height, depth);
 
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
@@ -635,15 +698,8 @@ export function createFloorBoundingBox(
   const fillMesh = new THREE.Mesh(geometry, fillMaterial);
   group.add(fillMesh);
 
-  // Wireframe edges - brighter blue (use standard box for cleaner edges)
-  const edgeBoxGeom = new THREE.BoxGeometry(width, height, depth);
-  const edgesGeometry = new THREE.EdgesGeometry(edgeBoxGeom);
-  const edgesMaterial = new THREE.LineBasicMaterial({
-    color: 0x00ffff,
-    linewidth: 2,
-  });
-  const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-  group.add(edges);
+  // Colored edges - cyan for horizontal (W/D), purple for vertical (H)
+  addColoredEdges(group, width, height, depth);
 
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);

@@ -51,6 +51,21 @@ export default function MeasurementUI({
   const depthInches = Math.round(context.depth_m * 39.3701);
   const heightInches = Math.round(context.height_m * 39.3701);
 
+  // Show confirmation popup when entering REVIEW state
+  const [showConfirmPopup, setShowConfirmPopup] = React.useState(false);
+  const prevStateRef = React.useRef(context.state);
+
+  React.useEffect(() => {
+    // Detect transition from HEIGHT_INPUT to REVIEW
+    if (prevStateRef.current === 'HEIGHT_INPUT' && context.state === 'REVIEW') {
+      setShowConfirmPopup(true);
+      // Auto-hide after 2 seconds
+      const timer = setTimeout(() => setShowConfirmPopup(false), 2000);
+      return () => clearTimeout(timer);
+    }
+    prevStateRef.current = context.state;
+  }, [context.state]);
+
   // Fade UI after inactivity to let AR breathe
   const [isIdle, setIsIdle] = React.useState(false);
   const idleTimeoutRef = React.useRef<number | null>(null);
@@ -133,7 +148,24 @@ export default function MeasurementUI({
       </div>
 
       {/* Spacer */}
-      <div className="flex-1" />
+      <div className="flex-1 flex items-center justify-center">
+        {/* Confirmation popup - appears briefly when dimensions are confirmed */}
+        {showConfirmPopup && (
+          <div className="bg-black/80 backdrop-blur-md rounded-2xl px-6 py-4 text-center animate-fade-in-out">
+            <div className="text-white/60 text-xs uppercase tracking-wider mb-2">Confirmed</div>
+            <div className="text-white text-2xl font-semibold">
+              <span className="text-cyan-400">{widthInches}″</span>
+              <span className="text-white/40 mx-1">×</span>
+              <span className="text-cyan-400">{depthInches}″</span>
+              <span className="text-white/40 mx-1">×</span>
+              <span className="text-purple-400">{heightInches}″</span>
+            </div>
+            <div className="text-white/50 text-sm mt-1">
+              {((widthInches * depthInches * heightInches) / 1728).toFixed(2)} ft³
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Bottom panel - Adjustment controls (fades when idle to let AR breathe) */}
       {showBottomPanel && (
@@ -279,13 +311,6 @@ function AdjustmentPanel({
         </div>
       </div>
 
-      {/* Pre-confirm summary */}
-      <PreConfirmSummary
-        widthInches={widthInches}
-        depthInches={depthInches}
-        heightInches={heightInches}
-      />
-
       {/* Action buttons */}
       <div className="flex gap-3">
         <button
@@ -308,13 +333,6 @@ function AdjustmentPanel({
 // ============================================================================
 // Dimension Stepper - Press-and-hold with acceleration
 // ============================================================================
-
-// Haptic feedback helper (Android vibration API)
-function triggerHaptic(intensity: 'light' | 'medium' = 'light') {
-  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-    navigator.vibrate(intensity === 'light' ? 1 : 3);
-  }
-}
 
 function DimensionStepper({
   label,
@@ -373,7 +391,6 @@ function DimensionStepper({
     const newVal = Math.max(min, Math.min(max, localValueRef.current + direction));
     localValueRef.current = newVal;
     onChange(newVal);
-    triggerHaptic('light');
     tickCountRef.current = 0;
 
     // Start continuous adjustment after initial delay
@@ -386,13 +403,6 @@ function DimensionStepper({
         if (nextVal !== localValueRef.current) {
           localValueRef.current = nextVal;
           onChange(nextVal);
-
-          // Haptic on acceleration thresholds
-          if (tickCountRef.current === 10 || tickCountRef.current === 25 || tickCountRef.current === 50) {
-            triggerHaptic('medium');
-          } else {
-            triggerHaptic('light');
-          }
         }
       }, 60); // ~16fps for smooth feel
     }, 250); // Shorter initial delay for responsiveness
@@ -429,36 +439,6 @@ function DimensionStepper({
       >
         +
       </button>
-    </div>
-  );
-}
-
-// ============================================================================
-// Pre-Confirm Summary - Shows final dimensions before confirm
-// ============================================================================
-
-function PreConfirmSummary({
-  widthInches,
-  depthInches,
-  heightInches,
-}: {
-  widthInches: number;
-  depthInches: number;
-  heightInches: number;
-}) {
-  // Calculate volume in cubic feet
-  // inches³ to ft³: divide by 1728 (12³)
-  const volumeCubicFeet = (widthInches * depthInches * heightInches) / 1728;
-
-  return (
-    <div className="bg-white/5 rounded-xl p-3 mb-4 text-center">
-      <div className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Final Size</div>
-      <div className="text-white text-lg font-medium">
-        {widthInches}″ W × {depthInches}″ D × {heightInches}″ H
-      </div>
-      <div className="text-white/50 text-sm mt-1">
-        Volume: {volumeCubicFeet.toFixed(2)} ft³
-      </div>
     </div>
   );
 }

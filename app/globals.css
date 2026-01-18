@@ -98,3 +98,27 @@ button:focus-visible {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Fade in and out animation for confirmation popup */
+@keyframes fade-in-out {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  15% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  85% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.animate-fade-in-out {
+  animation: fade-in-out 2s ease-in-out forwards;
+}
