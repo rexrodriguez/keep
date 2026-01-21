@@ -892,11 +892,11 @@ function addTexturedSideFaces(
 
   const hd = depth / 2;
 
-  // Logo size - smaller than the face with whitespace around it
-  // Use 40% of the smaller dimension to ensure it fits with margin
-  const logoScale = 0.4;
+  // Logo size - scaled to be visible but with whitespace around it
+  // Use 60% of the smaller dimension for better visibility
+  const logoScale = 0.6;
   const logoWidth = Math.min(width, height) * logoScale;
-  const logoHeight = logoWidth * 0.5; // Approximate aspect ratio of the logo
+  const logoHeight = logoWidth * 0.35; // Approximate aspect ratio of the Summerland logo (wider)
 
   // Front face only (facing +Z) - logo centered
   const frontGeom = new THREE.PlaneGeometry(logoWidth, logoHeight);
