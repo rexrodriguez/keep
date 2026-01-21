@@ -152,17 +152,13 @@ function addColoredEdges(
     [0, 4], [1, 5], [2, 6], [3, 7],
   ];
 
-  // Black dashed line material with increased width
+  // Black solid line material with increased width
   const lineMaterial = new LineMaterial({
     color: 0x000000, // Black
     linewidth: 3, // In pixels
     transparent: true,
     opacity: 0.85,
     resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
-    dashed: true,
-    dashScale: 50, // Scale factor for dash pattern
-    dashSize: 1, // Length of dash
-    gapSize: 0.5, // Length of gap
   });
 
   // Create each edge as a separate Line2 for proper thick rendering
