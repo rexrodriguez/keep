@@ -684,34 +684,35 @@ function addInteractionHandles(
     cornerGroup.userData = { handleType: 'cornerTop', cornerIndex: index };
 
     // Simple curved arc - shows rotation is possible
-    // Arc center is positioned INWARD from corner so the arc curves OUTWARD
+    // Arc curves OUTWARD (convex away from box center)
     const arcRadius = 0.025;
     const arcSweep = Math.PI * 0.5; // 90 degrees
 
-    // Direction from corner toward box center (inward)
-    const inwardAngles = [
-      -Math.PI / 4,        // front-left corner → inward is toward +X, -Z
-      (-3 * Math.PI) / 4,  // front-right corner → inward is toward -X, -Z
-      (3 * Math.PI) / 4,   // back-right corner → inward is toward -X, +Z
-      Math.PI / 4,         // back-left corner → inward is toward +X, +Z
+    // Outward direction from box center through this corner
+    const outwardAngles = [
+      (3 * Math.PI) / 4,   // front-left: 135° (toward -X, +Z)
+      Math.PI / 4,         // front-right: 45° (toward +X, +Z)
+      -Math.PI / 4,        // back-right: -45° (toward +X, -Z)
+      (-3 * Math.PI) / 4,  // back-left: -135° (toward -X, -Z)
     ];
-    const inwardAngle = inwardAngles[index];
+    const outwardAngle = outwardAngles[index];
 
-    // Position arc center inward from corner
-    const centerDist = arcRadius + 0.005;
-    const centerX = Math.cos(inwardAngle) * centerDist;
-    const centerZ = Math.sin(inwardAngle) * centerDist;
+    // Position arc center slightly outward from corner
+    const offsetDist = 0.01;
+    const offsetX = Math.cos(outwardAngle) * offsetDist;
+    const offsetZ = Math.sin(outwardAngle) * offsetDist;
 
-    // Arc start angle: the arc should span from one edge direction to the other
-    // For each corner, the arc spans 90° centered on the outward diagonal
-    const outwardAngle = inwardAngle + Math.PI; // opposite of inward
-    const arcStartAngle = outwardAngle - arcSweep / 2;
+    // Arc start angle: rotate so the arc bulges outward
+    // The torus arc starts at angle 0 and sweeps counterclockwise
+    // We want the midpoint of the arc to point outward from the box
+    // So start angle = outward direction + 90° (perpendicular, pointing along one edge)
+    const arcStartAngle = outwardAngle + Math.PI / 2 - arcSweep / 2;
 
     const arc = new THREE.Mesh(
       new THREE.TorusGeometry(arcRadius, 0.004, 8, 12, arcSweep),
       rotationHandleMat.clone()
     );
-    arc.position.set(centerX, 0, centerZ);
+    arc.position.set(offsetX, 0, offsetZ);
     arc.rotation.x = -Math.PI / 2; // Lay flat
     arc.rotation.z = arcStartAngle;
     cornerGroup.add(arc);
