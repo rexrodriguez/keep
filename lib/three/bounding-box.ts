@@ -872,8 +872,8 @@ function addInteractionHandles(
 }
 
 /**
- * Add textured side faces to the box group
- * The logo texture is applied to all 4 side faces (not top/bottom)
+ * Add textured logo to the front face of the box
+ * Logo is scaled down with whitespace around it, only on the front face
  */
 function addTexturedSideFaces(
   group: THREE.Group,
@@ -883,49 +883,29 @@ function addTexturedSideFaces(
 ): void {
   if (!logoTexture) return; // Texture not loaded yet
 
-  // Create textured material for side faces
+  // Create textured material for the logo
   const texturedMaterial = new THREE.MeshBasicMaterial({
     map: logoTexture,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.5,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
 
-  const hw = width / 2;
-  const hh = height / 2;
   const hd = depth / 2;
 
-  // Front face (facing +Z)
-  const frontGeom = new THREE.PlaneGeometry(width, height);
-  const frontFace = new THREE.Mesh(frontGeom, texturedMaterial.clone());
-  frontFace.position.set(0, 0, hd + 0.001); // Slightly offset to prevent z-fighting
+  // Logo size - smaller than the face with whitespace around it
+  // Use 40% of the smaller dimension to ensure it fits with margin
+  const logoScale = 0.4;
+  const logoWidth = Math.min(width, height) * logoScale;
+  const logoHeight = logoWidth * 0.5; // Approximate aspect ratio of the logo
+
+  // Front face only (facing +Z) - logo centered
+  const frontGeom = new THREE.PlaneGeometry(logoWidth, logoHeight);
+  const frontFace = new THREE.Mesh(frontGeom, texturedMaterial);
+  frontFace.position.set(0, 0, hd + 0.002); // Slightly offset to prevent z-fighting
   frontFace.name = 'textured-face-front';
   group.add(frontFace);
-
-  // Back face (facing -Z)
-  const backGeom = new THREE.PlaneGeometry(width, height);
-  const backFace = new THREE.Mesh(backGeom, texturedMaterial.clone());
-  backFace.position.set(0, 0, -hd - 0.001);
-  backFace.rotation.y = Math.PI; // Face outward
-  backFace.name = 'textured-face-back';
-  group.add(backFace);
-
-  // Left face (facing -X)
-  const leftGeom = new THREE.PlaneGeometry(depth, height);
-  const leftFace = new THREE.Mesh(leftGeom, texturedMaterial.clone());
-  leftFace.position.set(-hw - 0.001, 0, 0);
-  leftFace.rotation.y = -Math.PI / 2; // Face outward
-  leftFace.name = 'textured-face-left';
-  group.add(leftFace);
-
-  // Right face (facing +X)
-  const rightGeom = new THREE.PlaneGeometry(depth, height);
-  const rightFace = new THREE.Mesh(rightGeom, texturedMaterial.clone());
-  rightFace.position.set(hw + 0.001, 0, 0);
-  rightFace.rotation.y = Math.PI / 2; // Face outward
-  rightFace.name = 'textured-face-right';
-  group.add(rightFace);
 }
 
 /**

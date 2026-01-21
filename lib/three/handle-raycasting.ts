@@ -280,8 +280,13 @@ export function calculateRotationFromCornerDrag(
   // When dragging clockwise on screen, box should rotate clockwise when viewed from above
   let deltaAngle = startAngle - currentAngle;
 
+  // Normalize delta angle to [-PI, PI] to handle wrap-around at ±180°
+  // This prevents sudden jumps when crossing the ±π boundary
+  while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+  while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+
   // Convert to degrees
-  let deltaDegrees = (deltaAngle * 180) / Math.PI;
+  const deltaDegrees = (deltaAngle * 180) / Math.PI;
 
   // Apply to initial rotation
   let newRotation = initialRotationDeg + deltaDegrees;
