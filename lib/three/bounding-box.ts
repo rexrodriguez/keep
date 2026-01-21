@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { MeasurementPoint } from '@/lib/types';
 
 // Preload the logo texture once
@@ -115,8 +117,8 @@ function addDimensionLabels(
 }
 
 /**
- * Add colored box edges - cyan for horizontal (W/D), purple for vertical (H)
- * This matches the UI control colors for visual consistency
+ * Add black box edges with thicker lines using Line2
+ * Uses straight edges (no rounding) for a cleaner look
  */
 function addColoredEdges(
   group: THREE.Group,
@@ -140,48 +142,40 @@ function addColoredEdges(
     new THREE.Vector3(-hw, hh, hd),   // 7: top-front-left
   ];
 
-  // Horizontal edges (cyan - footprint color) - 8 edges on top and bottom
-  const horizontalEdges = [
+  // All 12 edges of the box
+  const edges: [number, number][] = [
     // Bottom face
     [0, 1], [1, 2], [2, 3], [3, 0],
     // Top face
     [4, 5], [5, 6], [6, 7], [7, 4],
-  ];
-
-  const cyanMaterial = new THREE.LineBasicMaterial({
-    color: 0x22d3ee, // cyan-400 to match UI
-    transparent: true,
-    opacity: 0.9,
-  });
-
-  const horizontalPoints: THREE.Vector3[] = [];
-  for (const [a, b] of horizontalEdges) {
-    horizontalPoints.push(corners[a], corners[b]);
-  }
-  const horizontalGeom = new THREE.BufferGeometry().setFromPoints(horizontalPoints);
-  const horizontalLines = new THREE.LineSegments(horizontalGeom, cyanMaterial);
-  horizontalLines.name = 'edges-horizontal';
-  group.add(horizontalLines);
-
-  // Vertical edges (purple - height color) - 4 edges connecting top and bottom
-  const verticalEdges = [
+    // Vertical edges
     [0, 4], [1, 5], [2, 6], [3, 7],
   ];
 
-  const purpleMaterial = new THREE.LineBasicMaterial({
-    color: 0xc084fc, // purple-400 to match UI
+  // Black line material with increased width
+  const lineMaterial = new LineMaterial({
+    color: 0x000000, // Black
+    linewidth: 3, // In pixels
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.85,
+    resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
   });
 
-  const verticalPoints: THREE.Vector3[] = [];
-  for (const [a, b] of verticalEdges) {
-    verticalPoints.push(corners[a], corners[b]);
+  // Create each edge as a separate Line2 for proper thick rendering
+  for (const [a, b] of edges) {
+    const positions: number[] = [
+      corners[a].x, corners[a].y, corners[a].z,
+      corners[b].x, corners[b].y, corners[b].z,
+    ];
+
+    const lineGeometry = new LineGeometry();
+    lineGeometry.setPositions(positions);
+
+    const line = new Line2(lineGeometry, lineMaterial.clone());
+    line.computeLineDistances();
+    line.name = 'box-edge';
+    group.add(line);
   }
-  const verticalGeom = new THREE.BufferGeometry().setFromPoints(verticalPoints);
-  const verticalLines = new THREE.LineSegments(verticalGeom, purpleMaterial);
-  verticalLines.name = 'edges-vertical';
-  group.add(verticalLines);
 }
 
 /**
@@ -984,14 +978,10 @@ function createBoxAtCenter(
   const group = new THREE.Group();
   group.name = 'bounding-box';
 
-  // Calculate corner radius - proportional to smallest dimension, max 2cm
-  const minDim = Math.min(width, height, depth);
-  const cornerRadius = Math.min(minDim * 0.08, 0.02);
+  // Create regular box geometry with straight edges
+  const geometry = new THREE.BoxGeometry(width, height, depth);
 
-  // Create rounded box geometry for softer, less CAD-like appearance
-  const geometry = new RoundedBoxGeometry(width, height, depth, 4, cornerRadius);
-
-  // Translucent fill - blue with low opacity
+  // Translucent fill - white with low opacity
   const fillMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
@@ -1064,14 +1054,10 @@ export function createFloorBoundingBox(
   const centerY = Math.min(p1.y, p2.y) + height / 2;
   const centerZ = (p1.z + p2.z) / 2;
 
-  // Calculate corner radius - proportional to smallest dimension, max 2cm
-  const minDim = Math.min(width, height, depth);
-  const cornerRadius = Math.min(minDim * 0.08, 0.02);
+  // Create regular box geometry with straight edges
+  const geometry = new THREE.BoxGeometry(width, height, depth);
 
-  // Create rounded box geometry for softer, less CAD-like appearance
-  const geometry = new RoundedBoxGeometry(width, height, depth, 4, cornerRadius);
-
-  // Translucent fill - blue with low opacity
+  // Translucent fill - white with low opacity
   const fillMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
@@ -1146,6 +1132,11 @@ export function updateBoundingBox(
         } else {
           child.material.dispose();
         }
+      }
+      // Dispose Line2 objects (thick lines)
+      if (child instanceof Line2) {
+        child.geometry.dispose();
+        (child.material as LineMaterial).dispose();
       }
       // Dispose sprite textures and materials
       if (child instanceof THREE.Sprite) {
@@ -1232,6 +1223,11 @@ export function disposeBoundingBox(scene: THREE.Scene): void {
         } else {
           child.material.dispose();
         }
+      }
+      // Dispose Line2 objects (thick lines)
+      if (child instanceof Line2) {
+        child.geometry.dispose();
+        (child.material as LineMaterial).dispose();
       }
       // Dispose sprite textures and materials
       if (child instanceof THREE.Sprite) {

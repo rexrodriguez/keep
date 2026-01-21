@@ -301,8 +301,9 @@ export function calculateRotationFromCornerDrag(
         currentWorld.z - boxCenterWorld.z
       );
 
-      // Delta is current - start (dragging clockwise increases angle)
-      let deltaAngle = currentAngle - startAngle;
+      // Delta is start - current (negated because Three.js Y rotation is counter-clockwise positive)
+      // This makes clockwise swipe = clockwise rotation when viewed from above
+      let deltaAngle = startAngle - currentAngle;
 
       // Normalize to [-PI, PI]
       while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
