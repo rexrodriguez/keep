@@ -946,7 +946,7 @@ function createBoxAtCenter(
 
   // Translucent fill - blue with low opacity
   const fillMaterial = new THREE.MeshBasicMaterial({
-    color: 0x00aaff,
+    color: 0xffffff,
     transparent: true,
     opacity: 0.2,
     side: THREE.DoubleSide,
@@ -1023,7 +1023,7 @@ export function createFloorBoundingBox(
 
   // Translucent fill - blue with low opacity
   const fillMaterial = new THREE.MeshBasicMaterial({
-    color: 0x00aaff,
+    color: 0xffffff,
     transparent: true,
     opacity: 0.2,
     side: THREE.DoubleSide,
