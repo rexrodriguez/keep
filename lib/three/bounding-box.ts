@@ -505,89 +505,13 @@ function addFrontEdgeHighlight(
  * Shows the current rotation angle visually
  */
 function addRotationArc(
-  group: THREE.Group,
-  width: number,
-  height: number,
-  depth: number,
+  _group: THREE.Group,
+  _width: number,
+  _height: number,
+  _depth: number,
   _rotation_deg: number
 ): void {
-  // Show curved rotation arrows at each corner of the box
-  const hw = width / 2;
-  const hh = height / 2;
-  const hd = depth / 2;
-  const floorY = -hh + 0.005;
-
-  // Arrow parameters
-  const arcRadius = 0.05; // Size of the curved arrow
-  const arrowHeadSize = 0.022;
-
-  const arrowMat = new THREE.MeshBasicMaterial({
-    color: 0xc084fc, // Purple-400
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.DoubleSide,
-    depthTest: false,
-  });
-
-  // Corner positions (slightly outside the box)
-  const offset = 0.03;
-  const corners = [
-    { x: hw + offset, z: hd + offset, startAngle: Math.PI },        // front-right
-    { x: -hw - offset, z: hd + offset, startAngle: Math.PI / 2 },   // front-left
-    { x: -hw - offset, z: -hd - offset, startAngle: 0 },            // back-left
-    { x: hw + offset, z: -hd - offset, startAngle: -Math.PI / 2 },  // back-right
-  ];
-
-  const arcGroup = new THREE.Group();
-  arcGroup.name = 'rotation-arc-group';
-
-  corners.forEach((corner) => {
-    // Create curved arc (about 60 degrees)
-    const arcAngle = Math.PI / 3; // 60 degrees
-    const segments = 10;
-
-    // Build tube path points for the arc
-    const pathPoints: THREE.Vector3[] = [];
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const angle = corner.startAngle + t * arcAngle;
-      pathPoints.push(
-        new THREE.Vector3(
-          corner.x + Math.cos(angle) * arcRadius,
-          floorY,
-          corner.z + Math.sin(angle) * arcRadius
-        )
-      );
-    }
-
-    // Create tube for the arc body
-    const arcCurve = new THREE.CatmullRomCurve3(pathPoints);
-    const tubeGeom = new THREE.TubeGeometry(arcCurve, segments, 0.003, 6, false);
-    const arcMesh = new THREE.Mesh(tubeGeom, arrowMat);
-    arcGroup.add(arcMesh);
-
-    // Add arrowhead at the end
-    const endAngle = corner.startAngle + arcAngle;
-    const endX = corner.x + Math.cos(endAngle) * arcRadius;
-    const endZ = corner.z + Math.sin(endAngle) * arcRadius;
-
-    // Tangent direction (perpendicular to radius, pointing in rotation direction)
-    const tangentAngle = endAngle + Math.PI / 2;
-
-    // Create cone for arrowhead
-    const coneGeom = new THREE.ConeGeometry(arrowHeadSize * 0.6, arrowHeadSize, 8);
-    const coneMesh = new THREE.Mesh(coneGeom, arrowMat);
-
-    // Position cone at end of arc
-    coneMesh.position.set(endX, floorY, endZ);
-    // Rotate cone to lay flat and point in tangent direction
-    coneMesh.rotation.x = Math.PI / 2;
-    coneMesh.rotation.z = tangentAngle + Math.PI / 2;
-
-    arcGroup.add(coneMesh);
-  });
-
-  group.add(arcGroup);
+  // Rotation indicators removed - the vertical corner arrows already indicate rotation
 }
 
 /**
