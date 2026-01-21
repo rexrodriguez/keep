@@ -691,14 +691,14 @@ function addInteractionHandles(
     // Hardcoded values per corner for consistent outward-curving arcs
     // Each corner needs: offset direction (outward) and arc start angle
     const cornerConfigs = [
-      // index 0: front-left (-X, +Z corner)
+      // index 0: front-left (-X, +Z corner) - correct
       { offsetAngle: (3 * Math.PI) / 4, arcStart: Math.PI },
-      // index 1: front-right (+X, +Z corner)
-      { offsetAngle: Math.PI / 4, arcStart: Math.PI / 2 },
-      // index 2: back-right (+X, -Z corner)
+      // index 1: front-right (+X, +Z corner) - flipped (+π)
+      { offsetAngle: Math.PI / 4, arcStart: Math.PI / 2 + Math.PI },
+      // index 2: back-right (+X, -Z corner) - correct
       { offsetAngle: -Math.PI / 4, arcStart: 0 },
-      // index 3: back-left (-X, -Z corner)
-      { offsetAngle: (-3 * Math.PI) / 4, arcStart: -Math.PI / 2 },
+      // index 3: back-left (-X, -Z corner) - flipped (+π)
+      { offsetAngle: (-3 * Math.PI) / 4, arcStart: -Math.PI / 2 + Math.PI },
     ];
     const config = cornerConfigs[index];
 
