@@ -683,16 +683,13 @@ function addInteractionHandles(
     cornerGroup.name = `handle-corner-top-${index}`;
     cornerGroup.userData = { handleType: 'cornerTop', cornerIndex: index };
 
-    // Curved arrow (arc with arrow head) - rotation indicator
-    // Arc curves OUTWARD (convex away from box center)
-    const arcRadius = 0.035;
+    // Simple curved arc - no arrowhead, just shows rotation is possible
+    // Arc curves outward (convex from corner perspective)
+    const arcRadius = 0.03;
     const arcSweep = Math.PI * 0.5; // 90 degrees
 
-    // Diagonal direction pointing outward from this corner
-    // index 0: front-left -> outward is -X, +Z (angle = 3π/4 = 135°)
-    // index 1: front-right -> outward is +X, +Z (angle = π/4 = 45°)
-    // index 2: back-right -> outward is +X, -Z (angle = -π/4 = -45°)
-    // index 3: back-left -> outward is -X, -Z (angle = -3π/4 = -135°)
+    // Small offset outward from corner so arc doesn't overlap with box edges
+    const offsetDist = 0.015;
     const outwardAngles = [
       (3 * Math.PI) / 4,   // front-left: 135°
       Math.PI / 4,         // front-right: 45°
@@ -700,39 +697,21 @@ function addInteractionHandles(
       (-3 * Math.PI) / 4,  // back-left: -135°
     ];
     const outwardAngle = outwardAngles[index];
+    const offsetX = Math.cos(outwardAngle) * offsetDist;
+    const offsetZ = Math.sin(outwardAngle) * offsetDist;
 
-    // Position the arc center OUTWARD from the corner
-    // so the arc bulges away from the box
-    const arcCenterOffset = arcRadius + 0.02;
-    const arcCenterX = Math.cos(outwardAngle) * arcCenterOffset;
-    const arcCenterZ = Math.sin(outwardAngle) * arcCenterOffset;
-
-    // Arc starts perpendicular to outward direction and sweeps CCW
-    const arcStartAngle = outwardAngle + Math.PI / 2 + arcSweep / 2;
+    // Arc orientation - perpendicular to outward direction
+    // This makes the arc curve away from the box center
+    const arcStartAngle = outwardAngle - Math.PI / 2 - arcSweep / 2;
 
     const arc = new THREE.Mesh(
       new THREE.TorusGeometry(arcRadius, 0.004, 8, 12, arcSweep),
       rotationHandleMat.clone()
     );
-    arc.position.set(arcCenterX, 0, arcCenterZ);
-    arc.rotation.x = -Math.PI / 2; // Lay flat on XZ plane
-    arc.rotation.z = arcStartAngle - arcSweep; // Start angle for torus
+    arc.position.set(offsetX, 0, offsetZ);
+    arc.rotation.x = -Math.PI / 2; // Lay flat
+    arc.rotation.z = arcStartAngle;
     cornerGroup.add(arc);
-
-    // Arrow head at end of arc (pointing CCW tangent)
-    const arrowHead = new THREE.Mesh(
-      new THREE.ConeGeometry(0.008, 0.016, 4),
-      rotationHandleMat.clone()
-    );
-    const arcEndAngle = arcStartAngle;
-    arrowHead.position.set(
-      arcCenterX + Math.cos(arcEndAngle) * arcRadius,
-      0,
-      arcCenterZ + Math.sin(arcEndAngle) * arcRadius
-    );
-    // Point arrow tangent to arc (CCW direction)
-    arrowHead.rotation.y = -arcEndAngle + Math.PI / 2;
-    cornerGroup.add(arrowHead);
 
     // Invisible hit box for easier touch
     const hitBox = new THREE.Mesh(
