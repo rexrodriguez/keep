@@ -2,6 +2,16 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { MeasurementPoint } from '@/lib/types';
 
+// Preload the logo texture once
+const textureLoader = new THREE.TextureLoader();
+let logoTexture: THREE.Texture | null = null;
+
+// Load texture asynchronously
+textureLoader.load('/Extra_Space_Storage_Logo.png', (texture) => {
+  logoTexture = texture;
+  logoTexture.colorSpace = THREE.SRGBColorSpace;
+});
+
 // Re-export handle types for external use
 export type { HandleType, EdgeType, AxisType } from './handle-raycasting';
 
@@ -862,6 +872,63 @@ function addInteractionHandles(
 }
 
 /**
+ * Add textured side faces to the box group
+ * The logo texture is applied to all 4 side faces (not top/bottom)
+ */
+function addTexturedSideFaces(
+  group: THREE.Group,
+  width: number,
+  height: number,
+  depth: number
+): void {
+  if (!logoTexture) return; // Texture not loaded yet
+
+  // Create textured material for side faces
+  const texturedMaterial = new THREE.MeshBasicMaterial({
+    map: logoTexture,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+
+  const hw = width / 2;
+  const hh = height / 2;
+  const hd = depth / 2;
+
+  // Front face (facing +Z)
+  const frontGeom = new THREE.PlaneGeometry(width, height);
+  const frontFace = new THREE.Mesh(frontGeom, texturedMaterial.clone());
+  frontFace.position.set(0, 0, hd + 0.001); // Slightly offset to prevent z-fighting
+  frontFace.name = 'textured-face-front';
+  group.add(frontFace);
+
+  // Back face (facing -Z)
+  const backGeom = new THREE.PlaneGeometry(width, height);
+  const backFace = new THREE.Mesh(backGeom, texturedMaterial.clone());
+  backFace.position.set(0, 0, -hd - 0.001);
+  backFace.rotation.y = Math.PI; // Face outward
+  backFace.name = 'textured-face-back';
+  group.add(backFace);
+
+  // Left face (facing -X)
+  const leftGeom = new THREE.PlaneGeometry(depth, height);
+  const leftFace = new THREE.Mesh(leftGeom, texturedMaterial.clone());
+  leftFace.position.set(-hw - 0.001, 0, 0);
+  leftFace.rotation.y = -Math.PI / 2; // Face outward
+  leftFace.name = 'textured-face-left';
+  group.add(leftFace);
+
+  // Right face (facing +X)
+  const rightGeom = new THREE.PlaneGeometry(depth, height);
+  const rightFace = new THREE.Mesh(rightGeom, texturedMaterial.clone());
+  rightFace.position.set(hw + 0.001, 0, 0);
+  rightFace.rotation.y = Math.PI / 2; // Face outward
+  rightFace.name = 'textured-face-right';
+  group.add(rightFace);
+}
+
+/**
  * Add a rotation guide circle that appears during corner rotation
  * This is added separately and can be shown/hidden
  */
@@ -958,6 +1025,9 @@ function createBoxAtCenter(
   // Colored edges - cyan for horizontal (W/D), purple for vertical (H)
   addColoredEdges(group, width, height, depth);
 
+  // Add textured side faces with logo
+  addTexturedSideFaces(group, width, height, depth);
+
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
 
@@ -1034,6 +1104,9 @@ export function createFloorBoundingBox(
 
   // Colored edges - cyan for horizontal (W/D), purple for vertical (H)
   addColoredEdges(group, width, height, depth);
+
+  // Add textured side faces with logo
+  addTexturedSideFaces(group, width, height, depth);
 
   // Add contact shadow (floor footprint)
   addContactShadow(group, width, height, depth);
