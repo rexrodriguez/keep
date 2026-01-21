@@ -262,6 +262,24 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     }
   }, []);
 
+  // Handle browser back button - exit AR gracefully instead of navigating away
+  useEffect(() => {
+    // Push a state so we can intercept the back button
+    window.history.pushState({ arSession: true }, '');
+
+    const handlePopState = () => {
+      // Exit AR session and return to landing page
+      cleanup();
+      onExit();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [cleanup, onExit]);
+
   // Get box center in screen coordinates (for rotation calculation)
   const getBoxCenterScreen = useCallback((): { x: number; y: number } | null => {
     if (!sceneContextRef.current || !context.dragStart || !context.dragEnd) return null;
