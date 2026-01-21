@@ -688,25 +688,24 @@ function addInteractionHandles(
     const arcRadius = 0.025;
     const arcSweep = Math.PI * 0.5; // 90 degrees
 
-    // Outward direction from box center through this corner
-    const outwardAngles = [
-      (3 * Math.PI) / 4,   // front-left: 135° (toward -X, +Z)
-      Math.PI / 4,         // front-right: 45° (toward +X, +Z)
-      -Math.PI / 4,        // back-right: -45° (toward +X, -Z)
-      (-3 * Math.PI) / 4,  // back-left: -135° (toward -X, -Z)
+    // Hardcoded values per corner for consistent outward-curving arcs
+    // Each corner needs: offset direction (outward) and arc start angle
+    const cornerConfigs = [
+      // index 0: front-left (-X, +Z corner)
+      { offsetAngle: (3 * Math.PI) / 4, arcStart: Math.PI },
+      // index 1: front-right (+X, +Z corner)
+      { offsetAngle: Math.PI / 4, arcStart: Math.PI / 2 },
+      // index 2: back-right (+X, -Z corner)
+      { offsetAngle: -Math.PI / 4, arcStart: 0 },
+      // index 3: back-left (-X, -Z corner)
+      { offsetAngle: (-3 * Math.PI) / 4, arcStart: -Math.PI / 2 },
     ];
-    const outwardAngle = outwardAngles[index];
+    const config = cornerConfigs[index];
 
     // Position arc center slightly outward from corner
     const offsetDist = 0.01;
-    const offsetX = Math.cos(outwardAngle) * offsetDist;
-    const offsetZ = Math.sin(outwardAngle) * offsetDist;
-
-    // Arc start angle: rotate so the arc bulges outward
-    // The torus arc starts at angle 0 and sweeps counterclockwise
-    // We want the midpoint of the arc to point outward from the box
-    // So start angle = outward direction + 90° (perpendicular, pointing along one edge)
-    const arcStartAngle = outwardAngle + Math.PI / 2 - arcSweep / 2;
+    const offsetX = Math.cos(config.offsetAngle) * offsetDist;
+    const offsetZ = Math.sin(config.offsetAngle) * offsetDist;
 
     const arc = new THREE.Mesh(
       new THREE.TorusGeometry(arcRadius, 0.004, 8, 12, arcSweep),
@@ -714,7 +713,7 @@ function addInteractionHandles(
     );
     arc.position.set(offsetX, 0, offsetZ);
     arc.rotation.x = -Math.PI / 2; // Lay flat
-    arc.rotation.z = arcStartAngle;
+    arc.rotation.z = config.arcStart;
     cornerGroup.add(arc);
 
     // Invisible hit box for easier touch
