@@ -9,7 +9,7 @@ const textureLoader = new THREE.TextureLoader();
 let logoTexture: THREE.Texture | null = null;
 
 // Load texture asynchronously
-textureLoader.load('/Extra_Space_Storage_Logo.png', (texture) => {
+textureLoader.load('/Summerland_Storage_Partners_Logo.png', (texture) => {
   logoTexture = texture;
   logoTexture.colorSpace = THREE.SRGBColorSpace;
 });
