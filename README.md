@@ -5,18 +5,23 @@ A web-based AR application for Android Chrome that lets users measure objects us
 ## Features
 
 - **WebXR AR Measurement**: Use your phone's camera to measure real-world objects
-- **5-Point Measurement**: Tap 4 base corners + 1 height point for accurate W×D×H
-- **Tap Stabilization**: Rolling window averaging ensures accurate point placement
-- **Progressive Visualization**: See measurements build up as you tap points
-- **Storage Search**: Find storage units that fit your measured object
-- **Fit Logic**: Units are matched by direct dimension fit OR volume (with 1.25× padding)
+- **Tap-to-Place**: Single tap places a measurement box on detected floor surfaces
+- **Direct Manipulation**: Drag arrow handles to resize, rotate, and move the box
+  - **Edge arrows** (cyan): Drag to adjust width and depth
+  - **Top arrow** (purple): Drag up/down to adjust height
+  - **Top corner arcs** (purple): Drag to rotate the box
+  - **Bottom corner arrows** (cyan): Drag to move the entire box
+- **Reticle-Based Targeting**: Aim the reticle at handles for best interaction accuracy
+- **Storage Search**: Find storage units that fit your measured object nearby
+- **Fit Logic**: Units matched by direct dimension fit OR volume (with 1.25× padding)
 
 ## Requirements
 
 - **Android phone** with ARCore support (most phones from 2018+)
-- **Chrome** browser (latest version recommended)
+- **Chrome** browser (version 79+ recommended)
 - **HTTPS** connection (required for WebXR)
 - **Camera permission** enabled
+- **Google Play Services for AR** installed (usually automatic)
 
 ## Quick Start
 
@@ -135,14 +140,15 @@ WSL2 IP addresses change on restart. If the connection stops working after a reb
 
 1. **Capability Check**: App verifies your device supports WebXR AR
 2. **Start AR**: Tap "Start AR Measurement"
-3. **Measure** (3 steps):
-   - **Floor Point 1**: Point at one corner of the object's base on the floor and tap
-   - **Floor Point 2**: Point at the diagonal opposite corner on the floor and tap
-   - **Height**: Use the slider to set the object's height (since AR can only detect floor surfaces)
-4. **Review**: Check the measurements and confidence level
-5. **Find Storage**: Set search radius and find matching storage units
+3. **Place Box**: Point at the floor until a surface is detected, then tap to place a measurement box
+4. **Adjust Dimensions**: Aim the reticle at the arrow handles and drag to resize:
+   - Drag **edge arrows** to adjust width/depth
+   - Drag the **top arrow** up/down for height
+   - Drag **top corner arcs** to rotate
+   - Drag **bottom corner arrows** to move the box
+5. **Confirm & Search**: Tap "Looks Good" then set search radius to find matching storage units
 
-**Note**: WebXR hit-test only detects flat surfaces (floor, table), so width and depth are measured from floor taps while height is set manually via slider.
+**Tip**: For best results, aim the center reticle at the handle you want to manipulate before dragging.
 
 ## Project Structure
 
@@ -170,41 +176,34 @@ WSL2 IP addresses change on restart. If the connection stops working after a reb
 │   ├── three/
 │   │   ├── scene-setup.ts      # Three.js scene configuration
 │   │   ├── reticle.ts          # AR reticle mesh
-│   │   ├── markers.ts          # Point markers and lines
-│   │   └── bounding-box.ts     # Translucent measurement box
+│   │   ├── bounding-box.ts     # Measurement box with handles
+│   │   ├── handle-raycasting.ts # Touch-to-handle hit detection
+│   │   └── target-marker.ts    # Floor target indicator
 │   └── measurement/
 │       ├── state-machine.ts    # Measurement state management
 │       ├── stabilization.ts    # Pose stabilization
-│       ├── geometry.ts         # Rectangle fitting, plane math
 │       └── calculations.ts     # W/D/H/volume computations
 └── public/
     └── manifest.json           # PWA manifest
 ```
 
-## Measurement Math
+## Interaction Model
 
-### Rectangle Fitting
-1. Use P1→P2 as the width direction
-2. Compute plane normal from first 3 points
-3. Derive depth direction perpendicular to width (in plane)
-4. Project all 4 points onto width/depth axes
-5. Width = extent along width axis, Depth = extent along depth axis
+### Direct Manipulation
+The app uses a direct manipulation paradigm where users interact with visible arrow handles:
 
-### Height Calculation
-1. Compute base plane from 4 base points
-2. Height = vertical distance from base centroid to height point
-3. Uses local-floor reference space for Y-axis alignment
+- **Edge Arrows**: Cyan arrows on each face control width (left/right) and depth (front/back)
+- **Top Arrow**: Purple upward arrow controls height
+- **Top Corner Arcs**: Purple curved arrows at top corners control rotation
+- **Bottom Corner Arrows**: Cyan four-way arrows at bottom corners move the entire box
+
+### Reticle-Based Targeting
+For best accuracy, aim the center reticle at the handle you want to manipulate. The system uses raycasting from your touch position, but having the reticle aligned with the handle improves hit detection.
 
 ### Stabilization
-- Rolling window of last 10 hit-test positions
-- Variance threshold: 5mm maximum spread
-- Taps only accepted when variance is below threshold
-- Visual feedback: green reticle = stable, orange = unstable
-
-### Confidence Indicator
-- **HIGH**: Stability > 80%, orthogonality error < 5°
-- **MEDIUM**: Stability > 50%, orthogonality error < 15°
-- **LOW**: Otherwise
+- Rolling window of last 5 hit-test positions
+- Variance threshold: 15mm maximum spread for placement
+- Visual feedback: green reticle = stable (can place), orange = unstable
 
 ## API
 
@@ -263,20 +262,36 @@ A storage unit fits if:
 
 ## Troubleshooting
 
+### Chrome Flags (if AR isn't working)
+
+On most modern Android devices (Chrome 79+), WebXR AR works without any flags. If you experience issues, try enabling these in `chrome://flags`:
+
+1. **WebXR Device API** (`#webxr`) - Usually enabled by default
+2. **WebXR Incubations** (`#webxr-incubations`) - Enables experimental features
+3. **WebXR AR Module** (`#webxr-ar-module`) - AR-specific features (if available)
+
+After changing flags, restart Chrome completely.
+
 ### "WebXR not available"
-- Ensure you're using Chrome on Android
+- Ensure you're using Chrome on Android (not Firefox, Samsung Browser, etc.)
 - Check that you're accessing via HTTPS
-- Try chrome://flags and enable "WebXR Incubations"
+- Try enabling flags listed above
 
 ### "Immersive AR not supported"
 - Your device may not support ARCore
 - Install "Google Play Services for AR" from Play Store
 - Check [ARCore supported devices](https://developers.google.com/ar/devices)
 
-### "Hit-test not working"
-- Point at a flat, textured surface
+### "Hit-test not working" / Reticle not appearing
+- Point at a flat, textured surface (plain white surfaces are hard to track)
 - Ensure adequate lighting
-- Move the phone slowly to improve tracking
+- Move the phone slowly to help ARCore build a map
+- Try pointing at the floor from different angles
+
+### Handles not responding to touch
+- Aim the center reticle directly at the arrow handle before dragging
+- The reticle helps the system know which handle you're targeting
+- Make sure you're in the adjustment phase (after placing the box)
 
 ### Certificate warnings
 - Expected with self-signed certificates
