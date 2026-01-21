@@ -501,120 +501,17 @@ function addFrontEdgeHighlight(
 }
 
 /**
- * Add rotation arc indicator on the floor
- * Shows the current rotation angle visually
+ * Add rotation arc indicator on the floor - DISABLED
+ * The top corner rotation handles already show rotation capability
  */
 function addRotationArc(
-  group: THREE.Group,
-  width: number,
-  height: number,
-  depth: number,
+  _group: THREE.Group,
+  _width: number,
+  _height: number,
+  _depth: number,
   _rotation_deg: number
 ): void {
-  // Show curved rotation arrows at each corner - curves face OUTWARD to suggest circular path
-  const hw = width / 2;
-  const hh = height / 2;
-  const hd = depth / 2;
-  const floorY = -hh + 0.004;
-
-  const arcRadius = 0.045;
-  const arrowHeadSize = 0.018;
-
-  const arrowMat = new THREE.MeshBasicMaterial({
-    color: 0xc084fc, // Purple-400
-    transparent: true,
-    opacity: 0.8,
-    side: THREE.DoubleSide,
-    depthTest: false,
-  });
-
-  // Corner positions and arc centers
-  // The arc center is OUTSIDE the corner so the curve faces outward
-  const cornerOffset = 0.02;
-  const arcCenterOffset = arcRadius + 0.01; // Arc center is further out
-
-  const corners = [
-    {
-      cornerX: hw + cornerOffset,
-      cornerZ: hd + cornerOffset,
-      // Arc center is diagonally outward from corner
-      centerX: hw + arcCenterOffset,
-      centerZ: hd + arcCenterOffset,
-      // Arc sweeps from pointing toward -X to pointing toward -Z (counterclockwise viewed from above)
-      startAngle: Math.PI,      // pointing left
-      endAngle: Math.PI / 2,    // pointing down (in screen coords, up in world)
-    },
-    {
-      cornerX: -hw - cornerOffset,
-      cornerZ: hd + cornerOffset,
-      centerX: -hw - arcCenterOffset,
-      centerZ: hd + arcCenterOffset,
-      startAngle: Math.PI / 2,
-      endAngle: 0,
-    },
-    {
-      cornerX: -hw - cornerOffset,
-      cornerZ: -hd - cornerOffset,
-      centerX: -hw - arcCenterOffset,
-      centerZ: -hd - arcCenterOffset,
-      startAngle: 0,
-      endAngle: -Math.PI / 2,
-    },
-    {
-      cornerX: hw + cornerOffset,
-      cornerZ: -hd - cornerOffset,
-      centerX: hw + arcCenterOffset,
-      centerZ: -hd - arcCenterOffset,
-      startAngle: -Math.PI / 2,
-      endAngle: -Math.PI,
-    },
-  ];
-
-  const arcGroup = new THREE.Group();
-  arcGroup.name = 'rotation-arc-group';
-
-  corners.forEach((corner) => {
-    // Create arc that curves OUTWARD (convex from box perspective)
-    const segments = 12;
-    const angleSpan = corner.endAngle - corner.startAngle;
-
-    const pathPoints: THREE.Vector3[] = [];
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const angle = corner.startAngle + t * angleSpan;
-      pathPoints.push(
-        new THREE.Vector3(
-          corner.centerX + Math.cos(angle) * arcRadius,
-          floorY,
-          corner.centerZ + Math.sin(angle) * arcRadius
-        )
-      );
-    }
-
-    // Create tube for the arc body
-    const arcCurve = new THREE.CatmullRomCurve3(pathPoints);
-    const tubeGeom = new THREE.TubeGeometry(arcCurve, segments, 0.003, 6, false);
-    const arcMesh = new THREE.Mesh(tubeGeom, arrowMat);
-    arcGroup.add(arcMesh);
-
-    // Add arrowhead at the end - pointing along the tangent (counterclockwise direction)
-    const endX = corner.centerX + Math.cos(corner.endAngle) * arcRadius;
-    const endZ = corner.centerZ + Math.sin(corner.endAngle) * arcRadius;
-
-    // Tangent at end point is perpendicular to radius, in CCW direction
-    const tangentAngle = corner.endAngle + Math.PI / 2;
-
-    // Create cone arrowhead
-    const coneGeom = new THREE.ConeGeometry(arrowHeadSize * 0.5, arrowHeadSize, 8);
-    const coneMesh = new THREE.Mesh(coneGeom, arrowMat);
-    coneMesh.position.set(endX, floorY, endZ);
-    // Lay flat and point in tangent direction
-    coneMesh.rotation.x = Math.PI / 2;
-    coneMesh.rotation.z = -tangentAngle + Math.PI;
-    arcGroup.add(coneMesh);
-  });
-
-  group.add(arcGroup);
+  // Intentionally empty - rotation is indicated by top corner handles only
 }
 
 /**
@@ -787,27 +684,36 @@ function addInteractionHandles(
     cornerGroup.userData = { handleType: 'cornerTop', cornerIndex: index };
 
     // Curved arrow (arc with arrow head) - rotation indicator
+    // Arc curves OUTWARD (convex from corner, suggesting circular rotation path)
     const arcRadius = 0.04;
+    const arcSweep = Math.PI * 0.6; // 108 degrees
+
+    // Position arc so it curves away from box center
+    // Each corner index rotates 90 degrees around
+    // Base angle points diagonally outward from corner
+    const baseAngle = (index * Math.PI) / 2 + Math.PI / 4; // 45°, 135°, 225°, 315°
+    const arcStartAngle = baseAngle - arcSweep / 2;
+
     const arc = new THREE.Mesh(
-      new THREE.TorusGeometry(arcRadius, 0.006, 8, 16, Math.PI * 0.75),
+      new THREE.TorusGeometry(arcRadius, 0.005, 8, 16, arcSweep),
       rotationHandleMat.clone()
     );
-    arc.rotation.x = -Math.PI / 2;
-    // Orient arc to face outward from corner
-    arc.rotation.z = (index * Math.PI) / 2 + Math.PI / 8;
+    arc.rotation.x = -Math.PI / 2; // Lay flat
+    arc.rotation.z = arcStartAngle; // Orient outward from corner
     cornerGroup.add(arc);
 
-    // Arrow head at end of arc
+    // Arrow head at end of arc (pointing in CCW direction)
     const arrowHead = new THREE.Mesh(
-      new THREE.ConeGeometry(0.012, 0.025, 4),
+      new THREE.ConeGeometry(0.010, 0.020, 4),
       rotationHandleMat.clone()
     );
-    const arcEndAngle = (index * Math.PI) / 2 + Math.PI / 8 + Math.PI * 0.75;
+    const arcEndAngle = arcStartAngle + arcSweep;
     arrowHead.position.set(
       Math.cos(arcEndAngle) * arcRadius,
       0,
       Math.sin(arcEndAngle) * arcRadius
     );
+    // Point arrow tangent to arc (CCW direction)
     arrowHead.rotation.y = -arcEndAngle + Math.PI / 2;
     cornerGroup.add(arrowHead);
 
