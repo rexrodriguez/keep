@@ -256,42 +256,92 @@ export function screenDeltaToWorldHeight(
 }
 
 /**
- * Calculate rotation angle from corner drag position relative to box center
+ * Calculate rotation angle from corner drag using world-space floor plane projection
+ * This properly handles rotation regardless of camera viewing angle
  */
 export function calculateRotationFromCornerDrag(
   startScreenPos: { x: number; y: number },
   currentScreenPos: { x: number; y: number },
   boxCenterScreen: { x: number; y: number },
-  initialRotationDeg: number
+  initialRotationDeg: number,
+  camera?: THREE.Camera,
+  boxCenterWorld?: THREE.Vector3,
+  floorY?: number
 ): number {
-  // Calculate angle from center to start position
+  // If we have camera and world position info, use world-space calculation
+  if (camera && boxCenterWorld && floorY !== undefined) {
+    // Project screen positions to floor plane
+    const startWorld = raycastToFloorPlane(
+      startScreenPos.x,
+      startScreenPos.y,
+      camera,
+      window.innerWidth,
+      window.innerHeight,
+      floorY
+    );
+
+    const currentWorld = raycastToFloorPlane(
+      currentScreenPos.x,
+      currentScreenPos.y,
+      camera,
+      window.innerWidth,
+      window.innerHeight,
+      floorY
+    );
+
+    if (startWorld && currentWorld) {
+      // Calculate angles in world space (on floor plane, around Y axis)
+      const startAngle = Math.atan2(
+        startWorld.x - boxCenterWorld.x,
+        startWorld.z - boxCenterWorld.z
+      );
+
+      const currentAngle = Math.atan2(
+        currentWorld.x - boxCenterWorld.x,
+        currentWorld.z - boxCenterWorld.z
+      );
+
+      // Delta is current - start (dragging clockwise increases angle)
+      let deltaAngle = currentAngle - startAngle;
+
+      // Normalize to [-PI, PI]
+      while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+      while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+
+      // Convert to degrees
+      const deltaDegrees = (deltaAngle * 180) / Math.PI;
+
+      // Apply to initial rotation
+      let newRotation = initialRotationDeg + deltaDegrees;
+
+      // Normalize to 0-360
+      while (newRotation < 0) newRotation += 360;
+      while (newRotation >= 360) newRotation -= 360;
+
+      return Math.round(newRotation);
+    }
+  }
+
+  // Fallback to screen-space calculation (original behavior)
   const startAngle = Math.atan2(
     startScreenPos.y - boxCenterScreen.y,
     startScreenPos.x - boxCenterScreen.x
   );
 
-  // Calculate angle from center to current position
   const currentAngle = Math.atan2(
     currentScreenPos.y - boxCenterScreen.y,
     currentScreenPos.x - boxCenterScreen.x
   );
 
-  // Calculate delta angle (negated for intuitive rotation direction)
-  // When dragging clockwise on screen, box should rotate clockwise when viewed from above
   let deltaAngle = startAngle - currentAngle;
 
-  // Normalize delta angle to [-PI, PI] to handle wrap-around at ±180°
-  // This prevents sudden jumps when crossing the ±π boundary
   while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
   while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
 
-  // Convert to degrees
   const deltaDegrees = (deltaAngle * 180) / Math.PI;
 
-  // Apply to initial rotation
   let newRotation = initialRotationDeg + deltaDegrees;
 
-  // Normalize to 0-360
   while (newRotation < 0) newRotation += 360;
   while (newRotation >= 360) newRotation -= 360;
 

@@ -443,14 +443,26 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           dispatch({ type: 'MOVE_BOX', deltaX, deltaZ });
         }
       } else if (handle.type === 'cornerTop') {
-        // Upper corner drag - calculate rotation from screen position around box center
+        // Upper corner drag - calculate rotation using world-space floor projection
         const boxCenterScreen = getBoxCenterScreen();
-        if (boxCenterScreen) {
+        if (boxCenterScreen && context.dragStart && context.dragEnd) {
+          const p1 = context.dragStart.position;
+          const p2 = context.dragEnd.position;
+          const boxCenterWorld = new THREE.Vector3(
+            (p1.x + p2.x) / 2,
+            Math.min(p1.y, p2.y),
+            (p1.z + p2.z) / 2
+          );
+          const floorY = Math.min(p1.y, p2.y);
+
           const newRotation = calculateRotationFromCornerDrag(
             handle.startScreenPos,
             { x: touch.clientX, y: touch.clientY },
             boxCenterScreen,
-            handle.startRotation
+            handle.startRotation,
+            sceneContextRef.current.camera,
+            boxCenterWorld,
+            floorY
           );
 
           dispatch({ type: 'SET_ROTATION', rotation_deg: newRotation });
