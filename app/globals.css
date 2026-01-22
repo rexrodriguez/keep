@@ -31,11 +31,23 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* WebXR specific styles */
+/* WebXR specific styles - only apply overflow hidden when AR is active */
 html, body {
   width: 100%;
   height: 100%;
+}
+
+/* Allow scrolling by default, AR mode will override via .ar-active class */
+html.ar-active, html.ar-active body {
   overflow: hidden;
+}
+
+/* Scrollable page container for non-AR screens */
+.scrollable-page {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Ensure canvas fills screen in AR mode */

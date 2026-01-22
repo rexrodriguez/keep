@@ -206,7 +206,7 @@ export default function Home() {
     return (
       <>
         {portraitOverlay}
-        <div className="flex flex-col items-center min-h-screen p-6 bg-gray-900 overflow-y-auto">
+        <div className="scrollable-page flex flex-col items-center p-6 bg-gray-900">
         <div className="max-w-md w-full text-center my-auto py-4">
           {/* Logo/Icon */}
           <div className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
