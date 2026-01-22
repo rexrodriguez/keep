@@ -39,12 +39,14 @@ export default function CapabilityCheck({
 
   if (checking) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-gray-900 text-white">
+      <div className="flex flex-col items-center min-h-screen p-6 bg-gray-900 text-white overflow-y-auto">
+        <div className="my-auto py-4 flex flex-col items-center">
         <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
         <h2 className="text-xl font-semibold mb-2">Checking Device Capabilities</h2>
         <p className="text-gray-400 text-center">
           Verifying AR support on your device...
         </p>
+        </div>
       </div>
     );
   }
@@ -53,7 +55,8 @@ export default function CapabilityCheck({
 
   if (result.supported) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-gray-900 text-white">
+      <div className="flex flex-col items-center min-h-screen p-6 bg-gray-900 text-white overflow-y-auto">
+        <div className="my-auto py-4 flex flex-col items-center">
         <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mb-4">
           <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
@@ -63,6 +66,7 @@ export default function CapabilityCheck({
         <p className="text-gray-400 text-center">
           Your device supports AR measurement
         </p>
+        </div>
       </div>
     );
   }
@@ -72,8 +76,8 @@ export default function CapabilityCheck({
   const troubleshootingSteps = getTroubleshootingSteps();
 
   return (
-    <div className="flex flex-col min-h-screen p-6 bg-gray-900 text-white">
-      <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto">
+    <div className="flex flex-col min-h-screen p-6 bg-gray-900 text-white overflow-y-auto">
+      <div className="flex-1 flex flex-col items-center max-w-md mx-auto py-4">
         {/* Error icon */}
         <div className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center mb-4">
           <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
