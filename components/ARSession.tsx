@@ -79,6 +79,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     startScreenPos: { x: number; y: number };
     startDimension: number;
     startRotation: number;
+    lastDelta: number; // Track previous delta for incremental offset calculation
   } | null>(null);
 
   // Track if we're currently manipulating a handle
@@ -351,6 +352,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           startScreenPos: { x: touch.clientX, y: touch.clientY },
           startDimension,
           startRotation: context.rotation_deg,
+          lastDelta: 0,
         };
 
         setIsManipulating(true);
@@ -426,21 +428,24 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
           const newDimension = Math.max(0.0254, Math.min(5.08, handle.startDimension + delta));
 
-          // Calculate center offset to keep opposite edge fixed
-          // Move center by delta/2 in the direction of the dragged edge
+          // Calculate INCREMENTAL offset to keep opposite edge fixed
+          // Only move by the change since last frame, not the total delta
+          const incrementalDelta = delta - handle.lastDelta;
+          handle.lastDelta = delta;
+
           const rotationRad = (context.rotation_deg * Math.PI) / 180;
           let offsetX = 0;
           let offsetZ = 0;
 
           if (handle.data.axis === 'width') {
             // Width is local X axis
-            offsetX = Math.cos(rotationRad) * (delta / 2) * handle.data.direction;
-            offsetZ = -Math.sin(rotationRad) * (delta / 2) * handle.data.direction;
+            offsetX = Math.cos(rotationRad) * (incrementalDelta / 2) * handle.data.direction;
+            offsetZ = -Math.sin(rotationRad) * (incrementalDelta / 2) * handle.data.direction;
             dispatch({ type: 'SET_WIDTH', width_m: newDimension });
           } else {
             // Depth is local Z axis
-            offsetX = Math.sin(rotationRad) * (delta / 2) * handle.data.direction;
-            offsetZ = Math.cos(rotationRad) * (delta / 2) * handle.data.direction;
+            offsetX = Math.sin(rotationRad) * (incrementalDelta / 2) * handle.data.direction;
+            offsetZ = Math.cos(rotationRad) * (incrementalDelta / 2) * handle.data.direction;
             dispatch({ type: 'SET_DEPTH', depth_m: newDimension });
           }
 
