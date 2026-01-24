@@ -85,18 +85,28 @@ export default function TutorialOverlay({ step, onNext, onSkip }: TutorialOverla
         {/* Description */}
         <p className="text-white/60 text-xs mb-2 leading-relaxed">{content.description}</p>
 
-        {/* Compact actions */}
+        {/* Compact actions - larger touch targets for reliability */}
         <div className="flex gap-2">
           <button
             onClick={onSkip}
-            className="py-1.5 px-2 rounded-md text-xs font-medium text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              onSkip();
+            }}
+            className="min-h-[44px] py-2 px-4 rounded-lg text-sm font-medium text-white/50 active:text-white active:bg-white/10 transition-colors"
+            style={{ touchAction: 'manipulation' }}
           >
             Skip
           </button>
           {content.showNext && (
             <button
               onClick={onNext}
-              className="py-1.5 px-3 rounded-md text-xs font-medium bg-blue-500/80 text-white hover:bg-blue-500 transition-colors ml-auto"
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                onNext();
+              }}
+              className="min-h-[44px] py-2 px-5 rounded-lg text-sm font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors ml-auto"
+              style={{ touchAction: 'manipulation' }}
             >
               {content.buttonText || 'Next'}
             </button>
