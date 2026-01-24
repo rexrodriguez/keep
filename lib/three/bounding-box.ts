@@ -1205,7 +1205,7 @@ export function setTutorialHighlight(
 
       const isMove = userData.handleType === 'cornerBottom';
       const isRotate = userData.handleType === 'cornerTop';
-      const isResize = userData.handleType === 'edge';
+      const isResize = userData.handleType === 'edge' || userData.handleType === 'topFace';
 
       // Determine if this handle should be highlighted
       const shouldHighlight =
