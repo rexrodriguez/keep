@@ -62,40 +62,95 @@ export function raycastHandles(
   // Raycast against handle meshes
   const intersects = raycaster.intersectObjects(handleMeshes, false);
 
-  if (intersects.length === 0) {
-    return null;
-  }
+  if (intersects.length > 0) {
+    const hit = intersects[0];
 
-  const hit = intersects[0];
-
-  // Find the handle group/object that contains this mesh (walk up the parent chain)
-  let handleObject: THREE.Object3D | null = hit.object;
-  while (handleObject && handleObject !== boundingBox) {
-    if (handleObject.name.startsWith('handle-') && handleObject.userData.handleType) {
-      break;
+    // Find the handle group/object that contains this mesh (walk up the parent chain)
+    let handleObject: THREE.Object3D | null = hit.object;
+    while (handleObject && handleObject !== boundingBox) {
+      if (handleObject.name.startsWith('handle-') && handleObject.userData.handleType) {
+        break;
+      }
+      handleObject = handleObject.parent;
     }
-    handleObject = handleObject.parent;
+
+    if (handleObject && handleObject.userData.handleType) {
+      const userData = handleObject.userData;
+
+      // Get local position relative to bounding box
+      const localPos = hit.point.clone();
+      boundingBox.worldToLocal(localPos);
+
+      return {
+        type: userData.handleType,
+        edge: userData.edge,
+        cornerIndex: userData.cornerIndex,
+        axis: userData.axis,
+        direction: userData.direction,
+        worldPosition: hit.point.clone(),
+        localPosition: localPos,
+      };
+    }
   }
 
-  if (!handleObject || !handleObject.userData.handleType) {
-    return null;
+  // Fallback: Find nearest handle within screen-space tolerance
+  // This helps on larger screens where touch precision is harder
+  const touchTolerance = 80; // pixels - adjust based on screen size
+  let nearestHandle: THREE.Object3D | null = null;
+  let nearestDistance = Infinity;
+  let nearestWorldPos = new THREE.Vector3();
+
+  // Collect unique handle groups
+  const handleGroups: THREE.Object3D[] = [];
+  boundingBox.traverse((child) => {
+    if (child.name.startsWith('handle-') && child.userData.handleType) {
+      handleGroups.push(child);
+    }
+  });
+
+  for (const handle of handleGroups) {
+    // Get handle's world position
+    const worldPos = new THREE.Vector3();
+    handle.getWorldPosition(worldPos);
+
+    // Project to screen space
+    const screenPos = worldPos.clone().project(camera);
+    const handleScreenX = ((screenPos.x + 1) / 2) * canvasWidth;
+    const handleScreenY = ((-screenPos.y + 1) / 2) * canvasHeight;
+
+    // Calculate screen distance
+    const dx = screenX - handleScreenX;
+    const dy = screenY - handleScreenY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Check if this is the nearest handle within tolerance
+    if (distance < touchTolerance && distance < nearestDistance) {
+      // Make sure handle is in front of camera (z < 1 in NDC)
+      if (screenPos.z < 1) {
+        nearestDistance = distance;
+        nearestHandle = handle;
+        nearestWorldPos = worldPos;
+      }
+    }
   }
 
-  const userData = handleObject.userData;
+  if (nearestHandle) {
+    const userData = nearestHandle.userData;
+    const localPos = nearestWorldPos.clone();
+    boundingBox.worldToLocal(localPos);
 
-  // Get local position relative to bounding box
-  const localPos = hit.point.clone();
-  boundingBox.worldToLocal(localPos);
+    return {
+      type: userData.handleType,
+      edge: userData.edge,
+      cornerIndex: userData.cornerIndex,
+      axis: userData.axis,
+      direction: userData.direction,
+      worldPosition: nearestWorldPos,
+      localPosition: localPos,
+    };
+  }
 
-  return {
-    type: userData.handleType,
-    edge: userData.edge,
-    cornerIndex: userData.cornerIndex,
-    axis: userData.axis,
-    direction: userData.direction,
-    worldPosition: hit.point.clone(),
-    localPosition: localPos,
-  };
+  return null;
 }
 
 /**
