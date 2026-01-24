@@ -25,7 +25,6 @@ export default function MeasurementUI({
   measurements,
   confidence,
   trackingWarning,
-  isManipulating = false,
   onUndo,
   onReset,
   onConfirmHeight,
@@ -169,11 +168,6 @@ export default function MeasurementUI({
         >
           {isHeightInput && (
             <AdjustmentPanel
-              widthInches={widthInches}
-              depthInches={depthInches}
-              heightInches={heightInches}
-              rotationDeg={context.rotation_deg}
-              isManipulating={isManipulating}
               onUndo={onUndo}
               onConfirm={onConfirmHeight}
             />
@@ -228,61 +222,14 @@ export default function MeasurementUI({
 // ============================================================================
 
 function AdjustmentPanel({
-  widthInches,
-  depthInches,
-  heightInches,
-  rotationDeg,
-  isManipulating,
   onUndo,
   onConfirm,
 }: {
-  widthInches: number;
-  depthInches: number;
-  heightInches: number;
-  rotationDeg: number;
-  isManipulating: boolean;
   onUndo: () => void;
   onConfirm: () => void;
 }) {
   return (
     <div className="p-4">
-      {/* Instruction hint */}
-      <div className="text-center text-white/50 text-sm mb-4">
-        {isManipulating ? (
-          <span className="text-white/70">Adjusting...</span>
-        ) : (
-          <span>Aim reticle at arrows, then drag to adjust</span>
-        )}
-      </div>
-
-      {/* Current dimensions display */}
-      <div className="flex justify-center gap-6 mb-4">
-        <div className="text-center">
-          <span className="text-2xl font-semibold text-cyan-400">{widthInches}</span>
-          <span className="text-white/40 text-sm ml-1">W</span>
-        </div>
-        <div className="text-white/30 text-2xl">×</div>
-        <div className="text-center">
-          <span className="text-2xl font-semibold text-cyan-400">{depthInches}</span>
-          <span className="text-white/40 text-sm ml-1">D</span>
-        </div>
-        <div className="text-white/30 text-2xl">×</div>
-        <div className="text-center">
-          <span className="text-2xl font-semibold text-purple-400">{heightInches}</span>
-          <span className="text-white/40 text-sm ml-1">H</span>
-        </div>
-        {rotationDeg !== 0 && (
-          <>
-            <div className="text-white/30 text-2xl">•</div>
-            <div className="text-center">
-              <span className="text-2xl font-semibold text-purple-400">{rotationDeg}</span>
-              <span className="text-white/40 text-sm ml-1">°</span>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Action buttons */}
       <div className="flex gap-3">
         <button
           onClick={onUndo}

@@ -1,35 +1,12 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import CapabilityCheck from '@/components/CapabilityCheck';
 import RadiusSlider from '@/components/RadiusSlider';
 import ResultsDisplay from '@/components/ResultsDisplay';
 import { MeasurementData, StorageSearchResponse, StorageSearchRequest } from '@/lib/types';
 import { toComputedMeasurements } from '@/lib/measurement/calculations';
-
-// Portrait orientation lock overlay component
-function PortraitLockOverlay() {
-  return (
-    <div className="portrait-lock-overlay">
-      <svg
-        className="rotate-icon text-white/60"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1.5}
-          d="M12 18h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-        />
-      </svg>
-      <p className="text-white/80 text-lg font-medium">Please rotate your device</p>
-      <p className="text-white/50 text-sm">This app works best in portrait mode</p>
-    </div>
-  );
-}
 
 // Dynamically import ARSession to avoid SSR issues with Three.js
 const ARSession = dynamic(() => import('@/components/ARSession'), {
@@ -59,24 +36,6 @@ export default function Home() {
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  // Lock screen orientation to portrait using Screen Orientation API
-  useEffect(() => {
-    const lockOrientation = async () => {
-      try {
-        // Try to lock orientation (requires fullscreen on some browsers)
-        const orientation = screen.orientation as ScreenOrientation & {
-          lock?: (orientation: string) => Promise<void>;
-        };
-        if (orientation?.lock) {
-          await orientation.lock('portrait');
-        }
-      } catch {
-        // Orientation lock not supported or not allowed - CSS fallback handles this
-      }
-    };
-
-    lockOrientation();
-  }, []);
 
   const handleSupported = useCallback(() => {
     setAppState('READY');
@@ -175,38 +134,27 @@ export default function Home() {
   }, []);
 
   // Render based on app state
-  // Portrait lock overlay is always rendered - CSS shows it only in landscape
-  const portraitOverlay = <PortraitLockOverlay />;
-
   if (appState === 'CHECKING') {
     return (
-      <>
-        {portraitOverlay}
-        <CapabilityCheck
-          onSupported={handleSupported}
-          onUnsupported={handleUnsupported}
-        />
-      </>
+      <CapabilityCheck
+        onSupported={handleSupported}
+        onUnsupported={handleUnsupported}
+      />
     );
   }
 
   if (appState === 'UNSUPPORTED') {
     return (
-      <>
-        {portraitOverlay}
-        <CapabilityCheck
-          onSupported={handleSupported}
-          onUnsupported={handleUnsupported}
-        />
-      </>
+      <CapabilityCheck
+        onSupported={handleSupported}
+        onUnsupported={handleUnsupported}
+      />
     );
   }
 
   if (appState === 'READY') {
     return (
-      <>
-        {portraitOverlay}
-        <div className="scrollable-page flex flex-col items-center p-6 bg-gray-900">
+      <div className="scrollable-page flex flex-col items-center p-6 bg-gray-900">
         <div className="max-w-md w-full text-center my-auto py-4">
           {/* Logo/Icon */}
           <div className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
@@ -279,14 +227,12 @@ export default function Home() {
           )}
         </div>
       </div>
-      </>
     );
   }
 
   if (appState === 'AR_ACTIVE') {
     return (
       <>
-        {portraitOverlay}
         {/* DOM overlay container for AR UI - pointer-events-auto allows interaction */}
         <div ref={overlayRef} className="fixed inset-0 z-10">
           {/* ARSession renders its own MeasurementUI inside */}
@@ -302,39 +248,30 @@ export default function Home() {
 
   if (appState === 'RADIUS_SELECT' || appState === 'SEARCHING') {
     return (
-      <>
-        {portraitOverlay}
-        <RadiusSlider
-          value={radiusKm}
-          onChange={setRadiusKm}
-          onSearch={handleSearch}
-          onBack={handleBackToAR}
-          isSearching={appState === 'SEARCHING'}
-        />
-      </>
+      <RadiusSlider
+        value={radiusKm}
+        onChange={setRadiusKm}
+        onSearch={handleSearch}
+        onBack={handleBackToAR}
+        isSearching={appState === 'SEARCHING'}
+      />
     );
   }
 
   if (appState === 'RESULTS' && searchResults) {
     return (
-      <>
-        {portraitOverlay}
-        <ResultsDisplay
-          results={searchResults}
-          onBack={handleBackToRadius}
-          onNewMeasurement={handleNewMeasurement}
-        />
-      </>
+      <ResultsDisplay
+        results={searchResults}
+        onBack={handleBackToRadius}
+        onNewMeasurement={handleNewMeasurement}
+      />
     );
   }
 
   // Fallback
   return (
-    <>
-      {portraitOverlay}
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    </>
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+    </div>
   );
 }
