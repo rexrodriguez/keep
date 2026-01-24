@@ -595,14 +595,34 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // End any active handle manipulation
     if (activeHandleRef.current && sceneContextRef.current) {
+      const manipulatedHandleType = activeHandleRef.current.type;
+
       // Remove rotation guide if it was shown (only for upper corners)
-      if (activeHandleRef.current.type === 'cornerTop') {
+      if (manipulatedHandleType === 'cornerTop') {
         removeRotationGuide(sceneContextRef.current.scene);
       }
 
       unhighlightAllHandles(sceneContextRef.current.scene);
       activeHandleRef.current = null;
       setIsManipulating(false);
+
+      // Auto-advance tutorial when user interacts with the highlighted handle type
+      if (tutorialEnabled) {
+        setTutorialStep((prev) => {
+          // Check if the manipulated handle matches the current tutorial step
+          if (prev === 'move' && (manipulatedHandleType === 'cornerBottom' || manipulatedHandleType === 'bottomFace')) {
+            return 'rotate';
+          }
+          if (prev === 'rotate' && manipulatedHandleType === 'cornerTop') {
+            return 'resize';
+          }
+          if (prev === 'resize' && (manipulatedHandleType === 'edge' || manipulatedHandleType === 'topFace')) {
+            return 'tip';
+          }
+          return prev;
+        });
+      }
+
       return;
     }
 
