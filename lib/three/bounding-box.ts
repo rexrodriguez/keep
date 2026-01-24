@@ -1177,3 +1177,56 @@ export function disposeBoundingBox(scene: THREE.Scene): void {
     });
   }
 }
+
+/**
+ * Highlight tutorial handles with a pulsing glow effect
+ * @param scene - The Three.js scene
+ * @param handleType - 'move' (lower corners), 'rotate' (upper corners), 'resize' (edge arrows), or null to clear
+ */
+export function setTutorialHighlight(
+  scene: THREE.Scene,
+  handleType: 'move' | 'rotate' | 'resize' | null
+): void {
+  const boundingBox = scene.getObjectByName('bounding-box');
+  if (!boundingBox) return;
+
+  // Colors for highlighting
+  const glowColor = 0xffd700; // Gold/yellow for tutorial highlight
+  const normalCyan = 0x22d3ee;
+  const normalPurple = 0xa855f7;
+
+  boundingBox.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
+      const userData = child.parent?.userData;
+      if (!userData?.handleType) return;
+
+      // Skip invisible hit boxes
+      if (!child.material.visible) return;
+
+      const isMove = userData.handleType === 'cornerBottom';
+      const isRotate = userData.handleType === 'cornerTop';
+      const isResize = userData.handleType === 'edge';
+
+      // Determine if this handle should be highlighted
+      const shouldHighlight =
+        (handleType === 'move' && isMove) ||
+        (handleType === 'rotate' && isRotate) ||
+        (handleType === 'resize' && isResize);
+
+      if (shouldHighlight) {
+        // Set glow color and increase opacity
+        child.material.color.setHex(glowColor);
+        child.material.opacity = 0.9;
+      } else {
+        // Reset to normal colors
+        if (isRotate) {
+          child.material.color.setHex(normalPurple);
+          child.material.opacity = 0.6;
+        } else {
+          child.material.color.setHex(normalCyan);
+          child.material.opacity = isResize ? 0.5 : 0.6;
+        }
+      }
+    }
+  });
+}

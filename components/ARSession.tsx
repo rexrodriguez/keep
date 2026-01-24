@@ -8,7 +8,8 @@ import { startARSession, endARSession, XRSessionContext } from '@/lib/webxr/sess
 import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
 import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
-import { updateBoundingBox, disposeBoundingBox, addRotationGuide, removeRotationGuide } from '@/lib/three/bounding-box';
+import { updateBoundingBox, disposeBoundingBox, addRotationGuide, removeRotationGuide, setTutorialHighlight } from '@/lib/three/bounding-box';
+import TutorialOverlay, { TutorialStep } from './TutorialOverlay';
 import {
   raycastHandles,
   raycastToFloorPlane,
@@ -40,9 +41,10 @@ interface ARSessionProps {
   overlayRef: React.RefObject<HTMLDivElement | null>;
   onExit: () => void;
   onFindStorage: (measurements: MeasurementData) => void;
+  tutorialEnabled?: boolean;
 }
 
-export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessionProps) {
+export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialEnabled = false }: ARSessionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneContextRef = useRef<SceneContext | null>(null);
   const xrContextRef = useRef<XRSessionContext | null>(null);
@@ -56,6 +58,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
   const [confidence, setConfidence] = useState<ConfidenceLevel | null>(null);
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
   const [stabilityMode, setStabilityMode] = useState<StabilityMode>('balanced');
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep>(tutorialEnabled ? 'surface' : 'complete');
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -645,6 +648,48 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     onExit();
   }, [cleanup, dispatch, onExit]);
 
+  // Tutorial handlers
+  const handleTutorialNext = useCallback(() => {
+    setTutorialStep((prev) => {
+      const steps: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'complete'];
+      const currentIndex = steps.indexOf(prev);
+      return steps[Math.min(currentIndex + 1, steps.length - 1)];
+    });
+  }, []);
+
+  const handleTutorialSkip = useCallback(() => {
+    setTutorialStep('complete');
+  }, []);
+
+  // Auto-advance tutorial from 'surface' to 'move' when box is placed
+  useEffect(() => {
+    if (tutorialStep === 'surface' && context.dragStart && context.dragEnd) {
+      // Small delay so user can see the box appear
+      const timer = setTimeout(() => setTutorialStep('move'), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [tutorialStep, context.dragStart, context.dragEnd]);
+
+  // Update tutorial highlighting when step changes
+  useEffect(() => {
+    if (!sceneContextRef.current || tutorialStep === 'complete') {
+      if (sceneContextRef.current) {
+        setTutorialHighlight(sceneContextRef.current.scene, null);
+      }
+      return;
+    }
+
+    const highlightMap: Record<TutorialStep, 'move' | 'rotate' | 'resize' | null> = {
+      surface: null,
+      move: 'move',
+      rotate: 'rotate',
+      resize: 'resize',
+      complete: null,
+    };
+
+    setTutorialHighlight(sceneContextRef.current.scene, highlightMap[tutorialStep]);
+  }, [tutorialStep, context.dragStart, context.dragEnd]);
+
   // Render UI into the overlay container via portal so it shows during AR
   const overlayContent = (
     <div
@@ -669,6 +714,15 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
         onSetStabilityMode={handleSetStabilityMode}
         onExit={handleExit}
       />
+
+      {/* Tutorial overlay */}
+      {tutorialStep !== 'complete' && (
+        <TutorialOverlay
+          step={tutorialStep}
+          onNext={handleTutorialNext}
+          onSkip={handleTutorialSkip}
+        />
+      )}
     </div>
   );
 

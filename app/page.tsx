@@ -33,6 +33,7 @@ export default function Home() {
   const [radiusKm, setRadiusKm] = useState(5);
   const [searchResults, setSearchResults] = useState<StorageSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tutorialEnabled, setTutorialEnabled] = useState(true);
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -213,6 +214,17 @@ export default function Home() {
             </ol>
           </div>
 
+          {/* Tutorial toggle */}
+          <label className="flex items-center justify-center gap-3 mb-6 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tutorialEnabled}
+              onChange={(e) => setTutorialEnabled(e.target.checked)}
+              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
+            />
+            <span className="text-gray-300 text-sm">Show tutorial walkthrough</span>
+          </label>
+
           {/* Start button */}
           <button
             onClick={handleStartAR}
@@ -241,6 +253,7 @@ export default function Home() {
           overlayRef={overlayRef}
           onExit={handleExitAR}
           onFindStorage={handleFindStorage}
+          tutorialEnabled={tutorialEnabled}
         />
       </>
     );
