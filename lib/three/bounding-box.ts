@@ -522,7 +522,8 @@ function addInteractionHandles(
   group: THREE.Group,
   width: number,
   height: number,
-  depth: number
+  depth: number,
+  hitScaleFactor: number = 1.0
 ): void {
   const hw = width / 2;
   const hh = height / 2;
@@ -571,9 +572,10 @@ function addInteractionHandles(
     // Apply rotation to whole group
     arrowGroup.rotation.copy(rotation);
 
-    // Invisible hit box for easier touch
+    // Invisible hit box for easier touch - scaled based on screen size
+    const hitSize = 0.1 * hitScaleFactor;
     const hitBox = new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 0.1, 0.1),
+      new THREE.BoxGeometry(hitSize, hitSize, hitSize),
       hitMaterial.clone()
     );
     arrowGroup.add(hitBox);
@@ -716,9 +718,9 @@ function addInteractionHandles(
     arc.rotation.z = config.arcStart;
     cornerGroup.add(arc);
 
-    // Invisible hit box for easier touch
+    // Invisible hit box for easier touch - scaled based on screen size
     const hitBox = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07),
+      new THREE.SphereGeometry(0.07 * hitScaleFactor),
       hitMaterial.clone()
     );
     cornerGroup.add(hitBox);
@@ -784,9 +786,9 @@ function addInteractionHandles(
       cornerGroup.add(stem);
     }
 
-    // Invisible hit box for easier touch
+    // Invisible hit box for easier touch - scaled based on screen size
     const hitBox = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07),
+      new THREE.SphereGeometry(0.07 * hitScaleFactor),
       hitMaterial.clone()
     );
     cornerGroup.add(hitBox);
@@ -904,7 +906,8 @@ function createBoxAtCenter(
   width: number,
   height: number,
   depth: number,
-  rotation_deg: number
+  rotation_deg: number,
+  hitScaleFactor: number = 1.0
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = 'bounding-box';
@@ -948,7 +951,7 @@ function createBoxAtCenter(
   addDimensionLabels(group, width, height, depth);
 
   // Add interaction handles for direct manipulation (now visible)
-  addInteractionHandles(group, width, height, depth);
+  addInteractionHandles(group, width, height, depth, hitScaleFactor);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -968,7 +971,8 @@ export function createFloorBoundingBox(
   floorPoint1: MeasurementPoint,
   floorPoint2: MeasurementPoint,
   height: number,
-  rotation_deg: number = 0
+  rotation_deg: number = 0,
+  hitScaleFactor: number = 1.0
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = 'bounding-box';
@@ -1024,7 +1028,7 @@ export function createFloorBoundingBox(
   addDimensionLabels(group, width, height, depth);
 
   // Add interaction handles for direct manipulation (now visible)
-  addInteractionHandles(group, width, height, depth);
+  addInteractionHandles(group, width, height, depth, hitScaleFactor);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -1041,6 +1045,7 @@ export function createFloorBoundingBox(
  * @param overrideWidth - Optional override for width (used in LLM mode when user adjusts sliders)
  * @param overrideDepth - Optional override for depth (used in LLM mode when user adjusts sliders)
  * @param rotation_deg - Optional rotation in degrees (default 0)
+ * @param hitScaleFactor - Scale factor for hitbox sizes (larger screens need larger hitboxes)
  */
 export function updateBoundingBox(
   scene: THREE.Scene,
@@ -1049,7 +1054,8 @@ export function updateBoundingBox(
   height: number,
   overrideWidth?: number,
   overrideDepth?: number,
-  rotation_deg: number = 0
+  rotation_deg: number = 0,
+  hitScaleFactor: number = 1.0
 ): void {
   // Remove existing bounding box
   const existing = scene.getObjectByName('bounding-box');
@@ -1108,7 +1114,8 @@ export function updateBoundingBox(
       actualWidth,
       actualHeight,
       actualDepth,
-      rotation_deg
+      rotation_deg,
+      hitScaleFactor
     );
     scene.add(box);
     return;
@@ -1135,7 +1142,7 @@ export function updateBoundingBox(
     ),
   };
 
-  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg);
+  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg, hitScaleFactor);
   scene.add(box);
 }
 

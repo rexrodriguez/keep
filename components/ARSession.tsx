@@ -157,6 +157,16 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
     }
   }, [context.targetPoint, context.state]);
 
+  // Calculate hitbox scale factor based on screen size
+  // Larger screens need larger hitboxes for easier touch targeting
+  // Baseline: iPhone 13 width (~390px) = 1.0, larger screens scale up
+  const getHitScaleFactor = useCallback(() => {
+    const baselineWidth = 390; // iPhone 13 width
+    const screenWidth = window.innerWidth;
+    // Scale up for larger screens, minimum 1.0, cap at 1.8
+    return Math.min(1.8, Math.max(1.0, screenWidth / baselineWidth));
+  }, []);
+
   // Update bounding box when drag points or dimensions change
   useEffect(() => {
     if (sceneContextRef.current) {
@@ -172,13 +182,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage }: ARSessi
           context.height_m,
           context.width_m,
           context.depth_m,
-          context.rotation_deg
+          context.rotation_deg,
+          getHitScaleFactor()
         );
       } else {
         disposeBoundingBox(sceneContextRef.current.scene);
       }
     }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg]);
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, getHitScaleFactor]);
 
   // Update measurements when dimensions change
   useEffect(() => {
