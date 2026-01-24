@@ -46,45 +46,42 @@ export default function TutorialOverlay({ step, onNext, onSkip }: TutorialOverla
   const content = stepContent[step];
 
   return (
-    <div className="fixed inset-x-0 top-16 flex justify-center pointer-events-none z-50">
-      <div className="bg-black/90 backdrop-blur-md rounded-2xl p-4 mx-4 max-w-sm pointer-events-auto shadow-xl border border-white/10">
-        {/* Step indicator */}
-        <div className="flex items-center gap-2 mb-3">
+    <div className="fixed inset-x-0 top-12 flex justify-center pointer-events-none z-50">
+      <div className="bg-black/60 backdrop-blur-sm rounded-xl p-3 mx-4 max-w-xs pointer-events-auto shadow-lg border border-white/10">
+        {/* Compact header with step indicator */}
+        <div className="flex items-center gap-2 mb-2">
           <div className="flex gap-1">
             {['surface', 'move', 'rotate', 'resize'].map((s, i) => (
               <div
                 key={s}
-                className={`w-2 h-2 rounded-full transition-colors ${
+                className={`w-1.5 h-1.5 rounded-full transition-colors ${
                   s === step
-                    ? 'bg-blue-500'
+                    ? 'bg-blue-400'
                     : ['surface', 'move', 'rotate', 'resize'].indexOf(step) > i
-                    ? 'bg-blue-500/50'
+                    ? 'bg-blue-400/50'
                     : 'bg-white/20'
                 }`}
               />
             ))}
           </div>
-          <span className="text-white/40 text-xs ml-auto">
-            Step {['surface', 'move', 'rotate', 'resize'].indexOf(step) + 1} of 4
-          </span>
+          <h3 className="text-white/90 font-medium text-sm flex-1">{content.title}</h3>
         </div>
 
-        {/* Content */}
-        <h3 className="text-white font-semibold text-lg mb-1">{content.title}</h3>
-        <p className="text-white/70 text-sm mb-4">{content.description}</p>
+        {/* Description */}
+        <p className="text-white/60 text-xs mb-2 leading-relaxed">{content.description}</p>
 
-        {/* Actions */}
+        {/* Compact actions */}
         <div className="flex gap-2">
           <button
             onClick={onSkip}
-            className="flex-1 py-2 px-3 rounded-lg text-sm font-medium text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+            className="py-1.5 px-2 rounded-md text-xs font-medium text-white/50 hover:text-white hover:bg-white/10 transition-colors"
           >
-            Skip Tutorial
+            Skip
           </button>
           {content.showNext && (
             <button
               onClick={onNext}
-              className="flex-1 py-2 px-3 rounded-lg text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+              className="py-1.5 px-3 rounded-md text-xs font-medium bg-blue-500/80 text-white hover:bg-blue-500 transition-colors ml-auto"
             >
               Next
             </button>

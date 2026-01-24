@@ -311,8 +311,14 @@ export function screenDeltaToWorldHeight(
 }
 
 /**
- * Calculate rotation angle from corner drag using world-space floor plane projection
- * This properly handles rotation regardless of camera viewing angle
+ * Calculate rotation angle from corner drag using screen-space calculation
+ *
+ * Uses pure screen-space angle calculation. The user expects their finger motion
+ * around the box center on screen to directly control box rotation. A clockwise
+ * finger motion should result in the box appearing to rotate clockwise on screen.
+ *
+ * This works correctly regardless of camera position because it's based on what
+ * the user actually sees and interacts with on their screen.
  */
 export function calculateRotationFromCornerDrag(
   startScreenPos: { x: number; y: number },
@@ -323,62 +329,8 @@ export function calculateRotationFromCornerDrag(
   boxCenterWorld?: THREE.Vector3,
   floorY?: number
 ): number {
-  // If we have camera and world position info, use world-space calculation
-  if (camera && boxCenterWorld && floorY !== undefined) {
-    // Project screen positions to floor plane
-    const startWorld = raycastToFloorPlane(
-      startScreenPos.x,
-      startScreenPos.y,
-      camera,
-      window.innerWidth,
-      window.innerHeight,
-      floorY
-    );
-
-    const currentWorld = raycastToFloorPlane(
-      currentScreenPos.x,
-      currentScreenPos.y,
-      camera,
-      window.innerWidth,
-      window.innerHeight,
-      floorY
-    );
-
-    if (startWorld && currentWorld) {
-      // Calculate angles in world space (on floor plane, around Y axis)
-      const startAngle = Math.atan2(
-        startWorld.x - boxCenterWorld.x,
-        startWorld.z - boxCenterWorld.z
-      );
-
-      const currentAngle = Math.atan2(
-        currentWorld.x - boxCenterWorld.x,
-        currentWorld.z - boxCenterWorld.z
-      );
-
-      // Delta is start - current (negated because Three.js Y rotation is counter-clockwise positive)
-      // This makes clockwise swipe = clockwise rotation when viewed from above
-      let deltaAngle = startAngle - currentAngle;
-
-      // Normalize to [-PI, PI]
-      while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
-      while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
-
-      // Convert to degrees
-      const deltaDegrees = (deltaAngle * 180) / Math.PI;
-
-      // Apply to initial rotation
-      let newRotation = initialRotationDeg + deltaDegrees;
-
-      // Normalize to 0-360
-      while (newRotation < 0) newRotation += 360;
-      while (newRotation >= 360) newRotation -= 360;
-
-      return Math.round(newRotation);
-    }
-  }
-
-  // Fallback to screen-space calculation (original behavior)
+  // Calculate angle from box center to touch positions (screen space)
+  // Using atan2(y, x) gives angle from positive X axis
   const startAngle = Math.atan2(
     startScreenPos.y - boxCenterScreen.y,
     startScreenPos.x - boxCenterScreen.x
@@ -389,15 +341,24 @@ export function calculateRotationFromCornerDrag(
     currentScreenPos.x - boxCenterScreen.x
   );
 
+  // Calculate angular difference
+  // Using (startAngle - currentAngle) means:
+  // - If finger moves clockwise, currentAngle increases, so delta is negative
+  // - Negative delta decreases rotation, which is clockwise in Three.js (Y-axis)
+  // - This matches the expected behavior: clockwise finger = clockwise box rotation
   let deltaAngle = startAngle - currentAngle;
 
+  // Normalize to [-PI, PI] to handle wraparound at ±π
   while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
   while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
 
+  // Convert to degrees and apply to rotation
+  // Positive screen rotation (clockwise on screen) should increase box rotation
   const deltaDegrees = (deltaAngle * 180) / Math.PI;
 
   let newRotation = initialRotationDeg + deltaDegrees;
 
+  // Normalize to 0-360
   while (newRotation < 0) newRotation += 360;
   while (newRotation >= 360) newRotation -= 360;
 
