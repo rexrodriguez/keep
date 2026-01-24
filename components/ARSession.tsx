@@ -426,10 +426,27 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
           const newDimension = Math.max(0.0254, Math.min(5.08, handle.startDimension + delta));
 
+          // Calculate center offset to keep opposite edge fixed
+          // Move center by delta/2 in the direction of the dragged edge
+          const rotationRad = (context.rotation_deg * Math.PI) / 180;
+          let offsetX = 0;
+          let offsetZ = 0;
+
           if (handle.data.axis === 'width') {
+            // Width is local X axis
+            offsetX = Math.cos(rotationRad) * (delta / 2) * handle.data.direction;
+            offsetZ = -Math.sin(rotationRad) * (delta / 2) * handle.data.direction;
             dispatch({ type: 'SET_WIDTH', width_m: newDimension });
           } else {
+            // Depth is local Z axis
+            offsetX = Math.sin(rotationRad) * (delta / 2) * handle.data.direction;
+            offsetZ = Math.cos(rotationRad) * (delta / 2) * handle.data.direction;
             dispatch({ type: 'SET_DEPTH', depth_m: newDimension });
+          }
+
+          // Move the box center to keep opposite edge fixed
+          if (Math.abs(offsetX) > 0.0001 || Math.abs(offsetZ) > 0.0001) {
+            dispatch({ type: 'MOVE_BOX', deltaX: offsetX, deltaZ: offsetZ });
           }
         }
       } else if (handle.type === 'topFace') {
@@ -651,7 +668,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   // Tutorial handlers
   const handleTutorialNext = useCallback(() => {
     setTutorialStep((prev) => {
-      const steps: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'complete'];
+      const steps: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'tip', 'done', 'complete'];
       const currentIndex = steps.indexOf(prev);
       return steps[Math.min(currentIndex + 1, steps.length - 1)];
     });
@@ -684,6 +701,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       move: 'move',
       rotate: 'rotate',
       resize: 'resize',
+      tip: null,
+      done: null,
       complete: null,
     };
 
