@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import LandingPage from '@/components/LandingPage';
 import CapabilityCheck from '@/components/CapabilityCheck';
 import RadiusSlider from '@/components/RadiusSlider';
 import ResultsDisplay from '@/components/ResultsDisplay';
@@ -19,6 +20,7 @@ const ARSession = dynamic(() => import('@/components/ARSession'), {
 });
 
 type AppState =
+  | 'LANDING'
   | 'CHECKING'
   | 'UNSUPPORTED'
   | 'READY'
@@ -28,7 +30,7 @@ type AppState =
   | 'RESULTS';
 
 export default function Home() {
-  const [appState, setAppState] = useState<AppState>('CHECKING');
+  const [appState, setAppState] = useState<AppState>('LANDING');
   const [measurementData, setMeasurementData] = useState<MeasurementData | null>(null);
   const [radiusKm, setRadiusKm] = useState(5);
   const [searchResults, setSearchResults] = useState<StorageSearchResponse | null>(null);
@@ -37,6 +39,10 @@ export default function Home() {
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
+
+  const handleGetStarted = useCallback(() => {
+    setAppState('CHECKING');
+  }, []);
 
   const handleSupported = useCallback(() => {
     setAppState('READY');
@@ -135,6 +141,10 @@ export default function Home() {
   }, []);
 
   // Render based on app state
+  if (appState === 'LANDING') {
+    return <LandingPage onGetStarted={handleGetStarted} />;
+  }
+
   if (appState === 'CHECKING') {
     return (
       <CapabilityCheck
