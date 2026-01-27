@@ -9,7 +9,7 @@ const textureLoader = new THREE.TextureLoader();
 let logoTexture: THREE.Texture | null = null;
 
 // Load texture asynchronously
-textureLoader.load('/Summerland_Storage_Partners_Logo.png', (texture) => {
+textureLoader.load('/keep.png', (texture) => {
   logoTexture = texture;
   logoTexture.colorSpace = THREE.SRGBColorSpace;
 });
@@ -825,7 +825,7 @@ function addTexturedSideFaces(
   // Use 60% of the smaller dimension for better visibility
   const logoScale = 0.6;
   const logoWidth = Math.min(width, height) * logoScale;
-  const logoHeight = logoWidth * 0.35; // Approximate aspect ratio of the Summerland logo (wider)
+  const logoHeight = logoWidth * 0.4; // Approximate aspect ratio of the Keep logo
 
   // Front face only (facing +Z) - logo centered
   const frontGeom = new THREE.PlaneGeometry(logoWidth, logoHeight);
