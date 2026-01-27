@@ -116,11 +116,11 @@ export function getCheckStatus(checks: CapabilityChecks): Array<{
  */
 export function getTroubleshootingSteps(): string[] {
   return [
-    'Use an Android phone with ARCore support (most phones from 2018+)',
-    'Update Chrome to the latest version',
+    'Android: Use Chrome, Samsung Internet, Edge, or Opera on an ARCore-supported phone (most phones from 2018+)',
+    'Android: Ensure Google Play Services for AR is installed and updated',
+    'iOS: Download the free WebXR Viewer app from the App Store (Safari does not support WebXR)',
+    'Ensure camera permissions are enabled for this site',
     'Access this site over HTTPS (not HTTP)',
-    'Enable camera permissions for this site',
-    'Ensure Google Play Services for AR is installed and updated',
-    'Try restarting Chrome if issues persist',
+    'Try restarting your browser if issues persist',
   ];
 }
