@@ -795,7 +795,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         trackingWarning={trackingWarning}
         stabilityMode={stabilityMode}
         isManipulating={isManipulating}
-        onUndo={handleUndo}
         onReset={handleReset}
         onConfirmHeight={handleConfirmHeight}
         onFindStorage={handleFindStorage}

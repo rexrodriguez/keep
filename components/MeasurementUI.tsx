@@ -12,7 +12,6 @@ interface MeasurementUIProps {
   trackingWarning: string | null;
   stabilityMode: StabilityMode;
   isManipulating?: boolean;
-  onUndo: () => void;
   onReset: () => void;
   onConfirmHeight: () => void;
   onFindStorage: () => void;
@@ -25,7 +24,6 @@ export default function MeasurementUI({
   measurements,
   confidence,
   trackingWarning,
-  onUndo,
   onReset,
   onConfirmHeight,
   onFindStorage,
@@ -226,10 +224,15 @@ function AdjustmentPanel({
   onConfirm: () => void;
 }) {
   return (
-    <div className="p-4">
+    <div className="p-3">
       <button
         onClick={onConfirm}
-        className="w-full py-3 px-4 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
+        onTouchEnd={(e) => {
+          e.preventDefault();
+          onConfirm();
+        }}
+        className="w-full py-3 px-6 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
+        style={{ touchAction: 'manipulation' }}
       >
         Confirm Dimensions
       </button>

@@ -518,9 +518,10 @@ function addRotationArc(
 }
 
 /**
- * Add invisible hit regions for direct manipulation of edges, faces, and corners
- * These are larger than visual elements for finger-friendly touch targets
- * In mode-based control: only resize mode shows handles, move/rotate use whole box
+ * Add visible handles based on control mode
+ * - Move mode: shows 4-way arrows at bottom corners
+ * - Rotate mode: shows rotation arcs at top corners
+ * - Resize mode: shows edge arrows and top face arrow
  */
 function addInteractionHandles(
   group: THREE.Group,
@@ -530,10 +531,6 @@ function addInteractionHandles(
   hitScaleFactor: number = 1.0,
   controlMode: ControlMode = 'resize'
 ): void {
-  // In move and rotate modes, no visible handles - the entire box is interactive
-  if (controlMode !== 'resize') {
-    return;
-  }
   const hw = width / 2;
   const hh = height / 2;
   const hd = depth / 2;
@@ -595,8 +592,10 @@ function addInteractionHandles(
 
   const arrowOffset = 0.05; // Distance from box face
 
-  // Front arrow - controls depth
-  group.add(createEdgeArrow(
+  // RESIZE MODE: Show edge arrows and top face arrow
+  if (controlMode === 'resize') {
+    // Front arrow - controls depth
+    group.add(createEdgeArrow(
     'handle-edge-front',
     { handleType: 'edge', edge: 'front', axis: 'depth', direction: 1 },
     new THREE.Euler(Math.PI / 2, 0, 0),
@@ -661,8 +660,9 @@ function addInteractionHandles(
   );
   topArrowGroup.add(topHitBox);
 
-  topArrowGroup.position.set(0, hh + 0.04, 0);
-  group.add(topArrowGroup);
+    topArrowGroup.position.set(0, hh + 0.04, 0);
+    group.add(topArrowGroup);
+  } // End resize mode
 
   // Bottom face hit region - controls position (move box)
   // Use a thicker box at floor level
@@ -673,9 +673,9 @@ function addInteractionHandles(
   bottomFace.name = 'handle-bottom-face';
   group.add(bottomFace);
 
-  // UPPER corner handles for ROTATION (4 corners at top of box)
-  // Clean curved arrows only - no spheres
-  const rotationHandleMat = new THREE.MeshBasicMaterial({
+  // ROTATE MODE: Show rotation arcs at top corners
+  if (controlMode === 'rotate') {
+    const rotationHandleMat = new THREE.MeshBasicMaterial({
     color: 0xc084fc, // Purple for rotation
     transparent: true,
     opacity: 0.6,
@@ -736,11 +736,12 @@ function addInteractionHandles(
 
     cornerGroup.position.set(x, y + 0.01, z);
     group.add(cornerGroup);
-  }
+    }
+  } // End rotate mode
 
-  // LOWER corner handles for MOVEMENT (4 corners at floor level)
-  // Four-way arrows only - no spheres
-  const moveHandleMat = new THREE.MeshBasicMaterial({
+  // MOVE MODE: Show 4-way arrows at bottom corners
+  if (controlMode === 'move') {
+    const moveHandleMat = new THREE.MeshBasicMaterial({
     color: 0x22d3ee, // Cyan for movement
     transparent: true,
     opacity: 0.6,
@@ -804,7 +805,8 @@ function addInteractionHandles(
 
     cornerGroup.position.set(x, y + 0.025, z); // Raise slightly above floor
     group.add(cornerGroup);
-  }
+    }
+  } // End move mode
 }
 
 /**
