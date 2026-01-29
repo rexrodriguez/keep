@@ -17,6 +17,9 @@ textureLoader.load('/keep.png', (texture) => {
 // Re-export handle types for external use
 export type { HandleType, EdgeType, AxisType } from './handle-raycasting';
 
+// Control mode type for visibility filtering
+export type ControlMode = 'move' | 'rotate' | 'resize';
+
 /**
  * Format meters to inches display string
  */
@@ -517,14 +520,20 @@ function addRotationArc(
 /**
  * Add invisible hit regions for direct manipulation of edges, faces, and corners
  * These are larger than visual elements for finger-friendly touch targets
+ * In mode-based control: only resize mode shows handles, move/rotate use whole box
  */
 function addInteractionHandles(
   group: THREE.Group,
   width: number,
   height: number,
   depth: number,
-  hitScaleFactor: number = 1.0
+  hitScaleFactor: number = 1.0,
+  controlMode: ControlMode = 'resize'
 ): void {
+  // In move and rotate modes, no visible handles - the entire box is interactive
+  if (controlMode !== 'resize') {
+    return;
+  }
   const hw = width / 2;
   const hh = height / 2;
   const hd = depth / 2;
@@ -907,7 +916,8 @@ function createBoxAtCenter(
   height: number,
   depth: number,
   rotation_deg: number,
-  hitScaleFactor: number = 1.0
+  hitScaleFactor: number = 1.0,
+  controlMode: ControlMode = 'resize'
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = 'bounding-box';
@@ -950,8 +960,8 @@ function createBoxAtCenter(
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
 
-  // Add interaction handles for direct manipulation (now visible)
-  addInteractionHandles(group, width, height, depth, hitScaleFactor);
+  // Add interaction handles for direct manipulation (only in resize mode)
+  addInteractionHandles(group, width, height, depth, hitScaleFactor, controlMode);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -972,7 +982,8 @@ export function createFloorBoundingBox(
   floorPoint2: MeasurementPoint,
   height: number,
   rotation_deg: number = 0,
-  hitScaleFactor: number = 1.0
+  hitScaleFactor: number = 1.0,
+  controlMode: ControlMode = 'resize'
 ): THREE.Group {
   const group = new THREE.Group();
   group.name = 'bounding-box';
@@ -1027,8 +1038,8 @@ export function createFloorBoundingBox(
   // Add dimension labels
   addDimensionLabels(group, width, height, depth);
 
-  // Add interaction handles for direct manipulation (now visible)
-  addInteractionHandles(group, width, height, depth, hitScaleFactor);
+  // Add interaction handles for direct manipulation (only in resize mode)
+  addInteractionHandles(group, width, height, depth, hitScaleFactor, controlMode);
 
   // Position the group at the center
   group.position.set(centerX, centerY, centerZ);
@@ -1046,6 +1057,7 @@ export function createFloorBoundingBox(
  * @param overrideDepth - Optional override for depth (used in LLM mode when user adjusts sliders)
  * @param rotation_deg - Optional rotation in degrees (default 0)
  * @param hitScaleFactor - Scale factor for hitbox sizes (larger screens need larger hitboxes)
+ * @param controlMode - Current control mode for handle visibility
  */
 export function updateBoundingBox(
   scene: THREE.Scene,
@@ -1055,7 +1067,8 @@ export function updateBoundingBox(
   overrideWidth?: number,
   overrideDepth?: number,
   rotation_deg: number = 0,
-  hitScaleFactor: number = 1.0
+  hitScaleFactor: number = 1.0,
+  controlMode: ControlMode = 'resize'
 ): void {
   // Remove existing bounding box
   const existing = scene.getObjectByName('bounding-box');
@@ -1115,7 +1128,8 @@ export function updateBoundingBox(
       actualHeight,
       actualDepth,
       rotation_deg,
-      hitScaleFactor
+      hitScaleFactor,
+      controlMode
     );
     scene.add(box);
     return;
@@ -1142,7 +1156,7 @@ export function updateBoundingBox(
     ),
   };
 
-  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg, hitScaleFactor);
+  const box = createFloorBoundingBox(adjustedP1, adjustedP2, actualHeight, rotation_deg, hitScaleFactor, controlMode);
   scene.add(box);
 }
 

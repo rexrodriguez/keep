@@ -17,23 +17,23 @@ const stepContent: Record<TutorialStep, { title: string; description: string; sh
     showNext: false, // Auto-advances when box is placed
   },
   move: {
-    title: 'Move the Box',
-    description: 'Touch and drag the lower corner handles to move the box around.',
+    title: 'Move Mode',
+    description: 'Tap "Move" below, then drag anywhere on the box to reposition it.',
     showNext: true,
   },
   rotate: {
-    title: 'Rotate the Box',
-    description: 'Touch and drag the upper corner handles to rotate the box.',
+    title: 'Rotate Mode',
+    description: 'Tap "Rotate" below, then drag anywhere on the box to spin it.',
     showNext: true,
   },
   resize: {
-    title: 'Resize the Box',
-    description: 'Touch and drag the arrow handles on each face to resize length, width, and height.',
+    title: 'Resize Mode',
+    description: 'Tap "Resize" below, then drag the arrow handles to adjust width, depth, and height.',
     showNext: true,
   },
   tip: {
-    title: 'Pro Tip',
-    description: 'For greater accuracy, aim the reticle at the handle you want to manipulate before touching.',
+    title: 'Quick Tip',
+    description: 'Switch modes anytime using the buttons at the bottom. In Resize mode, drag arrows to fine-tune dimensions.',
     showNext: true,
   },
   done: {

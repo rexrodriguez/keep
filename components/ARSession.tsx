@@ -10,6 +10,10 @@ import { createReticle, updateReticle, setReticleColor } from '@/lib/three/retic
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
 import { updateBoundingBox, disposeBoundingBox, addRotationGuide, removeRotationGuide, setTutorialHighlight } from '@/lib/three/bounding-box';
 import TutorialOverlay, { TutorialStep } from './TutorialOverlay';
+import ModeSelector from './ModeSelector';
+
+// Control modes for box manipulation
+export type ControlMode = 'move' | 'rotate' | 'resize';
 import {
   raycastHandles,
   raycastToFloorPlane,
@@ -59,6 +63,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const [trackingWarning, setTrackingWarning] = useState<string | null>(null);
   const [stabilityMode, setStabilityMode] = useState<StabilityMode>('balanced');
   const [tutorialStep, setTutorialStep] = useState<TutorialStep>(tutorialEnabled ? 'surface' : 'complete');
+  const [controlMode, setControlMode] = useState<ControlMode>('move');
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -187,13 +192,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           context.width_m,
           context.depth_m,
           context.rotation_deg,
-          getHitScaleFactor()
+          getHitScaleFactor(),
+          controlMode
         );
       } else {
         disposeBoundingBox(sceneContextRef.current.scene);
       }
     }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, getHitScaleFactor]);
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, getHitScaleFactor, controlMode]);
 
   // Update measurements when dimensions change
   useEffect(() => {
@@ -314,7 +320,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     );
   }, [context.dragStart, context.dragEnd, context.height_m]);
 
-  // Handle touch start - check for handle hit or tap-to-place
+  // Handle touch start - mode-based controls
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     // Don't handle if tap was on a button or UI element
     const target = e.target as HTMLElement;
@@ -325,57 +331,107 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     const touch = e.touches[0];
     if (!touch) return;
 
-    // In HEIGHT_INPUT state, check for handle interaction first
-    if (context.state === 'HEIGHT_INPUT' && sceneContextRef.current) {
-      const handleHit = raycastHandles(
-        touch.clientX,
-        touch.clientY,
-        sceneContextRef.current.camera,
-        sceneContextRef.current.scene,
-        window.innerWidth,
-        window.innerHeight
-      );
+    // In HEIGHT_INPUT state, handle based on control mode
+    if (context.state === 'HEIGHT_INPUT' && sceneContextRef.current && context.dragStart && context.dragEnd) {
+      const p1 = context.dragStart.position;
+      const p2 = context.dragEnd.position;
+      const floorY = Math.min(p1.y, p2.y);
 
-      if (handleHit) {
-        // Determine which dimension we're starting with
-        let startDimension = 0;
-        if (handleHit.type === 'edge') {
-          startDimension = handleHit.axis === 'width' ? context.width_m : context.depth_m;
-        } else if (handleHit.type === 'topFace') {
-          startDimension = context.height_m;
-        }
-
-        activeHandleRef.current = {
-          type: handleHit.type,
-          data: handleHit,
-          startWorldPos: handleHit.worldPosition.clone(),
-          startScreenPos: { x: touch.clientX, y: touch.clientY },
-          startDimension,
-          startRotation: context.rotation_deg,
-          lastDelta: 0,
-        };
-
-        setIsManipulating(true);
-
-        // Highlight the active handle
-        highlightHandle(
-          sceneContextRef.current.scene,
-          handleHit.type,
-          handleHit.edge || handleHit.cornerIndex?.toString()
+      if (controlMode === 'move') {
+        // Move mode: any touch starts a move operation
+        const worldPos = raycastToFloorPlane(
+          touch.clientX,
+          touch.clientY,
+          sceneContextRef.current.camera,
+          window.innerWidth,
+          window.innerHeight,
+          floorY
         );
 
-        // If upper corner handle (rotation), show rotation guide
-        if (handleHit.type === 'cornerTop' && context.dragStart && context.dragEnd) {
-          const p1 = context.dragStart.position;
-          const p2 = context.dragEnd.position;
+        if (worldPos) {
+          activeHandleRef.current = {
+            type: 'bottomFace',
+            data: { type: 'bottomFace', worldPosition: worldPos } as HandleHitResult,
+            startWorldPos: worldPos.clone(),
+            startScreenPos: { x: touch.clientX, y: touch.clientY },
+            startDimension: 0,
+            startRotation: context.rotation_deg,
+            lastDelta: 0,
+          };
+          setIsManipulating(true);
+        }
+        return;
+      }
+
+      if (controlMode === 'rotate') {
+        // Rotate mode: any touch starts a rotation operation
+        const worldPos = raycastToFloorPlane(
+          touch.clientX,
+          touch.clientY,
+          sceneContextRef.current.camera,
+          window.innerWidth,
+          window.innerHeight,
+          floorY
+        );
+
+        if (worldPos) {
+          activeHandleRef.current = {
+            type: 'cornerTop',
+            data: { type: 'cornerTop', cornerIndex: 0, worldPosition: worldPos } as HandleHitResult,
+            startWorldPos: worldPos.clone(),
+            startScreenPos: { x: touch.clientX, y: touch.clientY },
+            startDimension: 0,
+            startRotation: context.rotation_deg,
+            lastDelta: 0,
+          };
+          setIsManipulating(true);
+
+          // Show rotation guide
           const centerX = (p1.x + p2.x) / 2;
-          const floorY = Math.min(p1.y, p2.y);
           const centerZ = (p1.z + p2.z) / 2;
           const radius = Math.max(context.width_m, context.depth_m) * 0.7;
-
           addRotationGuide(sceneContextRef.current.scene, centerX, floorY, centerZ, radius);
         }
+        return;
+      }
 
+      if (controlMode === 'resize') {
+        // Resize mode: only edge and topFace handles work
+        const handleHit = raycastHandles(
+          touch.clientX,
+          touch.clientY,
+          sceneContextRef.current.camera,
+          sceneContextRef.current.scene,
+          window.innerWidth,
+          window.innerHeight
+        );
+
+        // Only allow edge and topFace handles in resize mode
+        if (handleHit && (handleHit.type === 'edge' || handleHit.type === 'topFace')) {
+          let startDimension = 0;
+          if (handleHit.type === 'edge') {
+            startDimension = handleHit.axis === 'width' ? context.width_m : context.depth_m;
+          } else if (handleHit.type === 'topFace') {
+            startDimension = context.height_m;
+          }
+
+          activeHandleRef.current = {
+            type: handleHit.type,
+            data: handleHit,
+            startWorldPos: handleHit.worldPosition.clone(),
+            startScreenPos: { x: touch.clientX, y: touch.clientY },
+            startDimension,
+            startRotation: context.rotation_deg,
+            lastDelta: 0,
+          };
+
+          setIsManipulating(true);
+          highlightHandle(
+            sceneContextRef.current.scene,
+            handleHit.type,
+            handleHit.edge || handleHit.cornerIndex?.toString()
+          );
+        }
         return;
       }
     }
@@ -395,7 +451,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
     };
-  }, [context.state, context.width_m, context.depth_m, context.height_m, context.rotation_deg, context.dragStart, context.dragEnd]);
+  }, [context.state, context.width_m, context.depth_m, context.height_m, context.rotation_deg, context.dragStart, context.dragEnd, controlMode]);
 
   // Handle touch move - update handle drag or box drawing
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -606,17 +662,17 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       activeHandleRef.current = null;
       setIsManipulating(false);
 
-      // Auto-advance tutorial when user interacts with the highlighted handle type
+      // Auto-advance tutorial when user interacts in the matching mode
       if (tutorialEnabled) {
         setTutorialStep((prev) => {
-          // Check if the manipulated handle matches the current tutorial step
-          if (prev === 'move' && (manipulatedHandleType === 'cornerBottom' || manipulatedHandleType === 'bottomFace')) {
+          // Check if the current control mode matches the tutorial step
+          if (prev === 'move' && controlMode === 'move') {
             return 'rotate';
           }
-          if (prev === 'rotate' && manipulatedHandleType === 'cornerTop') {
+          if (prev === 'rotate' && controlMode === 'rotate') {
             return 'resize';
           }
-          if (prev === 'resize' && (manipulatedHandleType === 'edge' || manipulatedHandleType === 'topFace')) {
+          if (prev === 'resize' && controlMode === 'resize') {
             return 'tip';
           }
           return prev;
@@ -647,7 +703,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, dispatch]);
+  }, [context.state, dispatch, controlMode, tutorialEnabled]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
@@ -713,26 +769,14 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   }, [tutorialStep, context.dragStart, context.dragEnd]);
 
   // Update tutorial highlighting when step changes
+  // With mode-based controls, only highlight resize handles when on resize step
   useEffect(() => {
-    if (!sceneContextRef.current || tutorialStep === 'complete') {
-      if (sceneContextRef.current) {
-        setTutorialHighlight(sceneContextRef.current.scene, null);
-      }
-      return;
-    }
+    if (!sceneContextRef.current) return;
 
-    const highlightMap: Record<TutorialStep, 'move' | 'rotate' | 'resize' | null> = {
-      surface: null,
-      move: 'move',
-      rotate: 'rotate',
-      resize: 'resize',
-      tip: null,
-      done: null,
-      complete: null,
-    };
-
-    setTutorialHighlight(sceneContextRef.current.scene, highlightMap[tutorialStep]);
-  }, [tutorialStep, context.dragStart, context.dragEnd]);
+    // Only highlight resize handles during resize tutorial step
+    const shouldHighlight = tutorialStep === 'resize' ? 'resize' : null;
+    setTutorialHighlight(sceneContextRef.current.scene, shouldHighlight);
+  }, [tutorialStep]);
 
   // Render UI into the overlay container via portal so it shows during AR
   const overlayContent = (
@@ -758,6 +802,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         onSetStabilityMode={handleSetStabilityMode}
         onExit={handleExit}
       />
+
+      {/* Mode selector - show when box is placed */}
+      {context.state === 'HEIGHT_INPUT' && (
+        <ModeSelector mode={controlMode} onModeChange={setControlMode} />
+      )}
 
       {/* Tutorial overlay */}
       {tutorialStep !== 'complete' && (
