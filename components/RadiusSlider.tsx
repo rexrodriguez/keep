@@ -38,7 +38,7 @@ export default function RadiusSlider({
           {/* Current value display */}
           <div className="text-center mb-6">
             <span className="text-5xl font-bold text-white">{value}</span>
-            <span className="text-xl text-white/60 ml-2">km</span>
+            <span className="text-xl text-white/60 ml-2">{value === 1 ? 'mile' : 'miles'}</span>
           </div>
 
           {/* Slider */}
@@ -46,21 +46,21 @@ export default function RadiusSlider({
             <input
               type="range"
               min={1}
-              max={50}
+              max={30}
               value={value}
               onChange={(e) => onChange(parseInt(e.target.value, 10))}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
               style={{ touchAction: 'none' }}
             />
             <div className="flex justify-between text-sm text-white/40 mt-2">
-              <span>1 km</span>
-              <span>50 km</span>
+              <span>1 mile</span>
+              <span>30 miles</span>
             </div>
           </div>
 
           {/* Info text */}
           <p className="text-white/60 text-center text-sm">
-            We'll search for storage facilities within {value} km of your location.
+            We'll search for storage facilities within {value} {value === 1 ? 'mile' : 'miles'} of your location.
             If location access is denied, we'll show results without distance info.
           </p>
         </div>

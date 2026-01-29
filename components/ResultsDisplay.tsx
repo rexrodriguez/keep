@@ -2,6 +2,11 @@
 
 import { StorageSearchResponse, StorageFacility, StorageUnit } from '@/lib/types';
 
+// Conversion helpers
+const cmToInches = (cm: number) => cm / 2.54;
+const m3ToCubicFeet = (m3: number) => m3 * 35.3147;
+const kmToMiles = (km: number) => km / 1.60934;
+
 interface ResultsDisplayProps {
   results: StorageSearchResponse;
   onBack: () => void;
@@ -36,10 +41,10 @@ export default function ResultsDisplay({
         <div className="bg-gray-800 rounded-lg p-3 text-sm">
           <span className="text-gray-400">Your object: </span>
           <span className="text-white">
-            {object_dimensions.width_cm.toFixed(0)} × {object_dimensions.depth_cm.toFixed(0)} × {object_dimensions.height_cm.toFixed(0)} cm
+            {cmToInches(object_dimensions.width_cm).toFixed(0)}" × {cmToInches(object_dimensions.depth_cm).toFixed(0)}" × {cmToInches(object_dimensions.height_cm).toFixed(0)}"
           </span>
           <span className="text-gray-400 ml-2">
-            ({object_dimensions.volume_m3.toFixed(2)} m³)
+            ({m3ToCubicFeet(object_dimensions.volume_m3).toFixed(1)} cu ft)
           </span>
         </div>
       </div>
@@ -112,7 +117,7 @@ function FacilityCard({ facility, objectDimensions }: FacilityCardProps) {
           </div>
           {facility.distance_km !== null && (
             <span className="text-sm text-gray-400 whitespace-nowrap ml-4">
-              {facility.distance_km.toFixed(1)} km
+              {kmToMiles(facility.distance_km).toFixed(1)} mi
             </span>
           )}
         </div>
@@ -167,7 +172,7 @@ function FacilityCard({ facility, objectDimensions }: FacilityCardProps) {
                     )}
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {unit.width_cm} × {unit.depth_cm} × {unit.height_cm} cm
+                    {cmToInches(unit.width_cm).toFixed(0)}" × {cmToInches(unit.depth_cm).toFixed(0)}" × {cmToInches(unit.height_cm).toFixed(0)}"
                   </p>
                 </div>
                 <div className="text-right">

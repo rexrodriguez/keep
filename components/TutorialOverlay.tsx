@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export type TutorialStep = 'surface' | 'move' | 'rotate' | 'resize' | 'tip' | 'done' | 'complete';
+export type TutorialStep = 'surface' | 'move' | 'rotate' | 'resize' | 'done' | 'complete';
 
 interface TutorialOverlayProps {
   step: TutorialStep;
@@ -31,11 +31,6 @@ const stepContent: Record<TutorialStep, { title: string; description: string; sh
     description: 'Tap "Resize" below, then drag the arrow handles to adjust width, depth, and height.',
     showNext: true,
   },
-  tip: {
-    title: 'Quick Tip',
-    description: 'Switch modes anytime using the buttons at the bottom. In Resize mode, drag arrows to fine-tune dimensions.',
-    showNext: true,
-  },
   done: {
     title: "You're Ready!",
     description: 'Try measuring a few different objects to get the hang of it. Practice makes perfect!',
@@ -49,7 +44,7 @@ const stepContent: Record<TutorialStep, { title: string; description: string; sh
   },
 };
 
-const TUTORIAL_STEPS: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'tip', 'done'];
+const TUTORIAL_STEPS: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'done'];
 
 export default function TutorialOverlay({ step, onNext, onSkip }: TutorialOverlayProps) {
   if (step === 'complete') {

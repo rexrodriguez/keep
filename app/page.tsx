@@ -32,7 +32,7 @@ type AppState =
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('LANDING');
   const [measurementData, setMeasurementData] = useState<MeasurementData | null>(null);
-  const [radiusKm, setRadiusKm] = useState(5);
+  const [radiusMiles, setRadiusMiles] = useState(5);
   const [searchResults, setSearchResults] = useState<StorageSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tutorialEnabled, setTutorialEnabled] = useState(true);
@@ -97,8 +97,9 @@ export default function Home() {
         // Continue without location
       }
 
-      // Prepare request
+      // Prepare request (convert miles to km for API)
       const computed = toComputedMeasurements(measurementData);
+      const radiusKm = radiusMiles * 1.60934;
       const request: StorageSearchRequest = {
         width_cm: computed.width_cm,
         depth_cm: computed.depth_cm,
@@ -128,7 +129,7 @@ export default function Home() {
       setError('Failed to search for storage. Please try again.');
       setAppState('RADIUS_SELECT');
     }
-  }, [measurementData, radiusKm]);
+  }, [measurementData, radiusMiles]);
 
   const handleBackToRadius = useCallback(() => {
     setAppState('RADIUS_SELECT');
@@ -272,8 +273,8 @@ export default function Home() {
   if (appState === 'RADIUS_SELECT' || appState === 'SEARCHING') {
     return (
       <RadiusSlider
-        value={radiusKm}
-        onChange={setRadiusKm}
+        value={radiusMiles}
+        onChange={setRadiusMiles}
         onSearch={handleSearch}
         onBack={handleBackToAR}
         isSearching={appState === 'SEARCHING'}
