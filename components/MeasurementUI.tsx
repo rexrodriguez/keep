@@ -168,7 +168,6 @@ export default function MeasurementUI({
         >
           {isHeightInput && (
             <AdjustmentPanel
-              onUndo={onUndo}
               onConfirm={onConfirmHeight}
             />
           )}
@@ -222,28 +221,18 @@ export default function MeasurementUI({
 // ============================================================================
 
 function AdjustmentPanel({
-  onUndo,
   onConfirm,
 }: {
-  onUndo: () => void;
   onConfirm: () => void;
 }) {
   return (
     <div className="p-4">
-      <div className="flex gap-3">
-        <button
-          onClick={onUndo}
-          className="flex-1 py-3 px-4 rounded-xl font-medium bg-white/10 text-white active:bg-white/20 transition-colors"
-        >
-          Redo
-        </button>
-        <button
-          onClick={onConfirm}
-          className="flex-1 py-3 px-4 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
-        >
-          Confirm
-        </button>
-      </div>
+      <button
+        onClick={onConfirm}
+        className="w-full py-3 px-4 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
+      >
+        Confirm Dimensions
+      </button>
     </div>
   );
 }
