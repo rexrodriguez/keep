@@ -673,7 +673,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             return 'resize';
           }
           if (prev === 'resize' && controlMode === 'resize') {
-            return 'tip';
+            return 'done';
           }
           return prev;
         });
@@ -749,7 +749,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   // Tutorial handlers
   const handleTutorialNext = useCallback(() => {
     setTutorialStep((prev) => {
-      const steps: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'tip', 'done', 'complete'];
+      const steps: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'done', 'complete'];
       const currentIndex = steps.indexOf(prev);
       return steps[Math.min(currentIndex + 1, steps.length - 1)];
     });

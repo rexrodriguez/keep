@@ -28,7 +28,7 @@ const stepContent: Record<TutorialStep, { title: string; description: string; sh
   },
   resize: {
     title: 'Resize Mode',
-    description: 'Tap "Resize" below, then drag the arrow handles to adjust width, depth, and height.',
+    description: 'Tap "Resize" below, then drag the arrow handles to adjust width, depth, and height. Align the reticle with an arrow for greater accuracy.',
     showNext: true,
   },
   done: {
