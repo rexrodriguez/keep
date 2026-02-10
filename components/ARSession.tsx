@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as THREE from 'three';
 import { createARScene, disposeScene, SceneContext } from '@/lib/three/scene-setup';
-import { startARSession, endARSession, XRSessionContext } from '@/lib/webxr/session-manager';
+import { startARSession, endARSession, onSessionEnd, XRSessionContext } from '@/lib/webxr/session-manager';
 import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
 import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
@@ -104,6 +104,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   // Initialize AR session
   useEffect(() => {
     let mounted = true;
+    let sessionEndCleanup: (() => void) | null = null;
 
     async function init() {
       if (!containerRef.current) return;
@@ -130,6 +131,17 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         );
         xrContextRef.current = xrCtx;
 
+        // Listen for unexpected session end (e.g., device sleep, browser tab switch)
+        const removeEndListener = onSessionEnd(xrCtx.session, () => {
+          console.warn('XR session ended unexpectedly');
+          if (renderLoopRef.current) {
+            renderLoopRef.current.stop();
+          }
+          if (mounted) {
+            onExit();
+          }
+        });
+
         // Create render loop
         const loop = createRenderLoop(
           xrCtx,
@@ -143,6 +155,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         if (mounted) {
           dispatch({ type: 'AR_STARTED' });
         }
+
+        // Store cleanup for end listener
+        sessionEndCleanup = removeEndListener;
       } catch (error) {
         console.error('Failed to start AR session:', error);
         if (mounted) {
@@ -158,9 +173,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     return () => {
       mounted = false;
+      if (sessionEndCleanup) sessionEndCleanup();
       cleanup();
     };
-  }, [dispatch, overlayRef]);
+  }, [dispatch, overlayRef, onExit]);
 
   // Update target marker when target point changes
   useEffect(() => {

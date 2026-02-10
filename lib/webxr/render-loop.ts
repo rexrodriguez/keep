@@ -29,40 +29,45 @@ export function createRenderLoop(
   const render = (time: number, frame?: XRFrame) => {
     if (!isRunning || !frame) return;
 
-    // Get hit-test results
-    const hitTest = processHitTest(
-      frame,
-      context.hitTestSource,
-      context.localFloorSpace
-    );
+    try {
+      // Get hit-test results
+      const hitTest = processHitTest(
+        frame,
+        context.hitTestSource,
+        context.localFloorSpace
+      );
 
-    // Get viewer pose
-    const viewerPose = frame.getViewerPose(context.localFloorSpace) || null;
+      // Get viewer pose
+      const viewerPose = frame.getViewerPose(context.localFloorSpace) || null;
 
-    // Get depth information if available
-    let depthInfo: XRCPUDepthInformation | null = null;
-    let view: XRView | null = null;
-    if (viewerPose && viewerPose.views.length > 0 && context.hasDepthSensing) {
-      view = viewerPose.views[0];
-      try {
-        depthInfo = (frame as any).getDepthInformation(view) || null;
-      } catch {
-        // Depth info not available this frame
+      // Get depth information if available
+      let depthInfo: XRCPUDepthInformation | null = null;
+      let view: XRView | null = null;
+      if (viewerPose && viewerPose.views.length > 0 && context.hasDepthSensing) {
+        view = viewerPose.views[0];
+        try {
+          depthInfo = (frame as any).getDepthInformation(view) || null;
+        } catch {
+          // Depth info not available this frame
+        }
       }
+
+      // Call frame callback with data
+      onFrame({
+        time,
+        frame,
+        hitTest,
+        viewerPose,
+        depthInfo,
+        view,
+      });
+
+      // Render scene
+      context.renderer.render(scene, camera);
+    } catch (error) {
+      console.warn('Render loop error:', error);
+      // Don't rethrow - let setAnimationLoop continue calling us next frame
     }
-
-    // Call frame callback with data
-    onFrame({
-      time,
-      frame,
-      hitTest,
-      viewerPose,
-      depthInfo,
-      view,
-    });
-
-    // Render scene
-    context.renderer.render(scene, camera);
   };
 
   const start = () => {

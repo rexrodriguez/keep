@@ -98,6 +98,15 @@ export async function startARSession(
 }
 
 /**
+ * Register a callback for when the XR session ends unexpectedly.
+ * Returns a cleanup function to remove the listener.
+ */
+export function onSessionEnd(session: XRSession, callback: () => void): () => void {
+  session.addEventListener('end', callback);
+  return () => session.removeEventListener('end', callback);
+}
+
+/**
  * End an AR session and clean up resources
  */
 export async function endARSession(context: XRSessionContext): Promise<void> {

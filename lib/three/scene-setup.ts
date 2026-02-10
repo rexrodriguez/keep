@@ -4,6 +4,7 @@ export interface SceneContext {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
+  cleanup: () => void;
 }
 
 /**
@@ -53,13 +54,20 @@ export function createARScene(container: HTMLElement): SceneContext {
 
   window.addEventListener('resize', handleResize);
 
-  return { scene, camera, renderer };
+  const cleanup = () => {
+    window.removeEventListener('resize', handleResize);
+  };
+
+  return { scene, camera, renderer, cleanup };
 }
 
 /**
  * Dispose of scene resources
  */
 export function disposeScene(context: SceneContext): void {
+  // Remove resize listener
+  context.cleanup();
+
   // Dispose all objects in scene
   context.scene.traverse((object) => {
     if (object instanceof THREE.Mesh) {
