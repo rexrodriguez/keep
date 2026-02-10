@@ -45,8 +45,9 @@ export function createARScene(container: HTMLElement): SceneContext {
   directionalLight.position.set(1, 1, 1);
   scene.add(directionalLight);
 
-  // Handle resize
+  // Handle resize — skip during XR since the XR compositor manages the framebuffer
   const handleResize = () => {
+    if (renderer.xr.isPresenting) return;
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
