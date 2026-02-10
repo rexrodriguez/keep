@@ -55,7 +55,7 @@ export default function LandingPage() {
             <img
               src="/keep.png"
               alt="Keep"
-              className="h-14 w-auto"
+              className="h-20 w-auto mx-auto"
             />
           </div>
 
