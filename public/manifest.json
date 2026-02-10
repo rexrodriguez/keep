@@ -1,7 +1,7 @@
 {
-  "name": "AR Storage Finder",
-  "short_name": "AR Measure",
-  "description": "Measure objects in AR and find the perfect storage unit",
+  "name": "Keep",
+  "short_name": "Keep",
+  "description": "Point your phone at any object to instantly measure its dimensions and find the perfect storage unit nearby.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#111827",
