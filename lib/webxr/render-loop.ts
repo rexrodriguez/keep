@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { XRSessionContext } from './session-manager';
 import { processHitTest, HitTestResult } from './hit-test';
+import { XRCPUDepthInformation } from '@/lib/types';
 
 export interface FrameData {
   time: number;
   frame: XRFrame;
   hitTest: HitTestResult;
   viewerPose: XRViewerPose | null;
+  depthInfo: XRCPUDepthInformation | null;
+  view: XRView | null;
 }
 
 export type FrameCallback = (data: FrameData) => void;
@@ -36,12 +39,26 @@ export function createRenderLoop(
     // Get viewer pose
     const viewerPose = frame.getViewerPose(context.localFloorSpace) || null;
 
+    // Get depth information if available
+    let depthInfo: XRCPUDepthInformation | null = null;
+    let view: XRView | null = null;
+    if (viewerPose && viewerPose.views.length > 0 && context.hasDepthSensing) {
+      view = viewerPose.views[0];
+      try {
+        depthInfo = (frame as any).getDepthInformation(view) || null;
+      } catch {
+        // Depth info not available this frame
+      }
+    }
+
     // Call frame callback with data
     onFrame({
       time,
       frame,
       hitTest,
       viewerPose,
+      depthInfo,
+      view,
     });
 
     // Render scene

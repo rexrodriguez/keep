@@ -38,7 +38,8 @@ import {
   calculateMeasurementsFromLLM,
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
-import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
+import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData, XRCPUDepthInformation } from '@/lib/types';
+import { computeDepthBoundingBox } from '@/lib/webxr/depth-sensing';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -71,6 +72,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
+  // Store latest depth info for tap-time processing
+  const currentDepthRef = useRef<{
+    depthInfo: XRCPUDepthInformation;
+    view: XRView;
+    viewerPose: XRViewerPose;
+  } | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -221,10 +228,17 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.state, context.llmEstimate]);
 
   const handleFrame = useCallback((data: FrameData) => {
-    const { hitTest, frame } = data;
+    const { hitTest, frame, depthInfo, view, viewerPose } = data;
 
     // Store frame for camera capture
     currentFrameRef.current = frame;
+
+    // Store depth info for tap-time processing
+    if (depthInfo && view && viewerPose) {
+      currentDepthRef.current = { depthInfo, view, viewerPose };
+    } else {
+      currentDepthRef.current = null;
+    }
 
     // Update reticle
     if (reticleRef.current) {
@@ -695,10 +709,44 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // In READY_TO_DRAW state, tap places a box
     if (context.state === 'READY_TO_DRAW') {
+      const tapPosition = touchStart.position.clone();
+      const stability = currentHitRef.current?.stability || 0.5;
+
+      // Attempt depth-based box estimation
+      if (currentDepthRef.current) {
+        const { depthInfo, view, viewerPose } = currentDepthRef.current;
+        const floorY = tapPosition.y;
+
+        const depthResult = computeDepthBoundingBox(
+          depthInfo,
+          view,
+          viewerPose,
+          tapPosition,
+          floorY,
+        );
+
+        if (depthResult.success) {
+          const point: MeasurementPoint = {
+            position: depthResult.center,
+            timestamp: Date.now(),
+            stability,
+          };
+          dispatch({
+            type: 'PLACE_BOX_WITH_DIMENSIONS',
+            point,
+            width_m: depthResult.width_m,
+            depth_m: depthResult.depth_m,
+            height_m: depthResult.height_m,
+          });
+          return;
+        }
+      }
+
+      // Fallback: default 40x40x40cm box
       const point: MeasurementPoint = {
-        position: touchStart.position.clone(),
+        position: tapPosition,
         timestamp: Date.now(),
-        stability: currentHitRef.current?.stability || 0.5,
+        stability,
       };
       dispatch({ type: 'PLACE_BOX', point });
       return;

@@ -31,6 +31,7 @@ export type StateAction =
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
+  | { type: 'PLACE_BOX_WITH_DIMENSIONS'; point: MeasurementPoint; width_m: number; depth_m: number; height_m: number }
   | { type: 'START_DRAG'; point: MeasurementPoint }
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
@@ -135,6 +136,46 @@ export function stateMachineReducer(
           width_m: DEFAULT_WIDTH_M,
           depth_m: DEFAULT_DEPTH_M,
           height_m: DEFAULT_HEIGHT_M,
+          rotation_deg: 0,
+          state: 'HEIGHT_INPUT',
+        };
+      }
+      return context;
+
+    case 'PLACE_BOX_WITH_DIMENSIONS':
+      // Tap to place a box with depth-sensing-derived dimensions
+      if (context.state === 'READY_TO_DRAW') {
+        const center = action.point.position;
+        const halfWidth = action.width_m / 2;
+        const halfDepth = action.depth_m / 2;
+
+        const dragStart: MeasurementPoint = {
+          position: new THREE.Vector3(
+            center.x - halfWidth,
+            center.y,
+            center.z - halfDepth
+          ),
+          timestamp: Date.now(),
+          stability: action.point.stability,
+        };
+
+        const dragEnd: MeasurementPoint = {
+          position: new THREE.Vector3(
+            center.x + halfWidth,
+            center.y,
+            center.z + halfDepth
+          ),
+          timestamp: Date.now(),
+          stability: action.point.stability,
+        };
+
+        return {
+          ...context,
+          dragStart,
+          dragEnd,
+          width_m: action.width_m,
+          depth_m: action.depth_m,
+          height_m: action.height_m,
           rotation_deg: 0,
           state: 'HEIGHT_INPUT',
         };

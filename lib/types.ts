@@ -9,6 +9,15 @@ export interface XRHitTestResult {
   getPose(baseSpace: XRReferenceSpace): XRPose | null;
 }
 
+export interface XRCPUDepthInformation {
+  readonly width: number;
+  readonly height: number;
+  readonly normDepthBufferFromNormView: XRRigidTransform;
+  readonly rawValueToMeters: number;
+  readonly data: ArrayBuffer;
+  getDepthInMeters(x: number, y: number): number;
+}
+
 // Application State Machine (drag rectangle + height slider)
 // WebXR hit-test only detects surfaces, so we capture rectangle via drag
 // and let user input height manually via slider
