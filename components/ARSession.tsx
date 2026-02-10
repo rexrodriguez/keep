@@ -82,6 +82,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
   const hasDraggedRef = useRef(false);
+  // Track last warning to avoid calling setState every frame
+  const lastTrackingWarningRef = useRef<string | null>(null);
 
   // Active handle tracking for direct manipulation
   const activeHandleRef = useRef<{
@@ -289,11 +291,17 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         timestamp: performance.now(),
       };
 
-      setTrackingWarning(null);
+      if (lastTrackingWarningRef.current !== null) {
+        lastTrackingWarningRef.current = null;
+        setTrackingWarning(null);
+      }
     } else {
       currentHitRef.current = null;
       // Don't clear lastValidHitRef - keep it for dragging continuity
-      setTrackingWarning('Point at a flat surface');
+      if (lastTrackingWarningRef.current !== 'Point at a flat surface') {
+        lastTrackingWarningRef.current = 'Point at a flat surface';
+        setTrackingWarning('Point at a flat surface');
+      }
     }
   }, []);
 
