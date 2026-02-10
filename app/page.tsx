@@ -143,7 +143,7 @@ export default function Home() {
 
   // Render based on app state
   if (appState === 'LANDING') {
-    return <LandingPage onGetStarted={handleGetStarted} />;
+    return <LandingPage />;
   }
 
   if (appState === 'CHECKING') {

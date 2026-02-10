@@ -1,14 +1,45 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 
-interface LandingPageProps {
-  onGetStarted: () => void;
-}
+export default function LandingPage() {
+  const [formState, setFormState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [formError, setFormError] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
 
-export default function LandingPage({ onGetStarted }: LandingPageProps) {
   const scrollToFeatures = () => {
     document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const scrollToContact = () => {
+    document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormState('sending');
+    setFormError('');
+
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Something went wrong.');
+      }
+
+      setFormState('sent');
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Something went wrong.');
+      setFormState('error');
+    }
   };
 
   return (
@@ -43,10 +74,10 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
-              onClick={onGetStarted}
+              onClick={scrollToContact}
               className="px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:from-blue-600 hover:to-blue-700 transition-all duration-200"
             >
-              Start Measuring
+              Get in Touch
             </button>
             <button
               onClick={scrollToFeatures}
@@ -145,14 +176,61 @@ export default function LandingPage({ onGetStarted }: LandingPageProps) {
             </div>
           </div>
 
-          {/* CTA */}
-          <div className="text-center mt-12">
-            <button
-              onClick={onGetStarted}
-              className="px-8 py-4 bg-gradient-to-r from-amber-400 to-amber-500 text-gray-900 font-semibold rounded-xl shadow-lg shadow-amber-500/30 hover:shadow-xl hover:shadow-amber-500/40 hover:from-amber-500 hover:to-amber-600 transition-all duration-200"
-            >
-              Try It Now — It&apos;s Free
-            </button>
+          {/* Contact Form */}
+          <div id="contact" className="mt-16 max-w-md mx-auto">
+            <h3 className="text-2xl font-bold text-center text-gray-900 mb-2">
+              Interested?
+            </h3>
+            <p className="text-gray-600 text-center mb-6">
+              Drop us a line and we&apos;ll keep you posted.
+            </p>
+
+            {formState === 'sent' ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
+                <p className="text-green-800 font-medium">Thanks for reaching out!</p>
+                <p className="text-green-600 text-sm mt-1">We&apos;ll get back to you soon.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <input
+                  type="text"
+                  placeholder="Name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <input
+                  type="email"
+                  placeholder="Email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <textarea
+                  placeholder="Message (optional)"
+                  rows={3}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+                {formState === 'error' && (
+                  <p className="text-red-500 text-sm">{formError}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={formState === 'sending'}
+                  className={`w-full py-4 rounded-xl font-semibold text-lg transition-all duration-200 ${
+                    formState === 'sending'
+                      ? 'bg-blue-400 text-white/70 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:from-blue-600 hover:to-blue-700'
+                  }`}
+                >
+                  {formState === 'sending' ? 'Sending...' : 'Send Message'}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </section>
