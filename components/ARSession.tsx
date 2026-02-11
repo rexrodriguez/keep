@@ -526,8 +526,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       }
     }
 
-    // READY_TO_DRAW state - tap-to-place
-    if (context.state !== 'READY_TO_DRAW') {
+    // READY_TO_DRAW or READY_TO_MEASURE — tap-to-place
+    if (context.state !== 'READY_TO_DRAW' && context.state !== 'READY_TO_MEASURE') {
       return;
     }
 

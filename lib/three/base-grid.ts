@@ -12,13 +12,14 @@ export function addBaseGrid(
 ): void {
   removeBaseGrid(scene);
 
-  const grid = new THREE.GridHelper(2, 10, 0x22c55e, 0x22c55e);
+  const grid = new THREE.GridHelper(2, 10, 0x4ade80, 0x4ade80);
   grid.name = GRID_NAME;
   grid.position.copy(position);
   grid.material = new THREE.LineBasicMaterial({
-    color: 0x22c55e,
+    color: 0x4ade80,
     transparent: true,
-    opacity: 0.25,
+    opacity: 0.5,
+    linewidth: 2,
   });
   scene.add(grid);
 }
