@@ -44,7 +44,7 @@ export default function ModeSelector({ mode, onModeChange }: ModeSelectorProps) 
 
   return (
     <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50">
-      <div className="flex gap-3 bg-black/70 backdrop-blur-sm rounded-2xl p-2 shadow-lg">
+      <div className="flex gap-3 bg-black/70 rounded-2xl p-2 shadow-lg">
         {modes.map(({ key, label, icon }) => (
           <button
             key={key}

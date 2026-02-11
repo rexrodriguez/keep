@@ -93,7 +93,7 @@ export default function MeasurementUI({
         <div className="flex items-start justify-between">
           <button
             onClick={onExit}
-            className="bg-black/50 backdrop-blur-sm text-white/80 hover:text-white p-2 rounded-full"
+            className="bg-black/50 text-white/80 hover:text-white p-2 rounded-full"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -102,7 +102,7 @@ export default function MeasurementUI({
 
           {/* Floating dimension display when adjusting */}
           {showBottomPanel && measurements && (
-            <div className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2">
+            <div className="bg-black/60 rounded-lg px-3 py-2">
               <div className="flex items-center gap-3 text-sm text-white">
                 <span>{widthInches}"</span>
                 <span className="text-white/40">×</span>
@@ -140,7 +140,7 @@ export default function MeasurementUI({
       <div className="flex-1 flex items-center justify-center">
         {/* Confirmation popup - appears briefly when dimensions are confirmed */}
         {showConfirmPopup && (
-          <div className="bg-black/80 backdrop-blur-md rounded-2xl px-6 py-4 text-center animate-fade-in-out">
+          <div className="bg-black/80 rounded-2xl px-6 py-4 text-center animate-fade-in-out">
             <div className="text-white/60 text-xs uppercase tracking-wider mb-2">Confirmed</div>
             <div className="text-white text-2xl font-semibold">
               <span className="text-cyan-400">{widthInches}″</span>
@@ -159,7 +159,7 @@ export default function MeasurementUI({
       {/* Bottom panel - Adjustment controls (fades when idle to let AR breathe) */}
       {showBottomPanel && (
         <div
-          className={`pointer-events-auto bg-black/80 backdrop-blur-md rounded-t-2xl safe-area-bottom transition-opacity duration-500 ${
+          className={`pointer-events-auto bg-black/80 rounded-t-2xl safe-area-bottom transition-opacity duration-500 ${
             isIdle ? 'opacity-40' : 'opacity-100'
           }`}
           onTouchStart={resetIdleTimer}
@@ -184,7 +184,7 @@ export default function MeasurementUI({
       {/* Floating hints for initial states */}
       {isReadyToDraw && !trackingWarning && (
         <div className="pointer-events-none pb-8 px-4">
-          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
+          <div className="bg-black/60 px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm">
               Tap to place a box
             </span>
@@ -194,7 +194,7 @@ export default function MeasurementUI({
 
       {isDrawing && (
         <div className="pointer-events-none pb-8 px-4">
-          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
+          <div className="bg-black/60 px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm">
               Drag to resize
             </span>
@@ -204,7 +204,7 @@ export default function MeasurementUI({
 
       {context.isEstimating && (
         <div className="pointer-events-none pb-8 px-4">
-          <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit flex items-center gap-2">
+          <div className="bg-black/60 px-4 py-2 rounded-full mx-auto w-fit flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             <span className="text-white text-sm">Analyzing...</span>
           </div>

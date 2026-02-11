@@ -57,7 +57,7 @@ export default function TutorialOverlay({ step, onNext, onSkip }: TutorialOverla
 
   return (
     <div className="fixed inset-x-0 top-12 flex justify-center pointer-events-none z-50">
-      <div className="bg-black/60 backdrop-blur-sm rounded-xl p-3 mx-4 max-w-xs pointer-events-auto shadow-lg border border-white/10">
+      <div className="bg-black/60 rounded-xl p-3 mx-4 max-w-xs pointer-events-auto shadow-lg border border-white/10">
         {/* Compact header with step indicator */}
         <div className="flex items-center gap-2 mb-2">
           <div className="flex gap-1">

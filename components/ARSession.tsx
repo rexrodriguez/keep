@@ -84,6 +84,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const hasDraggedRef = useRef(false);
   // Track last warning to avoid calling setState every frame
   const lastTrackingWarningRef = useRef<string | null>(null);
+  // Track last reticle color to avoid traversing group every frame
+  const lastReticleStableRef = useRef<boolean | null>(null);
   // Debug: frame counter to diagnose freezes
   const frameCountRef = useRef(0);
   const [debugInfo, setDebugInfo] = useState('starting...');
@@ -306,8 +308,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       stabilizerRef.current.addFrame(hitTest.position);
       const stability = stabilizerRef.current.checkStability();
 
-      // Update reticle color based on stability
-      if (reticleRef.current) {
+      // Update reticle color based on stability (only when changed)
+      if (reticleRef.current && lastReticleStableRef.current !== stability.isStable) {
+        lastReticleStableRef.current = stability.isStable;
         setReticleColor(reticleRef.current, stability.isStable);
       }
 
