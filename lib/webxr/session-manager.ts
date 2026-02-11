@@ -8,9 +8,6 @@ export interface XRSessionContext {
   renderer: THREE.WebGLRenderer;
   glBinding: XRWebGLBinding | null;
   hasCameraAccess: boolean;
-  hasDepthSensing: boolean;
-  depthUsage: 'cpu-optimized' | 'gpu-optimized' | null;
-  canPauseDepth: boolean;
 }
 
 /**
@@ -24,8 +21,7 @@ export async function startARSession(
 
   // Configure session options
   // camera-access is optional - allows raw camera image capture for AI estimation
-  // depth-sensing is optional - allows depth-based auto-sizing on tap
-  const optionalFeatures: string[] = ['camera-access', 'depth-sensing'];
+  const optionalFeatures: string[] = ['camera-access'];
   if (overlayElement) {
     optionalFeatures.push('dom-overlay');
   }
@@ -33,10 +29,6 @@ export async function startARSession(
   const sessionInit: XRSessionInit = {
     requiredFeatures: ['hit-test', 'local-floor'],
     optionalFeatures,
-    depthSensing: {
-      usagePreference: ['cpu-optimized', 'gpu-optimized'],
-      dataFormatPreference: ['luminance-alpha', 'float32'],
-    },
   };
 
   if (overlayElement) {
@@ -76,46 +68,6 @@ export async function startARSession(
     console.warn('WebXR camera access not available:', error);
   }
 
-  // Check if depth sensing was granted by the session
-  // Accessing depthUsage throws if depth-sensing is not supported
-  let depthUsage: 'cpu-optimized' | 'gpu-optimized' | null = null;
-  try {
-    depthUsage = ((session as any).depthUsage as 'cpu-optimized' | 'gpu-optimized') || null;
-  } catch {
-    // Depth sensing not supported on this device
-  }
-  const hasDepthSensing = !!depthUsage;
-  if (hasDepthSensing) {
-    console.log('WebXR depth sensing available:', depthUsage);
-  }
-
-  // For cpu-optimized: Chrome does GPU→CPU depth transfers every frame,
-  // which freezes the session. We need pauseDepthSensing() to avoid this.
-  // If pause isn't available, disable depth entirely to prevent freezes.
-  let canPauseDepth = false;
-  let effectiveHasDepthSensing = hasDepthSensing;
-  if (hasDepthSensing && depthUsage === 'cpu-optimized') {
-    const s = session as any;
-    if (typeof s.pauseDepthSensing === 'function' && typeof s.resumeDepthSensing === 'function') {
-      canPauseDepth = true;
-      // Immediately pause to avoid per-frame GPU→CPU depth transfers
-      try {
-        s.pauseDepthSensing();
-        console.log('Depth sensing paused (will resume on tap)');
-      } catch (e) {
-        console.warn('Failed to pause depth sensing:', e);
-        canPauseDepth = false;
-        // Can't pause → cpu-optimized will freeze → disable depth
-        effectiveHasDepthSensing = false;
-        console.warn('Depth sensing disabled: cpu-optimized without pause support causes freezes');
-      }
-    } else {
-      // No pause/resume API → cpu-optimized will freeze → disable depth
-      effectiveHasDepthSensing = false;
-      console.warn('Depth sensing disabled: cpu-optimized without pause support causes freezes');
-    }
-  }
-
   return {
     session,
     localFloorSpace,
@@ -124,9 +76,6 @@ export async function startARSession(
     renderer,
     glBinding,
     hasCameraAccess,
-    hasDepthSensing: effectiveHasDepthSensing,
-    depthUsage: effectiveHasDepthSensing ? depthUsage : null,
-    canPauseDepth,
   };
 }
 

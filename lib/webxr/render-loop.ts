@@ -8,11 +8,6 @@ export interface FrameData {
   hitTest: HitTestResult;
   viewerPose: XRViewerPose | null;
   view: XRView | null;
-  hasDepthSensing: boolean;
-  depthUsage: 'cpu-optimized' | 'gpu-optimized' | null;
-  glBinding: XRWebGLBinding | null;
-  canPauseDepth: boolean;
-  session: XRSession;
 }
 
 export type FrameCallback = (data: FrameData) => void;
@@ -44,19 +39,12 @@ export function createRenderLoop(
       const view = (viewerPose && viewerPose.views.length > 0) ? viewerPose.views[0] : null;
 
       // Call frame callback with data
-      // Depth reading is NOT done here — the callback reads depth on-demand
-      // to avoid the per-frame GPU→CPU transfer that caused freezes
       onFrame({
         time,
         frame,
         hitTest,
         viewerPose,
         view,
-        hasDepthSensing: context.hasDepthSensing,
-        depthUsage: context.depthUsage,
-        glBinding: context.glBinding,
-        canPauseDepth: context.canPauseDepth,
-        session: context.session,
       });
 
       // Render scene

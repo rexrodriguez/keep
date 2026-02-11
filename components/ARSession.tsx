@@ -39,7 +39,6 @@ import {
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
-import { computeDepthBoundingBox, createGPUDepthReader, GPUDepthReaderHandle, DepthReader } from '@/lib/webxr/depth-sensing';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -57,7 +56,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const targetMarkerRef = useRef<THREE.Group | null>(null);
   const stabilizerRef = useRef<PoseStabilizer>(new PoseStabilizer());
   const renderLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
-  const gpuDepthReaderRef = useRef<GPUDepthReaderHandle | null>(null);
 
   const [context, setContext] = useState<StateMachineContext>(initialContext);
   const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
@@ -73,13 +71,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
-  // On-demand depth sensing: set flag on touchStart, read depth on next frame
-  const needDepthRef = useRef(false);
-  const cachedDepthRef = useRef<{
-    depthInfo: DepthReader;
-    view: XRView;
-    viewerPose: XRViewerPose;
-  } | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -150,15 +141,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             onExit();
           }
         });
-
-        // Create GPU depth reader if gpu-optimized depth was granted
-        if (xrCtx.depthUsage === 'gpu-optimized') {
-          const gl = sceneCtx.renderer.getContext() as WebGL2RenderingContext;
-          gpuDepthReaderRef.current = createGPUDepthReader(gl);
-          if (gpuDepthReaderRef.current) {
-            console.log('GPU depth reader initialized');
-          }
-        }
 
         // Create render loop
         const loop = createRenderLoop(
@@ -272,48 +254,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.state, context.llmEstimate]);
 
   const handleFrame = useCallback((data: FrameData) => {
-    const { hitTest, frame, view, viewerPose, hasDepthSensing } = data;
+    const { hitTest, frame } = data;
 
     // Debug: count frames
     frameCountRef.current++;
 
     // Store frame for camera capture
     currentFrameRef.current = frame;
-
-    // On-demand depth: only read when flag is set (one-shot per tap)
-    if (needDepthRef.current && hasDepthSensing && view && viewerPose) {
-      try {
-        if (data.depthUsage === 'gpu-optimized' && data.glBinding && gpuDepthReaderRef.current) {
-          // GPU path: get GPU texture, shader-readback to CPU
-          const gpuDepth = (data.glBinding as any).getDepthInformation(view);
-          if (gpuDepth) {
-            const cpuAdapter = gpuDepthReaderRef.current.read(gpuDepth);
-            if (cpuAdapter) {
-              cachedDepthRef.current = { depthInfo: cpuAdapter, view, viewerPose };
-              needDepthRef.current = false;
-              // Re-pause depth if supported (stop per-frame overhead)
-              if (data.canPauseDepth) {
-                try { (data.session as any).pauseDepthSensing(); } catch {}
-              }
-            }
-          }
-        } else {
-          // CPU path: use frame.getDepthInformation directly
-          const depthInfo = (frame as any).getDepthInformation(view) || null;
-          if (depthInfo) {
-            cachedDepthRef.current = { depthInfo, view, viewerPose };
-            needDepthRef.current = false;
-            // Re-pause depth if supported (stop per-frame overhead)
-            if (data.canPauseDepth) {
-              try { (data.session as any).pauseDepthSensing(); } catch {}
-            }
-          }
-        }
-        // If null, keep flag set — try again next frame
-      } catch {
-        // Depth not available this frame, keep trying
-      }
-    }
 
     // Update reticle
     if (reticleRef.current) {
@@ -366,11 +313,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const cleanup = useCallback(() => {
     if (renderLoopRef.current) {
       renderLoopRef.current.stop();
-    }
-
-    if (gpuDepthReaderRef.current) {
-      gpuDepthReaderRef.current.dispose();
-      gpuDepthReaderRef.current = null;
     }
 
     if (xrContextRef.current) {
@@ -552,14 +494,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
     };
-
-    // Request depth data for this tap (will be read on next render frame)
-    // Resume depth sensing if it was paused (cpu-optimized with pause/resume support)
-    if (xrContextRef.current?.canPauseDepth) {
-      try { (xrContextRef.current.session as any).resumeDepthSensing(); } catch {}
-    }
-    needDepthRef.current = true;
-    cachedDepthRef.current = null;
   }, [context.state, context.width_m, context.depth_m, context.height_m, context.rotation_deg, context.dragStart, context.dragEnd, controlMode]);
 
   // Handle touch move - update handle drag or box drawing
@@ -802,49 +736,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       return;
     }
 
-    // In READY_TO_DRAW state, tap places a box
+    // In READY_TO_DRAW state, tap places a default box
     if (context.state === 'READY_TO_DRAW') {
       const tapPosition = touchStart.position.clone();
       const stability = currentHitRef.current?.stability || 0.5;
 
-      // Attempt depth-based box estimation (uses depth cached since touchStart)
-      needDepthRef.current = false; // Stop requesting depth
-      // Re-pause depth sensing if still active
-      if (xrContextRef.current?.canPauseDepth) {
-        try { (xrContextRef.current.session as any).pauseDepthSensing(); } catch {}
-      }
-      if (cachedDepthRef.current) {
-        const { depthInfo, view, viewerPose } = cachedDepthRef.current;
-        const floorY = tapPosition.y;
-
-        const depthResult = computeDepthBoundingBox(
-          depthInfo,
-          view,
-          viewerPose,
-          tapPosition,
-          floorY,
-        );
-
-        if (depthResult.success) {
-          cachedDepthRef.current = null; // Clean up
-          const point: MeasurementPoint = {
-            position: depthResult.center,
-            timestamp: Date.now(),
-            stability,
-          };
-          dispatch({
-            type: 'PLACE_BOX_WITH_DIMENSIONS',
-            point,
-            width_m: depthResult.width_m,
-            depth_m: depthResult.depth_m,
-            height_m: depthResult.height_m,
-          });
-          return;
-        }
-        cachedDepthRef.current = null; // Clean up even on failure
-      }
-
-      // Fallback: default 40x40x40cm box
       const point: MeasurementPoint = {
         position: tapPosition,
         timestamp: Date.now(),
