@@ -10,6 +10,7 @@ export interface XRSessionContext {
   hasCameraAccess: boolean;
   hasDepthSensing: boolean;
   depthUsage: 'cpu-optimized' | 'gpu-optimized' | null;
+  canPauseDepth: boolean;
 }
 
 /**
@@ -33,7 +34,7 @@ export async function startARSession(
     requiredFeatures: ['hit-test', 'local-floor'],
     optionalFeatures,
     depthSensing: {
-      usagePreference: ['gpu-optimized'],
+      usagePreference: ['cpu-optimized', 'gpu-optimized'],
       dataFormatPreference: ['luminance-alpha', 'float32'],
     },
   };
@@ -88,6 +89,33 @@ export async function startARSession(
     console.log('WebXR depth sensing available:', depthUsage);
   }
 
+  // For cpu-optimized: Chrome does GPU→CPU depth transfers every frame,
+  // which freezes the session. We need pauseDepthSensing() to avoid this.
+  // If pause isn't available, disable depth entirely to prevent freezes.
+  let canPauseDepth = false;
+  let effectiveHasDepthSensing = hasDepthSensing;
+  if (hasDepthSensing && depthUsage === 'cpu-optimized') {
+    const s = session as any;
+    if (typeof s.pauseDepthSensing === 'function' && typeof s.resumeDepthSensing === 'function') {
+      canPauseDepth = true;
+      // Immediately pause to avoid per-frame GPU→CPU depth transfers
+      try {
+        s.pauseDepthSensing();
+        console.log('Depth sensing paused (will resume on tap)');
+      } catch (e) {
+        console.warn('Failed to pause depth sensing:', e);
+        canPauseDepth = false;
+        // Can't pause → cpu-optimized will freeze → disable depth
+        effectiveHasDepthSensing = false;
+        console.warn('Depth sensing disabled: cpu-optimized without pause support causes freezes');
+      }
+    } else {
+      // No pause/resume API → cpu-optimized will freeze → disable depth
+      effectiveHasDepthSensing = false;
+      console.warn('Depth sensing disabled: cpu-optimized without pause support causes freezes');
+    }
+  }
+
   return {
     session,
     localFloorSpace,
@@ -96,8 +124,9 @@ export async function startARSession(
     renderer,
     glBinding,
     hasCameraAccess,
-    hasDepthSensing,
-    depthUsage,
+    hasDepthSensing: effectiveHasDepthSensing,
+    depthUsage: effectiveHasDepthSensing ? depthUsage : null,
+    canPauseDepth,
   };
 }
 

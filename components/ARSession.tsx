@@ -291,6 +291,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             if (cpuAdapter) {
               cachedDepthRef.current = { depthInfo: cpuAdapter, view, viewerPose };
               needDepthRef.current = false;
+              // Re-pause depth if supported (stop per-frame overhead)
+              if (data.canPauseDepth) {
+                try { (data.session as any).pauseDepthSensing(); } catch {}
+              }
             }
           }
         } else {
@@ -299,6 +303,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           if (depthInfo) {
             cachedDepthRef.current = { depthInfo, view, viewerPose };
             needDepthRef.current = false;
+            // Re-pause depth if supported (stop per-frame overhead)
+            if (data.canPauseDepth) {
+              try { (data.session as any).pauseDepthSensing(); } catch {}
+            }
           }
         }
         // If null, keep flag set — try again next frame
@@ -546,6 +554,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     };
 
     // Request depth data for this tap (will be read on next render frame)
+    // Resume depth sensing if it was paused (cpu-optimized with pause/resume support)
+    if (xrContextRef.current?.canPauseDepth) {
+      try { (xrContextRef.current.session as any).resumeDepthSensing(); } catch {}
+    }
     needDepthRef.current = true;
     cachedDepthRef.current = null;
   }, [context.state, context.width_m, context.depth_m, context.height_m, context.rotation_deg, context.dragStart, context.dragEnd, controlMode]);
@@ -797,6 +809,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
       // Attempt depth-based box estimation (uses depth cached since touchStart)
       needDepthRef.current = false; // Stop requesting depth
+      // Re-pause depth sensing if still active
+      if (xrContextRef.current?.canPauseDepth) {
+        try { (xrContextRef.current.session as any).pauseDepthSensing(); } catch {}
+      }
       if (cachedDepthRef.current) {
         const { depthInfo, view, viewerPose } = cachedDepthRef.current;
         const floorY = tapPosition.y;
