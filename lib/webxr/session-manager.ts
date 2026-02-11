@@ -76,7 +76,13 @@ export async function startARSession(
   }
 
   // Check if depth sensing was granted by the session
-  const depthUsage = ((session as any).depthUsage as 'cpu-optimized' | 'gpu-optimized') || null;
+  // Accessing depthUsage throws if depth-sensing is not supported
+  let depthUsage: 'cpu-optimized' | 'gpu-optimized' | null = null;
+  try {
+    depthUsage = ((session as any).depthUsage as 'cpu-optimized' | 'gpu-optimized') || null;
+  } catch {
+    // Depth sensing not supported on this device
+  }
   const hasDepthSensing = !!depthUsage;
   if (hasDepthSensing) {
     console.log('WebXR depth sensing available:', depthUsage);
