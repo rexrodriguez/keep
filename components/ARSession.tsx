@@ -284,7 +284,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             const data = await response.json();
 
             if (data.success && data.estimate) {
-              dispatch({ type: 'LLM_ESTIMATE_COMPLETE', estimate: data.estimate });
+              dispatch({ type: 'LLM_ESTIMATE_COMPLETE', estimate: data.estimate, point: tapPoint });
             } else {
               throw new Error(data.error || 'Estimation failed');
             }
@@ -785,7 +785,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       // Try AI estimation if camera access is available
       const xrCtx = xrContextRef.current;
       if (xrCtx?.hasCameraAccess) {
-        dispatch({ type: 'SET_TARGET', point });
         dispatch({ type: 'START_LLM_ESTIMATE' });
         needCaptureRef.current = point;
         return;

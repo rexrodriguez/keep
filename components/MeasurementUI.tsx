@@ -186,7 +186,7 @@ export default function MeasurementUI({
         <div className="pointer-events-none pb-8 px-4">
           <div className="bg-black/60 px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm">
-              Tap to place a box
+              Point at your object, tap to measure
             </span>
           </div>
         </div>

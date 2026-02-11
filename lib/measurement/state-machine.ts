@@ -44,7 +44,7 @@ export type StateAction =
   | { type: 'SET_TARGET'; point: MeasurementPoint }
   | { type: 'CLEAR_TARGET' }
   | { type: 'START_LLM_ESTIMATE' }
-  | { type: 'LLM_ESTIMATE_COMPLETE'; estimate: LLMEstimate }
+  | { type: 'LLM_ESTIMATE_COMPLETE'; estimate: LLMEstimate; point: MeasurementPoint }
   | { type: 'LLM_ESTIMATE_FAILED'; error: string }
   | { type: 'UNDO' }
   | { type: 'RESET' }
@@ -295,9 +295,6 @@ export function stateMachineReducer(
       };
 
     case 'START_LLM_ESTIMATE':
-      if (!context.targetPoint) {
-        return context; // Need a target point first
-      }
       return {
         ...context,
         isEstimating: true,
@@ -305,28 +302,41 @@ export function stateMachineReducer(
       };
 
     case 'LLM_ESTIMATE_COMPLETE': {
-      // Use the target point as anchor, create drag points from LLM dimensions
-      const { estimate } = action;
-      const anchorPoint = context.targetPoint!;
+      // Center box on the tap point using LLM-estimated dimensions
+      const { estimate, point } = action;
+      const center = point.position;
       const widthM = estimate.width_cm / 100;
       const depthM = estimate.depth_cm / 100;
       const heightM = estimate.height_cm / 100;
+      const halfWidth = widthM / 2;
+      const halfDepth = depthM / 2;
 
-      // Create dragStart at anchor, dragEnd offset by width/depth
-      const dragEnd: MeasurementPoint = {
-        position: anchorPoint.position.clone().add(
-          new THREE.Vector3(widthM, 0, depthM)
+      const dragStart: MeasurementPoint = {
+        position: new THREE.Vector3(
+          center.x - halfWidth,
+          center.y,
+          center.z - halfDepth
         ),
         timestamp: Date.now(),
-        stability: anchorPoint.stability,
+        stability: point.stability,
+      };
+
+      const dragEnd: MeasurementPoint = {
+        position: new THREE.Vector3(
+          center.x + halfWidth,
+          center.y,
+          center.z + halfDepth
+        ),
+        timestamp: Date.now(),
+        stability: point.stability,
       };
 
       return {
         ...context,
         isEstimating: false,
         llmEstimate: estimate,
-        dragStart: anchorPoint,
-        dragEnd: dragEnd,
+        dragStart,
+        dragEnd,
         width_m: widthM,
         depth_m: depthM,
         height_m: heightM,
@@ -446,7 +456,7 @@ function getStateInfo(state: MeasurementState): {
     case 'AR_RUNNING':
       return { step: '', instruction: 'Point at a flat surface' };
     case 'READY_TO_DRAW':
-      return { step: '1/2', instruction: 'Tap to place a box at the corner of your object' };
+      return { step: '1/2', instruction: 'Point at your object, tap to measure' };
     case 'DRAWING':
       return { step: '1/2', instruction: 'Dragging corner...' };
     case 'HEIGHT_INPUT':
