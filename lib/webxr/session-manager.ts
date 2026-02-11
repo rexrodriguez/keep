@@ -22,7 +22,7 @@ export async function startARSession(
 
   // Configure session options
   // camera-access is optional - allows raw camera image capture for AI estimation
-  const optionalFeatures: string[] = ['camera-access', 'depth-sensing'];
+  const optionalFeatures: string[] = ['camera-access'];
   if (overlayElement) {
     optionalFeatures.push('dom-overlay');
   }
@@ -30,11 +30,7 @@ export async function startARSession(
   const sessionInit: XRSessionInit = {
     requiredFeatures: ['hit-test', 'local-floor'],
     optionalFeatures,
-    depthSensing: {
-      usagePreference: ['cpu-optimized'],
-      dataFormatPreference: ['luminance-alpha'],
-    },
-  } as any;
+  };
 
   if (overlayElement) {
     (sessionInit as any).domOverlay = { root: overlayElement };
@@ -73,18 +69,6 @@ export async function startARSession(
     console.warn('WebXR camera access not available:', error);
   }
 
-  // Check if depth-sensing was granted
-  let hasDepthSensing = false;
-  try {
-    const sessionAny = session as any;
-    hasDepthSensing = !!(sessionAny.depthUsage && sessionAny.depthDataFormat);
-    if (hasDepthSensing) {
-      console.log('WebXR depth sensing available:', sessionAny.depthUsage, sessionAny.depthDataFormat);
-    }
-  } catch (error) {
-    console.warn('WebXR depth sensing not available:', error);
-  }
-
   return {
     session,
     localFloorSpace,
@@ -93,7 +77,7 @@ export async function startARSession(
     renderer,
     glBinding,
     hasCameraAccess,
-    hasDepthSensing,
+    hasDepthSensing: false,
   };
 }
 
