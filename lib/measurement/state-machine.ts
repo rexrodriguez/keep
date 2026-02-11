@@ -3,6 +3,8 @@ import { MeasurementState, MeasurementPoint, UIState } from '@/lib/types';
 
 export interface StateMachineContext {
   state: MeasurementState;
+  baseFloorY: number | null;             // Y position of the established base plane
+  basePosition: THREE.Vector3 | null;    // Center of the base plane (for grid placement)
   dragStart: MeasurementPoint | null;   // Start corner of drag rectangle
   dragEnd: MeasurementPoint | null;     // End corner of drag rectangle
   targetPoint: MeasurementPoint | null; // Target point for LLM estimation (tap marker)
@@ -30,6 +32,7 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
+  | { type: 'SET_BASE'; point: MeasurementPoint }    // Tap to set base reference plane
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
   | { type: 'PLACE_BOX_WITH_DIMENSIONS'; point: MeasurementPoint; width_m: number; depth_m: number; height_m: number }
   | { type: 'START_DRAG'; point: MeasurementPoint }
@@ -63,6 +66,8 @@ const DEFAULT_HEIGHT_M = 0.4;
 
 export const initialContext: StateMachineContext = {
   state: 'IDLE',
+  baseFloorY: null,
+  basePosition: null,
   dragStart: null,
   dragEnd: null,
   targetPoint: null,
@@ -101,73 +106,89 @@ export function stateMachineReducer(
     case 'AR_FAILED':
       return { ...context, state: 'SUPPORTED_READY', error: action.error };
 
-    case 'PLACE_BOX':
-      // Tap to place a default-sized box centered on the tap point
+    case 'SET_BASE':
+      // First tap: establish base reference plane
       if (context.state === 'READY_TO_DRAW') {
-        const center = action.point.position;
-        const halfWidth = DEFAULT_WIDTH_M / 2;
-        const halfDepth = DEFAULT_DEPTH_M / 2;
-
-        // Create dragStart and dragEnd as opposite corners of the box
-        const dragStart: MeasurementPoint = {
-          position: new THREE.Vector3(
-            center.x - halfWidth,
-            center.y,
-            center.z - halfDepth
-          ),
-          timestamp: Date.now(),
-          stability: action.point.stability,
-        };
-
-        const dragEnd: MeasurementPoint = {
-          position: new THREE.Vector3(
-            center.x + halfWidth,
-            center.y,
-            center.z + halfDepth
-          ),
-          timestamp: Date.now(),
-          stability: action.point.stability,
-        };
-
         return {
           ...context,
-          dragStart,
-          dragEnd,
-          width_m: DEFAULT_WIDTH_M,
-          depth_m: DEFAULT_DEPTH_M,
-          height_m: DEFAULT_HEIGHT_M,
-          rotation_deg: 0,
-          state: 'HEIGHT_INPUT',
+          baseFloorY: action.point.position.y,
+          basePosition: action.point.position.clone(),
+          state: 'READY_TO_MEASURE',
         };
       }
       return context;
 
-    case 'PLACE_BOX_WITH_DIMENSIONS':
-      // Tap to place a box with depth-sensing-derived dimensions
-      if (context.state === 'READY_TO_DRAW') {
-        const center = action.point.position;
-        const halfWidth = action.width_m / 2;
-        const halfDepth = action.depth_m / 2;
+    case 'PLACE_BOX': {
+      // Tap to place a default-sized box centered on the tap point
+      if (context.state !== 'READY_TO_MEASURE' && context.state !== 'READY_TO_DRAW') {
+        return context;
+      }
+      const floorY = context.baseFloorY ?? action.point.position.y;
+      const center = action.point.position;
+      const halfWidth = DEFAULT_WIDTH_M / 2;
+      const halfDepth = DEFAULT_DEPTH_M / 2;
 
-        const dragStart: MeasurementPoint = {
-          position: new THREE.Vector3(
-            center.x - halfWidth,
-            center.y,
-            center.z - halfDepth
-          ),
-          timestamp: Date.now(),
-          stability: action.point.stability,
-        };
+      const dragStart: MeasurementPoint = {
+        position: new THREE.Vector3(
+          center.x - halfWidth,
+          floorY,
+          center.z - halfDepth
+        ),
+        timestamp: Date.now(),
+        stability: action.point.stability,
+      };
 
-        const dragEnd: MeasurementPoint = {
-          position: new THREE.Vector3(
-            center.x + halfWidth,
-            center.y,
-            center.z + halfDepth
-          ),
-          timestamp: Date.now(),
-          stability: action.point.stability,
-        };
+      const dragEnd: MeasurementPoint = {
+        position: new THREE.Vector3(
+          center.x + halfWidth,
+          floorY,
+          center.z + halfDepth
+        ),
+        timestamp: Date.now(),
+        stability: action.point.stability,
+      };
+
+      return {
+        ...context,
+        dragStart,
+        dragEnd,
+        width_m: DEFAULT_WIDTH_M,
+        depth_m: DEFAULT_DEPTH_M,
+        height_m: DEFAULT_HEIGHT_M,
+        rotation_deg: 0,
+        state: 'HEIGHT_INPUT',
+      };
+    }
+
+    case 'PLACE_BOX_WITH_DIMENSIONS': {
+      // Tap to place a box with pre-estimated dimensions
+      if (context.state !== 'READY_TO_MEASURE' && context.state !== 'READY_TO_DRAW') {
+        return context;
+      }
+      const pFloorY = context.baseFloorY ?? action.point.position.y;
+      const pCenter = action.point.position;
+      const pHalfWidth = action.width_m / 2;
+      const pHalfDepth = action.depth_m / 2;
+
+      const dragStart: MeasurementPoint = {
+        position: new THREE.Vector3(
+          pCenter.x - pHalfWidth,
+          pFloorY,
+          pCenter.z - pHalfDepth
+        ),
+        timestamp: Date.now(),
+        stability: action.point.stability,
+      };
+
+      const dragEnd: MeasurementPoint = {
+        position: new THREE.Vector3(
+          pCenter.x + pHalfWidth,
+          pFloorY,
+          pCenter.z + pHalfDepth
+        ),
+        timestamp: Date.now(),
+        stability: action.point.stability,
+      };
 
         return {
           ...context,
@@ -302,9 +323,10 @@ export function stateMachineReducer(
       };
 
     case 'LLM_ESTIMATE_COMPLETE': {
-      // Center box on the tap point using LLM-estimated dimensions
+      // Center box on the tap point using LLM-estimated dimensions, on base plane
       const { estimate, point } = action;
       const center = point.position;
+      const eFloorY = context.baseFloorY ?? center.y;
       const widthM = estimate.width_cm / 100;
       const depthM = estimate.depth_cm / 100;
       const heightM = estimate.height_cm / 100;
@@ -314,7 +336,7 @@ export function stateMachineReducer(
       const dragStart: MeasurementPoint = {
         position: new THREE.Vector3(
           center.x - halfWidth,
-          center.y,
+          eFloorY,
           center.z - halfDepth
         ),
         timestamp: Date.now(),
@@ -324,7 +346,7 @@ export function stateMachineReducer(
       const dragEnd: MeasurementPoint = {
         position: new THREE.Vector3(
           center.x + halfWidth,
-          center.y,
+          eFloorY,
           center.z + halfDepth
         ),
         timestamp: Date.now(),
@@ -357,6 +379,8 @@ export function stateMachineReducer(
     case 'RESET':
       return {
         ...context,
+        baseFloorY: null,
+        basePosition: null,
         dragStart: null,
         dragEnd: null,
         targetPoint: null,
@@ -365,6 +389,7 @@ export function stateMachineReducer(
         depth_m: DEFAULT_DEPTH_M,
         rotation_deg: 0,
         llmEstimate: null,
+        isEstimating: false,
         state: 'READY_TO_DRAW',
       };
 
@@ -389,7 +414,7 @@ export function stateMachineReducer(
  * Handle undo action
  */
 function handleUndo(context: StateMachineContext): StateMachineContext {
-  // In height input or review, go back to ready to draw
+  // In height input or review, go back to measure step (keep base plane)
   if (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') {
     return {
       ...context,
@@ -401,6 +426,16 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
       depth_m: DEFAULT_DEPTH_M,
       rotation_deg: 0,
       llmEstimate: null,
+      state: context.baseFloorY !== null ? 'READY_TO_MEASURE' : 'READY_TO_DRAW',
+    };
+  }
+
+  // In READY_TO_MEASURE, undo clears the base plane
+  if (context.state === 'READY_TO_MEASURE') {
+    return {
+      ...context,
+      baseFloorY: null,
+      basePosition: null,
       state: 'READY_TO_DRAW',
     };
   }
@@ -428,7 +463,7 @@ export function getUIState(context: StateMachineContext): UIState {
   return {
     currentStep: stateInfo.step,
     instruction: stateInfo.instruction,
-    canUndo: context.dragStart !== null || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW',
+    canUndo: context.dragStart !== null || context.state === 'READY_TO_MEASURE' || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW',
     canReset: context.dragStart !== null,
     showMeasurements: context.dragStart !== null && context.dragEnd !== null && context.state !== 'DRAWING',
     trackingWarning: null,
@@ -456,11 +491,13 @@ function getStateInfo(state: MeasurementState): {
     case 'AR_RUNNING':
       return { step: '', instruction: 'Point at a flat surface' };
     case 'READY_TO_DRAW':
-      return { step: '1/2', instruction: 'Point at your object, tap to measure' };
+      return { step: '1/3', instruction: 'Tap a flat surface to set the base' };
+    case 'READY_TO_MEASURE':
+      return { step: '2/3', instruction: 'Point at your object, tap to measure' };
     case 'DRAWING':
-      return { step: '1/2', instruction: 'Dragging corner...' };
+      return { step: '2/3', instruction: 'Dragging corner...' };
     case 'HEIGHT_INPUT':
-      return { step: '2/2', instruction: 'Adjust dimensions' };
+      return { step: '3/3', instruction: 'Adjust dimensions' };
     case 'REVIEW':
       return { step: 'Done', instruction: 'Review your measurement' };
     case 'SEARCHING':

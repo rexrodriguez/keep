@@ -33,6 +33,7 @@ export default function MeasurementUI({
   const isReview = context.state === 'REVIEW';
   const isDrawing = context.state === 'DRAWING';
   const isReadyToDraw = context.state === 'READY_TO_DRAW';
+  const isReadyToMeasure = context.state === 'READY_TO_MEASURE';
   const showBottomPanel = isHeightInput || isReview;
 
   // Convert dimensions to inches for display (1 meter = 39.3701 inches)
@@ -118,7 +119,7 @@ export default function MeasurementUI({
         </div>
 
         {/* Tracking warning - only show when relevant */}
-        {trackingWarning && !context.isEstimating && (isReadyToDraw || isDrawing) && (
+        {trackingWarning && !context.isEstimating && (isReadyToDraw || isReadyToMeasure || isDrawing) && (
           <div className="mt-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-3 py-2 mx-auto max-w-xs">
             <p className="text-yellow-200 text-xs text-center">
               {trackingWarning}
@@ -183,6 +184,16 @@ export default function MeasurementUI({
 
       {/* Floating hints for initial states */}
       {isReadyToDraw && !trackingWarning && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-black/60 px-4 py-2 rounded-full mx-auto w-fit">
+            <span className="text-white text-sm">
+              Tap a flat surface to set the base
+            </span>
+          </div>
+        </div>
+      )}
+
+      {isReadyToMeasure && !trackingWarning && !context.isEstimating && (
         <div className="pointer-events-none pb-8 px-4">
           <div className="bg-black/60 px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm">

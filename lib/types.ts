@@ -28,7 +28,8 @@ export type MeasurementState =
   | 'SUPPORTED_READY'
   | 'AR_STARTING'
   | 'AR_RUNNING'
-  | 'READY_TO_DRAW'  // Ready for user to start drag
+  | 'READY_TO_DRAW'  // Ready for user to tap base surface
+  | 'READY_TO_MEASURE' // Base set, ready for user to tap object
   | 'DRAWING'        // User is dragging to draw rectangle
   | 'HEIGHT_INPUT'   // User adjusts height via slider
   | 'REVIEW'

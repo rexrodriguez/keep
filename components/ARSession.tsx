@@ -9,6 +9,7 @@ import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
 import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
 import { updateBoundingBox, disposeBoundingBox, addRotationGuide, removeRotationGuide, setTutorialHighlight } from '@/lib/three/bounding-box';
+import { addBaseGrid, removeBaseGrid } from '@/lib/three/base-grid';
 import TutorialOverlay, { TutorialStep } from './TutorialOverlay';
 import ModeSelector from './ModeSelector';
 
@@ -202,6 +203,16 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     }
   }, [context.targetPoint, context.state]);
 
+  // Show/hide base plane grid
+  useEffect(() => {
+    if (!sceneContextRef.current) return;
+    if (context.basePosition) {
+      addBaseGrid(sceneContextRef.current.scene, context.basePosition);
+    } else {
+      removeBaseGrid(sceneContextRef.current.scene);
+    }
+  }, [context.basePosition]);
+
   // Calculate hitbox scale factor based on screen size
   // Larger screens need larger hitboxes for easier touch targeting
   // Baseline: iPhone 13 width (~390px) = 1.0, larger screens scale up
@@ -355,6 +366,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     }
 
     if (sceneContextRef.current) {
+      removeBaseGrid(sceneContextRef.current.scene);
       disposeBoundingBox(sceneContextRef.current.scene);
       disposeTargetMarker(sceneContextRef.current.scene);
       disposeScene(sceneContextRef.current);
@@ -771,11 +783,23 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       return;
     }
 
-    // In READY_TO_DRAW state, tap places a box (AI-estimated or default)
-    if (context.state === 'READY_TO_DRAW' && !context.isEstimating) {
+    // Step 1: READY_TO_DRAW — tap sets the base plane
+    if (context.state === 'READY_TO_DRAW') {
       const tapPosition = touchStart.position.clone();
       const stability = currentHitRef.current?.stability || 0.5;
+      const point: MeasurementPoint = {
+        position: tapPosition,
+        timestamp: Date.now(),
+        stability,
+      };
+      dispatch({ type: 'SET_BASE', point });
+      return;
+    }
 
+    // Step 2: READY_TO_MEASURE — tap triggers AI estimation (or default box)
+    if (context.state === 'READY_TO_MEASURE' && !context.isEstimating) {
+      const tapPosition = touchStart.position.clone();
+      const stability = currentHitRef.current?.stability || 0.5;
       const point: MeasurementPoint = {
         position: tapPosition,
         timestamp: Date.now(),
@@ -790,7 +814,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         return;
       }
 
-      // No camera access — place default box
+      // No camera access — place default box on base plane
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
