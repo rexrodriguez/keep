@@ -1,15 +1,14 @@
 import * as THREE from 'three';
 import { XRSessionContext } from './session-manager';
 import { processHitTest, HitTestResult } from './hit-test';
-import { XRCPUDepthInformation } from '@/lib/types';
 
 export interface FrameData {
   time: number;
   frame: XRFrame;
   hitTest: HitTestResult;
   viewerPose: XRViewerPose | null;
-  depthInfo: XRCPUDepthInformation | null;
   view: XRView | null;
+  hasDepthSensing: boolean;
 }
 
 export type FrameCallback = (data: FrameData) => void;
@@ -24,12 +23,9 @@ export function createRenderLoop(
   onFrame: FrameCallback
 ): { start: () => void; stop: () => void } {
   let isRunning = false;
-  let animationFrameId: number | null = null;
-  let frameCount = 0;
 
   const render = (time: number, frame?: XRFrame) => {
     if (!isRunning || !frame) return;
-    frameCount++;
 
     try {
       // Get hit-test results
@@ -39,29 +35,20 @@ export function createRenderLoop(
         context.localFloorSpace
       );
 
-      // Get viewer pose
+      // Get viewer pose and primary view (cheap references, no depth readback)
       const viewerPose = frame.getViewerPose(context.localFloorSpace) || null;
-
-      // Get depth information — throttle to every 10th frame to reduce GPU pressure
-      let depthInfo: XRCPUDepthInformation | null = null;
-      let view: XRView | null = null;
-      if (viewerPose && viewerPose.views.length > 0 && context.hasDepthSensing && frameCount % 10 === 0) {
-        view = viewerPose.views[0];
-        try {
-          depthInfo = (frame as any).getDepthInformation(view) || null;
-        } catch {
-          // Depth info not available this frame
-        }
-      }
+      const view = (viewerPose && viewerPose.views.length > 0) ? viewerPose.views[0] : null;
 
       // Call frame callback with data
+      // Depth reading is NOT done here — the callback reads depth on-demand
+      // to avoid the per-frame GPU→CPU transfer that caused freezes
       onFrame({
         time,
         frame,
         hitTest,
         viewerPose,
-        depthInfo,
         view,
+        hasDepthSensing: context.hasDepthSensing,
       });
 
       // Render scene

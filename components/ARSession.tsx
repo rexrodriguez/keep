@@ -38,7 +38,7 @@ import {
   calculateMeasurementsFromLLM,
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
-import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData, XRCPUDepthInformation } from '@/lib/types';
+import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
 import { computeDepthBoundingBox } from '@/lib/webxr/depth-sensing';
 import MeasurementUI from './MeasurementUI';
 
@@ -72,9 +72,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
-  // Store latest depth info for tap-time processing
-  const currentDepthRef = useRef<{
-    depthInfo: XRCPUDepthInformation;
+  // On-demand depth sensing: set flag on touchStart, read depth on next frame
+  const needDepthRef = useRef(false);
+  const cachedDepthRef = useRef<{
+    depthInfo: any; // XRCPUDepthInformation
     view: XRView;
     viewerPose: XRViewerPose;
   } | null>(null);
@@ -86,10 +87,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastTrackingWarningRef = useRef<string | null>(null);
   // Track last reticle color to avoid traversing group every frame
   const lastReticleStableRef = useRef<boolean | null>(null);
-  // Debug: frame counter to diagnose freezes
+  // Frame counter (used for debug interval)
   const frameCountRef = useRef(0);
-  const [debugInfo, setDebugInfo] = useState('starting...');
-  const [glLost, setGlLost] = useState(false);
 
   // Active handle tracking for direct manipulation
   const activeHandleRef = useRef<{
@@ -122,18 +121,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         // Create Three.js scene
         const sceneCtx = createARScene(containerRef.current);
         sceneContextRef.current = sceneCtx;
-
-        // Detect WebGL context loss
-        const canvas = sceneCtx.renderer.domElement;
-        canvas.addEventListener('webglcontextlost', (e) => {
-          e.preventDefault();
-          console.error('WebGL context lost');
-          if (mounted) setGlLost(true);
-        });
-        canvas.addEventListener('webglcontextrestored', () => {
-          console.log('WebGL context restored');
-          if (mounted) setGlLost(false);
-        });
 
         // Create reticle
         const reticle = createReticle();
@@ -180,15 +167,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         // Store cleanup for end listener
         sessionEndCleanup = removeEndListener;
 
-        // Debug: report frame rate every second
+        // Debug: log frame rate every second
         debugInterval = setInterval(() => {
           if (mounted) {
             const fps = frameCountRef.current;
             frameCountRef.current = 0;
-            const gl = sceneCtx.renderer.getContext();
-            const lost = gl.isContextLost();
-            const presenting = sceneCtx.renderer.xr.isPresenting;
-            setDebugInfo(`fps:${fps} gl:${lost ? 'LOST' : 'ok'} xr:${presenting ? 'on' : 'off'}`);
+            console.debug(`AR fps:${fps}`);
           }
         }, 1000);
       } catch (error) {
@@ -278,7 +262,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.state, context.llmEstimate]);
 
   const handleFrame = useCallback((data: FrameData) => {
-    const { hitTest, frame, depthInfo, view, viewerPose } = data;
+    const { hitTest, frame, view, viewerPose, hasDepthSensing } = data;
 
     // Debug: count frames
     frameCountRef.current++;
@@ -286,11 +270,18 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     // Store frame for camera capture
     currentFrameRef.current = frame;
 
-    // Store depth info for tap-time processing
-    if (depthInfo && view && viewerPose) {
-      currentDepthRef.current = { depthInfo, view, viewerPose };
-    } else {
-      currentDepthRef.current = null;
+    // On-demand depth: only read when flag is set (one-shot per tap)
+    if (needDepthRef.current && hasDepthSensing && view && viewerPose) {
+      try {
+        const depthInfo = (frame as any).getDepthInformation(view) || null;
+        if (depthInfo) {
+          cachedDepthRef.current = { depthInfo, view, viewerPose };
+          needDepthRef.current = false; // Got it, stop reading
+        }
+        // If null, keep flag set — try again next frame
+      } catch {
+        // Depth not available this frame, keep trying
+      }
     }
 
     // Update reticle
@@ -525,6 +516,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       time: Date.now(),
       position: currentHitRef.current.position.clone(),
     };
+
+    // Request depth data for this tap (will be read on next render frame)
+    needDepthRef.current = true;
+    cachedDepthRef.current = null;
   }, [context.state, context.width_m, context.depth_m, context.height_m, context.rotation_deg, context.dragStart, context.dragEnd, controlMode]);
 
   // Handle touch move - update handle drag or box drawing
@@ -772,9 +767,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       const tapPosition = touchStart.position.clone();
       const stability = currentHitRef.current?.stability || 0.5;
 
-      // Attempt depth-based box estimation
-      if (currentDepthRef.current) {
-        const { depthInfo, view, viewerPose } = currentDepthRef.current;
+      // Attempt depth-based box estimation (uses depth cached since touchStart)
+      needDepthRef.current = false; // Stop requesting depth
+      if (cachedDepthRef.current) {
+        const { depthInfo, view, viewerPose } = cachedDepthRef.current;
         const floorY = tapPosition.y;
 
         const depthResult = computeDepthBoundingBox(
@@ -786,6 +782,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         );
 
         if (depthResult.success) {
+          cachedDepthRef.current = null; // Clean up
           const point: MeasurementPoint = {
             position: depthResult.center,
             timestamp: Date.now(),
@@ -800,6 +797,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           });
           return;
         }
+        cachedDepthRef.current = null; // Clean up even on failure
       }
 
       // Fallback: default 40x40x40cm box
@@ -924,15 +922,6 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         />
       )}
 
-      {/* Debug overlay — remove after diagnosing freeze */}
-      <div style={{
-        position: 'fixed', bottom: 60, left: 8,
-        background: 'rgba(0,0,0,0.7)', color: glLost ? '#f00' : '#0f0',
-        padding: '4px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'monospace',
-        pointerEvents: 'none', zIndex: 9999,
-      }}>
-        {debugInfo}
-      </div>
     </div>
   );
 
