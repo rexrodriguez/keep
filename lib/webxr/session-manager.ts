@@ -9,6 +9,7 @@ export interface XRSessionContext {
   glBinding: XRWebGLBinding | null;
   hasCameraAccess: boolean;
   hasDepthSensing: boolean;
+  depthUsage: 'cpu-optimized' | 'gpu-optimized' | null;
 }
 
 /**
@@ -32,7 +33,7 @@ export async function startARSession(
     requiredFeatures: ['hit-test', 'local-floor'],
     optionalFeatures,
     depthSensing: {
-      usagePreference: ['cpu-optimized'],
+      usagePreference: ['gpu-optimized'],
       dataFormatPreference: ['luminance-alpha', 'float32'],
     },
   };
@@ -75,9 +76,10 @@ export async function startARSession(
   }
 
   // Check if depth sensing was granted by the session
-  const hasDepthSensing = !!(session as any).depthUsage;
+  const depthUsage = ((session as any).depthUsage as 'cpu-optimized' | 'gpu-optimized') || null;
+  const hasDepthSensing = !!depthUsage;
   if (hasDepthSensing) {
-    console.log('WebXR depth sensing available:', (session as any).depthUsage);
+    console.log('WebXR depth sensing available:', depthUsage);
   }
 
   return {
@@ -89,6 +91,7 @@ export async function startARSession(
     glBinding,
     hasCameraAccess,
     hasDepthSensing,
+    depthUsage,
   };
 }
 

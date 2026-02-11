@@ -9,6 +9,8 @@ export interface FrameData {
   viewerPose: XRViewerPose | null;
   view: XRView | null;
   hasDepthSensing: boolean;
+  depthUsage: 'cpu-optimized' | 'gpu-optimized' | null;
+  glBinding: XRWebGLBinding | null;
 }
 
 export type FrameCallback = (data: FrameData) => void;
@@ -49,6 +51,8 @@ export function createRenderLoop(
         viewerPose,
         view,
         hasDepthSensing: context.hasDepthSensing,
+        depthUsage: context.depthUsage,
+        glBinding: context.glBinding,
       });
 
       // Render scene

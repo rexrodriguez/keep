@@ -39,7 +39,7 @@ import {
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
-import { computeDepthBoundingBox } from '@/lib/webxr/depth-sensing';
+import { computeDepthBoundingBox, createGPUDepthReader, GPUDepthReaderHandle, DepthReader } from '@/lib/webxr/depth-sensing';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -57,6 +57,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const targetMarkerRef = useRef<THREE.Group | null>(null);
   const stabilizerRef = useRef<PoseStabilizer>(new PoseStabilizer());
   const renderLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
+  const gpuDepthReaderRef = useRef<GPUDepthReaderHandle | null>(null);
 
   const [context, setContext] = useState<StateMachineContext>(initialContext);
   const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
@@ -75,7 +76,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   // On-demand depth sensing: set flag on touchStart, read depth on next frame
   const needDepthRef = useRef(false);
   const cachedDepthRef = useRef<{
-    depthInfo: any; // XRCPUDepthInformation
+    depthInfo: DepthReader;
     view: XRView;
     viewerPose: XRViewerPose;
   } | null>(null);
@@ -149,6 +150,15 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             onExit();
           }
         });
+
+        // Create GPU depth reader if gpu-optimized depth was granted
+        if (xrCtx.depthUsage === 'gpu-optimized') {
+          const gl = sceneCtx.renderer.getContext() as WebGL2RenderingContext;
+          gpuDepthReaderRef.current = createGPUDepthReader(gl);
+          if (gpuDepthReaderRef.current) {
+            console.log('GPU depth reader initialized');
+          }
+        }
 
         // Create render loop
         const loop = createRenderLoop(
@@ -273,10 +283,23 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     // On-demand depth: only read when flag is set (one-shot per tap)
     if (needDepthRef.current && hasDepthSensing && view && viewerPose) {
       try {
-        const depthInfo = (frame as any).getDepthInformation(view) || null;
-        if (depthInfo) {
-          cachedDepthRef.current = { depthInfo, view, viewerPose };
-          needDepthRef.current = false; // Got it, stop reading
+        if (data.depthUsage === 'gpu-optimized' && data.glBinding && gpuDepthReaderRef.current) {
+          // GPU path: get GPU texture, shader-readback to CPU
+          const gpuDepth = (data.glBinding as any).getDepthInformation(view);
+          if (gpuDepth) {
+            const cpuAdapter = gpuDepthReaderRef.current.read(gpuDepth);
+            if (cpuAdapter) {
+              cachedDepthRef.current = { depthInfo: cpuAdapter, view, viewerPose };
+              needDepthRef.current = false;
+            }
+          }
+        } else {
+          // CPU path: use frame.getDepthInformation directly
+          const depthInfo = (frame as any).getDepthInformation(view) || null;
+          if (depthInfo) {
+            cachedDepthRef.current = { depthInfo, view, viewerPose };
+            needDepthRef.current = false;
+          }
         }
         // If null, keep flag set — try again next frame
       } catch {
@@ -335,6 +358,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const cleanup = useCallback(() => {
     if (renderLoopRef.current) {
       renderLoopRef.current.stop();
+    }
+
+    if (gpuDepthReaderRef.current) {
+      gpuDepthReaderRef.current.dispose();
+      gpuDepthReaderRef.current = null;
     }
 
     if (xrContextRef.current) {
