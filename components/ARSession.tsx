@@ -84,6 +84,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const hasDraggedRef = useRef(false);
   // Track last warning to avoid calling setState every frame
   const lastTrackingWarningRef = useRef<string | null>(null);
+  // Debug: frame counter to diagnose freezes
+  const frameCountRef = useRef(0);
+  const [debugInfo, setDebugInfo] = useState('starting...');
+  const [glLost, setGlLost] = useState(false);
 
   // Active handle tracking for direct manipulation
   const activeHandleRef = useRef<{
@@ -107,6 +111,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   useEffect(() => {
     let mounted = true;
     let sessionEndCleanup: (() => void) | null = null;
+    let debugInterval: ReturnType<typeof setInterval> | null = null;
 
     async function init() {
       if (!containerRef.current) return;
@@ -115,6 +120,18 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         // Create Three.js scene
         const sceneCtx = createARScene(containerRef.current);
         sceneContextRef.current = sceneCtx;
+
+        // Detect WebGL context loss
+        const canvas = sceneCtx.renderer.domElement;
+        canvas.addEventListener('webglcontextlost', (e) => {
+          e.preventDefault();
+          console.error('WebGL context lost');
+          if (mounted) setGlLost(true);
+        });
+        canvas.addEventListener('webglcontextrestored', () => {
+          console.log('WebGL context restored');
+          if (mounted) setGlLost(false);
+        });
 
         // Create reticle
         const reticle = createReticle();
@@ -160,6 +177,18 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
         // Store cleanup for end listener
         sessionEndCleanup = removeEndListener;
+
+        // Debug: report frame rate every second
+        debugInterval = setInterval(() => {
+          if (mounted) {
+            const fps = frameCountRef.current;
+            frameCountRef.current = 0;
+            const gl = sceneCtx.renderer.getContext();
+            const lost = gl.isContextLost();
+            const presenting = sceneCtx.renderer.xr.isPresenting;
+            setDebugInfo(`fps:${fps} gl:${lost ? 'LOST' : 'ok'} xr:${presenting ? 'on' : 'off'}`);
+          }
+        }, 1000);
       } catch (error) {
         console.error('Failed to start AR session:', error);
         if (mounted) {
@@ -176,6 +205,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     return () => {
       mounted = false;
       if (sessionEndCleanup) sessionEndCleanup();
+      if (debugInterval) clearInterval(debugInterval);
       cleanup();
     };
   }, [dispatch, overlayRef, onExit]);
@@ -247,6 +277,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
   const handleFrame = useCallback((data: FrameData) => {
     const { hitTest, frame, depthInfo, view, viewerPose } = data;
+
+    // Debug: count frames
+    frameCountRef.current++;
 
     // Store frame for camera capture
     currentFrameRef.current = frame;
@@ -887,6 +920,16 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           onSkip={handleTutorialSkip}
         />
       )}
+
+      {/* Debug overlay — remove after diagnosing freeze */}
+      <div style={{
+        position: 'fixed', bottom: 60, left: 8,
+        background: 'rgba(0,0,0,0.7)', color: glLost ? '#f00' : '#0f0',
+        padding: '4px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'monospace',
+        pointerEvents: 'none', zIndex: 9999,
+      }}>
+        {debugInfo}
+      </div>
     </div>
   );
 

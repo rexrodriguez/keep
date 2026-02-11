@@ -25,9 +25,11 @@ export function createRenderLoop(
 ): { start: () => void; stop: () => void } {
   let isRunning = false;
   let animationFrameId: number | null = null;
+  let frameCount = 0;
 
   const render = (time: number, frame?: XRFrame) => {
     if (!isRunning || !frame) return;
+    frameCount++;
 
     try {
       // Get hit-test results
@@ -40,10 +42,10 @@ export function createRenderLoop(
       // Get viewer pose
       const viewerPose = frame.getViewerPose(context.localFloorSpace) || null;
 
-      // Get depth information if available
+      // Get depth information — throttle to every 10th frame to reduce GPU pressure
       let depthInfo: XRCPUDepthInformation | null = null;
       let view: XRView | null = null;
-      if (viewerPose && viewerPose.views.length > 0 && context.hasDepthSensing) {
+      if (viewerPose && viewerPose.views.length > 0 && context.hasDepthSensing && frameCount % 10 === 0) {
         view = viewerPose.views[0];
         try {
           depthInfo = (frame as any).getDepthInformation(view) || null;
