@@ -39,6 +39,7 @@ import {
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
+import { captureXRCameraImage } from '@/lib/webxr/camera-capture';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -71,6 +72,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
+  // Trigger camera capture + AI estimation on next render frame
+  const needCaptureRef = useRef<MeasurementPoint | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -261,6 +264,38 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // Store frame for camera capture
     currentFrameRef.current = frame;
+
+    // Camera capture for AI estimation (must happen during valid XR frame)
+    if (needCaptureRef.current) {
+      const tapPoint = needCaptureRef.current;
+      needCaptureRef.current = null;
+
+      const xrCtx = xrContextRef.current;
+      if (xrCtx) {
+        captureXRCameraImage(xrCtx.renderer, xrCtx.glBinding, frame, xrCtx.localFloorSpace)
+          .then(async (imageBase64) => {
+            if (!imageBase64) throw new Error('Camera capture failed');
+
+            const response = await fetch('/api/estimate-dimensions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: imageBase64 }),
+            });
+            const data = await response.json();
+
+            if (data.success && data.estimate) {
+              dispatch({ type: 'LLM_ESTIMATE_COMPLETE', estimate: data.estimate });
+            } else {
+              throw new Error(data.error || 'Estimation failed');
+            }
+          })
+          .catch((error) => {
+            console.warn('AI estimation failed, placing default box:', error);
+            dispatch({ type: 'LLM_ESTIMATE_FAILED', error: error.message });
+            dispatch({ type: 'PLACE_BOX', point: tapPoint });
+          });
+      }
+    }
 
     // Update reticle
     if (reticleRef.current) {
@@ -736,8 +771,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       return;
     }
 
-    // In READY_TO_DRAW state, tap places a default box
-    if (context.state === 'READY_TO_DRAW') {
+    // In READY_TO_DRAW state, tap places a box (AI-estimated or default)
+    if (context.state === 'READY_TO_DRAW' && !context.isEstimating) {
       const tapPosition = touchStart.position.clone();
       const stability = currentHitRef.current?.stability || 0.5;
 
@@ -746,10 +781,21 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         timestamp: Date.now(),
         stability,
       };
+
+      // Try AI estimation if camera access is available
+      const xrCtx = xrContextRef.current;
+      if (xrCtx?.hasCameraAccess) {
+        dispatch({ type: 'SET_TARGET', point });
+        dispatch({ type: 'START_LLM_ESTIMATE' });
+        needCaptureRef.current = point;
+        return;
+      }
+
+      // No camera access — place default box
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, dispatch, controlMode, tutorialEnabled]);
+  }, [context.state, context.isEstimating, dispatch, controlMode, tutorialEnabled]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
