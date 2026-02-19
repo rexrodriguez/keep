@@ -22,6 +22,7 @@ export interface LLMEstimate {
   width_cm: number;
   depth_cm: number;
   height_cm: number;
+  rotation_deg?: number;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   objectDescription: string;
 }
@@ -333,6 +334,7 @@ export function stateMachineReducer(
       const widthM = estimate.width_cm / 100;
       const depthM = estimate.depth_cm / 100;
       const heightM = estimate.height_cm / 100;
+      const rotDeg = estimate.rotation_deg ?? 0;
       const halfWidth = widthM / 2;
       const halfDepth = depthM / 2;
 
@@ -365,6 +367,7 @@ export function stateMachineReducer(
         width_m: widthM,
         depth_m: depthM,
         height_m: heightM,
+        rotation_deg: rotDeg,
         state: 'HEIGHT_INPUT',
       };
     }

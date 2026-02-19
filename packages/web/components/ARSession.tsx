@@ -66,6 +66,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const [stabilityMode, setStabilityMode] = useState<StabilityMode>('balanced');
   const [tutorialStep, setTutorialStep] = useState<TutorialStep>(tutorialEnabled ? 'surface' : 'complete');
   const [controlMode, setControlMode] = useState<ControlMode>('move');
+  const [maskOverlay, setMaskOverlay] = useState<string | null>(null);
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -331,6 +332,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
               body: JSON.stringify(enrichedPayload),
             });
             const data = await response.json();
+
+            // Show SAM mask overlay if available (debug visualization)
+            if (data.maskImageBase64) {
+              setMaskOverlay(`data:image/jpeg;base64,${data.maskImageBase64}`);
+              setTimeout(() => setMaskOverlay(null), 5000);
+            }
 
             if (data.success && data.estimate) {
               dispatch({ type: 'LLM_ESTIMATE_COMPLETE', estimate: data.estimate, point: tapPoint });
@@ -981,6 +988,23 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           onNext={handleTutorialNext}
           onSkip={handleTutorialSkip}
         />
+      )}
+
+      {/* SAM mask debug overlay — fades out after 5s */}
+      {maskOverlay && (
+        <div
+          className="fixed inset-0 pointer-events-none flex items-center justify-center z-50 mask-overlay"
+        >
+          <img
+            src={maskOverlay}
+            alt="SAM mask"
+            className="max-w-[80%] max-h-[60%] rounded-xl border-2 border-green-400/60 shadow-lg"
+            style={{ objectFit: 'contain', opacity: 0.85 }}
+          />
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/70 rounded-full px-4 py-1">
+            <span className="text-green-400 text-xs font-medium">SAM Object Mask</span>
+          </div>
+        </div>
       )}
 
     </div>

@@ -3,4 +3,10 @@ package-lock.json
 certificates
 .next/
 .env
+.env.local
 tsconfig.tsbuildinfo
+
+# Python
+.venv/
+__pycache__/
+*.pyc

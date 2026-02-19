@@ -4,6 +4,7 @@ export interface DimensionEstimate {
   width_cm: number;
   depth_cm: number;
   height_cm: number;
+  rotation_deg?: number;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   objectDescription: string;
 }
@@ -12,6 +13,7 @@ export interface EstimateResponse {
   success: boolean;
   estimate?: DimensionEstimate;
   error?: string;
+  maskImageBase64?: string;
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<EstimateResponse>> {

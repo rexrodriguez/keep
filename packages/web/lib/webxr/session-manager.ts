@@ -10,6 +10,9 @@ export interface XRSessionContext {
   hasCameraAccess: boolean;
 }
 
+// Track active session so we can end it before starting a new one
+let activeSession: XRSession | null = null;
+
 /**
  * Start a WebXR AR session with required features
  */
@@ -17,6 +20,12 @@ export async function startARSession(
   renderer: THREE.WebGLRenderer,
   overlayElement?: HTMLElement
 ): Promise<XRSessionContext> {
+  // End any lingering session (e.g., from HMR or page refresh during AR)
+  if (activeSession) {
+    try { await activeSession.end(); } catch { /* already ended */ }
+    activeSession = null;
+  }
+
   const xr = navigator.xr!;
 
   // Configure session options
@@ -35,8 +44,20 @@ export async function startARSession(
     (sessionInit as any).domOverlay = { root: overlayElement };
   }
 
-  // Request session
-  const session = await xr.requestSession('immersive-ar', sessionInit);
+  // Request session — retry once if a stale session is still active (e.g., after page refresh)
+  let session: XRSession;
+  try {
+    session = await xr.requestSession('immersive-ar', sessionInit);
+  } catch (err) {
+    if (err instanceof DOMException && err.message.includes('already an active')) {
+      await new Promise((r) => setTimeout(r, 500));
+      session = await xr.requestSession('immersive-ar', sessionInit);
+    } else {
+      throw err;
+    }
+  }
+  activeSession = session;
+  session.addEventListener('end', () => { activeSession = null; });
 
   // Configure renderer for XR
   renderer.xr.enabled = true;

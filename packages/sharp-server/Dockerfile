@@ -12,7 +12,8 @@ RUN pip install --no-cache-dir \
     pillow==11.3.0 \
     numpy \
     scipy==1.16.2 \
-    "ml-sharp @ git+https://github.com/apple/ml-sharp.git"
+    "ml-sharp @ git+https://github.com/apple/ml-sharp.git" \
+    "sam2>=1.1.0"
 
 # Copy server source
 COPY . .

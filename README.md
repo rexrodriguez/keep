@@ -1,211 +1,234 @@
-# WebXR AR Measurement - Storage Finder
+# Keep — AR Object Measurement + Storage Finder
 
-A web-based AR application for Android Chrome that lets users measure objects using WebXR and find suitable storage units.
+A WebXR AR app that measures real-world objects using geometric 3D reconstruction (SHARP) and finds storage units that fit.
 
-## Features
+## Architecture
 
-- **WebXR AR Measurement**: Use your phone's camera to measure real-world objects
-- **Tap-to-Place**: Single tap places a measurement box on detected floor surfaces
-- **Direct Manipulation**: Drag arrow handles to resize, rotate, and move the box
-  - **Edge arrows** (cyan): Drag to adjust width and depth
-  - **Top arrow** (purple): Drag up/down to adjust height
-  - **Top corner arcs** (purple): Drag to rotate the box
-  - **Bottom corner arrows** (cyan): Drag to move the entire box
-- **Reticle-Based Targeting**: Aim the reticle at handles for best interaction accuracy
-- **Storage Search**: Find storage units that fit your measured object nearby
-- **Fit Logic**: Units matched by direct dimension fit OR volume (with 1.25× padding)
+```
+keep/
+├── packages/
+│   ├── web/              Next.js 14 + Three.js AR client
+│   └── sharp-server/     Python FastAPI + SHARP geometric measurement
+├── package.json          npm workspace root
+└── CLAUDE.md
+```
+
+**How measurement works:**
+1. User taps a flat surface → establishes base plane (hit-test pose matrix stored)
+2. User taps an object → camera frame captured with XR view/projection matrices + tap pixel
+3. Payload sent to SHARP server → monocular 3D reconstruction → gravity-aligned bounding box
+4. Dimensions returned, box rendered in AR for manual adjustment
 
 ## Requirements
 
 - **Android phone** with ARCore support (most phones from 2018+)
-- **Chrome** browser (version 79+ recommended)
-- **HTTPS** connection (required for WebXR)
-- **Camera permission** enabled
-- **Google Play Services for AR** installed (usually automatic)
+- **Chrome** browser (v79+)
+- **HTTPS** (required for WebXR)
+- **SHARP server** running on a CUDA GPU (for geometric measurement)
 
-## Quick Start
+## Quick Start — Development on Local WiFi
 
-### 1. Install Dependencies
+### 1. Install & start the Next.js app
 
 ```bash
 npm install
+npm run dev
 ```
 
-### 2. Run Development Server with HTTPS
+This starts the HTTPS dev server at `https://localhost:3000` (self-signed cert auto-generated).
 
-Next.js 14 includes experimental HTTPS support:
+### 2. Start the SHARP server
+
+On a machine with a CUDA GPU (can be the same machine or a cloud instance):
 
 ```bash
-npm run dev:https
+cd packages/sharp-server
+./setup.sh                            # creates .venv, installs deps
+source .venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-This will generate a self-signed certificate and start the server.
-
-**Alternative**: Use a tool like `mkcert` for trusted local certificates:
+Or manually:
 
 ```bash
-# Install mkcert (macOS)
-brew install mkcert
-mkcert -install
-
-# Generate certificates
-mkcert localhost 192.168.x.x  # Replace with your local IP
-
-# Run with custom certs
-npx next dev --experimental-https
+cd packages/sharp-server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-### 3. Access from Android Phone
+Or with Docker:
 
-1. Find your computer's local IP address:
-   ```bash
-   # macOS/Linux
-   ifconfig | grep "inet "
-   # Windows
-   ipconfig
-   ```
+```bash
+cd packages/sharp-server
+docker build -t keep-sharp .
+docker run --gpus all -p 8000:8000 keep-sharp
+```
 
-2. Ensure your phone is on the same WiFi network
+### 3. Configure the connection
 
-3. Open Chrome on your Android phone and navigate to:
-   ```
-   https://YOUR_COMPUTER_IP:3000
-   ```
+Copy `packages/web/.env.example` to `packages/web/.env.local`:
 
-4. Accept the certificate warning (tap "Advanced" → "Proceed")
+```bash
+cp packages/web/.env.example packages/web/.env.local
+```
 
-5. Grant camera permission when prompted
+Edit `packages/web/.env.local`:
 
-### WSL2 Setup (Windows Subsystem for Linux)
+```env
+# If SHARP server runs on the same machine:
+SHARP_SERVER_URL=http://localhost:8000
 
-When running from WSL2, your Android phone can't directly reach the WSL2 network. You need to forward the port from Windows.
+# If SHARP server runs on a cloud GPU:
+SHARP_SERVER_URL=https://your-gpu-instance.example.com:8000
+```
 
-#### Step 1: Get your WSL2 IP address
+### 4. Access from your Android phone
 
-In WSL2 terminal:
+Find your development machine's local IP:
+
+```bash
+# macOS/Linux
+hostname -I | awk '{print $1}'
+# or
+ifconfig | grep "inet "
+```
+
+On your Android phone (same WiFi network), open Chrome:
+
+```
+https://YOUR_COMPUTER_IP:3000
+```
+
+Accept the self-signed certificate warning (Advanced → Proceed).
+
+### WSL2 Setup (Windows)
+
+WSL2 runs in a separate network — your phone can't reach it directly. Forward the port from Windows:
+
+**Step 1** — Get your WSL2 IP (in WSL2 terminal):
 ```bash
 hostname -I | awk '{print $1}'
 ```
-Example output: `172.25.123.45`
 
-#### Step 2: Set up port forwarding (run in PowerShell as Administrator)
-
+**Step 2** — Forward port 3000 (PowerShell as Administrator):
 ```powershell
-# Replace <WSL2_IP> with your actual WSL2 IP from Step 1
 netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=<WSL2_IP>
-
-# Example:
-netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=172.25.123.45
 ```
 
-#### Step 3: Allow the port through Windows Firewall (PowerShell as Administrator)
-
+**Step 3** — Allow through Windows Firewall (PowerShell as Administrator):
 ```powershell
 New-NetFirewallRule -DisplayName "WSL2 Port 3000" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
 ```
 
-#### Step 4: Get your Windows host IP
-
-In PowerShell or CMD:
+**Step 4** — Get your Windows host IP (PowerShell):
 ```powershell
 ipconfig
 ```
-Look for your WiFi or Ethernet adapter's IPv4 address (e.g., `192.168.1.100`)
+Use the WiFi/Ethernet adapter's IPv4 address (e.g., `192.168.1.100`).
 
-#### Step 5: Access from your phone
+**Step 5** — On your phone, navigate to `https://YOUR_WINDOWS_IP:3000`
 
-Open Chrome on your Android phone and navigate to:
+**If SHARP server also runs in WSL2**, forward port 8000 too:
+```powershell
+netsh interface portproxy add v4tov4 listenport=8000 listenaddress=0.0.0.0 connectport=8000 connectaddress=<WSL2_IP>
+New-NetFirewallRule -DisplayName "WSL2 Port 8000" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
 ```
-https://YOUR_WINDOWS_IP:3000
-```
-(e.g., `https://192.168.1.100:3000`)
 
-#### Cleanup (when done)
-
-Remove the port forwarding rule:
+**Cleanup** (when done):
 ```powershell
 netsh interface portproxy delete v4tov4 listenport=3000 listenaddress=0.0.0.0
-```
-
-Remove the firewall rule:
-```powershell
+netsh interface portproxy delete v4tov4 listenport=8000 listenaddress=0.0.0.0
 Remove-NetFirewallRule -DisplayName "WSL2 Port 3000"
+Remove-NetFirewallRule -DisplayName "WSL2 Port 8000"
 ```
 
-#### Note on WSL2 IP changes
+Note: WSL2 IP changes on restart — repeat steps 1-2 with the new IP.
 
-WSL2 IP addresses change on restart. If the connection stops working after a reboot, repeat Steps 1-2 with the new WSL2 IP.
+## Using the App
 
-### 4. Use the App
-
-1. **Capability Check**: App verifies your device supports WebXR AR
-2. **Start AR**: Tap "Start AR Measurement"
-3. **Place Box**: Point at the floor until a surface is detected, then tap to place a measurement box
-4. **Adjust Dimensions**: Aim the reticle at the arrow handles and drag to resize:
-   - Drag **edge arrows** to adjust width/depth
-   - Drag the **top arrow** up/down for height
-   - Drag **top corner arcs** to rotate
-   - Drag **bottom corner arrows** to move the box
-5. **Confirm & Search**: Tap "Looks Good" then set search radius to find matching storage units
-
-**Tip**: For best results, aim the center reticle at the handle you want to manipulate before dragging.
+1. **Start AR** → Tap "Start AR Measurement"
+2. **Set base** → Point at a flat surface, tap when reticle is green
+3. **Measure** → Point at the object, tap to capture and estimate dimensions
+4. **Adjust** → Use mode controls (move / rotate / resize) to refine the box
+5. **Find storage** → Tap "Looks Good" then search for matching storage units
 
 ## Project Structure
 
 ```
+packages/web/
 ├── app/
-│   ├── layout.tsx              # Root layout with meta tags
-│   ├── page.tsx                # Main page with app state management
-│   ├── globals.css             # Global styles
+│   ├── page.tsx                    Top-level app state
 │   └── api/
-│       └── storage-search/
-│           └── route.ts        # Mock storage API with fit logic
+│       ├── estimate-dimensions/    Proxy to SHARP server
+│       └── storage-search/         Mock storage search API
 ├── components/
-│   ├── CapabilityCheck.tsx     # Device capability detection UI
-│   ├── ARSession.tsx           # WebXR session management
-│   ├── MeasurementUI.tsx       # AR overlay UI
-│   ├── RadiusSlider.tsx        # Search radius selector
-│   └── ResultsDisplay.tsx      # Storage results cards
-├── lib/
-│   ├── types.ts                # TypeScript interfaces
-│   ├── webxr/
-│   │   ├── capability-check.ts # WebXR capability detection
-│   │   ├── session-manager.ts  # XR session lifecycle
-│   │   ├── hit-test.ts         # Hit-test processing
-│   │   └── render-loop.ts      # XR frame loop
-│   ├── three/
-│   │   ├── scene-setup.ts      # Three.js scene configuration
-│   │   ├── reticle.ts          # AR reticle mesh
-│   │   ├── bounding-box.ts     # Measurement box with handles
-│   │   ├── handle-raycasting.ts # Touch-to-handle hit detection
-│   │   └── target-marker.ts    # Floor target indicator
-│   └── measurement/
-│       ├── state-machine.ts    # Measurement state management
-│       ├── stabilization.ts    # Pose stabilization
-│       └── calculations.ts     # W/D/H/volume computations
-└── public/
-    └── manifest.json           # PWA manifest
+│   ├── ARSession.tsx               WebXR + Three.js + state machine
+│   ├── MeasurementUI.tsx           AR overlay UI
+│   └── ModeSelector.tsx            Move/rotate/resize mode switcher
+└── lib/
+    ├── webxr/
+    │   ├── session-manager.ts      XR session lifecycle
+    │   ├── render-loop.ts          Frame loop (hit-test, view matrices)
+    │   ├── hit-test.ts             Surface detection + raw pose matrix
+    │   └── camera-capture.ts       XR camera frame → JPEG
+    ├── three/
+    │   ├── bounding-box.ts         Measurement box with handles
+    │   ├── base-grid.ts            Base plane wireframe
+    │   └── reticle.ts              AR targeting reticle
+    └── measurement/
+        ├── state-machine.ts        READY_TO_DRAW → READY_TO_MEASURE → HEIGHT_INPUT → REVIEW
+        ├── stabilization.ts        Pose averaging (5-frame window, 15mm variance)
+        └── calculations.ts         Dimension conversion
+
+packages/sharp-server/
+├── main.py                         FastAPI endpoint (POST /estimate)
+├── sharp_runner.py                 SHARP model → world-space point cloud
+├── geometry.py                     Ray unproject, plane filter, box fitting
+├── requirements.txt                Python 3.13, PyTorch 2.8, CUDA 12.8
+└── Dockerfile                      Cloud GPU deployment
 ```
 
-## Interaction Model
-
-### Direct Manipulation
-The app uses a direct manipulation paradigm where users interact with visible arrow handles:
-
-- **Edge Arrows**: Cyan arrows on each face control width (left/right) and depth (front/back)
-- **Top Arrow**: Purple upward arrow controls height
-- **Top Corner Arcs**: Purple curved arrows at top corners control rotation
-- **Bottom Corner Arrows**: Cyan four-way arrows at bottom corners move the entire box
-
-### Reticle-Based Targeting
-For best accuracy, aim the center reticle at the handle you want to manipulate. The system uses raycasting from your touch position, but having the reticle aligned with the handle improves hit detection.
-
-### Stabilization
-- Rolling window of last 5 hit-test positions
-- Variance threshold: 15mm maximum spread for placement
-- Visual feedback: green reticle = stable (can place), orange = unstable
-
 ## API
+
+### POST /api/estimate-dimensions (Next.js → SHARP server proxy)
+
+The client sends an enriched payload with geometric data:
+
+```json
+{
+  "imageJpegBase64": "...",
+  "imageSize": { "width": 800, "height": 450 },
+  "camera": {
+    "viewMatrix_c2w_colMajor": [16 floats],
+    "projectionMatrix_colMajor": [16 floats]
+  },
+  "plane": {
+    "hitMatrix_colMajor": [16 floats],
+    "normal_world": [0, 1, 0],
+    "point_world": [x, y, z]
+  },
+  "selection": {
+    "type": "tap",
+    "pixel": { "x": 400, "y": 225 }
+  }
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "estimate": {
+    "width_cm": 60.0,
+    "depth_cm": 40.0,
+    "height_cm": 50.0,
+    "confidence": "HIGH",
+    "objectDescription": "Geometric measurement via SHARP"
+  }
+}
+```
 
 ### POST /api/storage-search
 
@@ -216,95 +239,44 @@ Request:
   "depth_cm": 40,
   "height_cm": 50,
   "volume_m3": 0.12,
-  "radius_km": 5,
-  "user_location": { "lat": 37.7749, "lng": -122.4194 },
-  "timestamp": "2024-01-15T10:30:00Z"
+  "radius_km": 5
 }
 ```
 
-Response:
-```json
-{
-  "facilities": [
-    {
-      "id": "fac-1",
-      "name": "SecureStore Downtown",
-      "address": "123 Main St",
-      "distance_km": 2.3,
-      "rating": 4.5,
-      "units": [
-        {
-          "id": "u1-1",
-          "name": "5x5 Small",
-          "width_cm": 152,
-          "depth_cm": 152,
-          "height_cm": 244,
-          "volume_m3": 5.6,
-          "price_monthly": 59,
-          "available": true
-        }
-      ]
-    }
-  ],
-  "object_dimensions": {
-    "width_cm": 60,
-    "depth_cm": 40,
-    "height_cm": 50,
-    "volume_m3": 0.12
-  }
-}
-```
-
-### Fit Logic
 A storage unit fits if:
 - Direct fit: `unit_W >= obj_W AND unit_D >= obj_D AND unit_H >= obj_H`
 - OR Volume fit: `unit_volume >= obj_volume × 1.25`
 
 ## Troubleshooting
 
-### Chrome Flags (if AR isn't working)
-
-On most modern Android devices (Chrome 79+), WebXR AR works without any flags. If you experience issues, try enabling these in `chrome://flags`:
-
-1. **WebXR Device API** (`#webxr`) - Usually enabled by default
-2. **WebXR Incubations** (`#webxr-incubations`) - Enables experimental features
-3. **WebXR AR Module** (`#webxr-ar-module`) - AR-specific features (if available)
-
-After changing flags, restart Chrome completely.
-
 ### "WebXR not available"
-- Ensure you're using Chrome on Android (not Firefox, Samsung Browser, etc.)
-- Check that you're accessing via HTTPS
-- Try enabling flags listed above
+- Use Chrome on Android (not Firefox or Samsung Browser)
+- Must be accessed via HTTPS
+- Try enabling `chrome://flags/#webxr-incubations`
 
-### "Immersive AR not supported"
-- Your device may not support ARCore
-- Install "Google Play Services for AR" from Play Store
-- Check [ARCore supported devices](https://developers.google.com/ar/devices)
-
-### "Hit-test not working" / Reticle not appearing
-- Point at a flat, textured surface (plain white surfaces are hard to track)
+### Reticle not appearing
+- Point at a flat, textured surface (plain white is hard to track)
+- Move slowly so ARCore can build a map
 - Ensure adequate lighting
-- Move the phone slowly to help ARCore build a map
-- Try pointing at the floor from different angles
 
-### Handles not responding to touch
-- Aim the center reticle directly at the arrow handle before dragging
-- The reticle helps the system know which handle you're targeting
-- Make sure you're in the adjustment phase (after placing the box)
+### SHARP server errors
+- Check `SHARP_SERVER_URL` is set in `.env.local`
+- Verify the server is reachable: `curl http://localhost:8000/health`
+- First run downloads model weights (~1GB) — allow time for this
 
 ### Certificate warnings
-- Expected with self-signed certificates
-- Tap "Advanced" → "Proceed to site"
-- For trusted certs, use `mkcert` as described above
+- Expected with self-signed certs — tap Advanced → Proceed
+- For trusted certs, use `mkcert` to generate local CA certs
 
 ## Tech Stack
 
-- **Next.js 14** - React framework with App Router
-- **TypeScript** - Type safety
-- **Three.js** - 3D rendering
-- **Tailwind CSS** - Styling
-- **WebXR Device API** - AR capabilities
+- **Next.js 14** — React framework with App Router
+- **Three.js** — 3D rendering
+- **WebXR Device API** — AR session, hit-test, camera access
+- **FastAPI** — Python server for SHARP inference
+- **SHARP** (Apple) — Single-image 3D Gaussian reconstruction
+- **Tailwind CSS** — Styling
+- **TypeScript** — Type safety
 
 ## License
 

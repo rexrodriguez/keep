@@ -135,3 +135,19 @@ button:focus-visible {
   animation: fade-in-out 2s ease-in-out forwards;
 }
 
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.mask-overlay {
+  animation: fadeOut 5s ease-out forwards;
+}
+
