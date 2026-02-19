@@ -73,8 +73,17 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
-  // Trigger camera capture + AI estimation on next render frame
-  const needCaptureRef = useRef<MeasurementPoint | null>(null);
+  // Trigger camera capture + AI estimation on next render frame.
+  // Carries the tap point plus geometric context captured at tap time.
+  const needCaptureRef = useRef<{
+    point: MeasurementPoint;
+    baseHitMatrix: number[] | null;
+    basePosition: THREE.Vector3 | null;
+  } | null>(null);
+  // Screen-space pixel of last tap (for JPEG-space mapping)
+  const tapScreenPxRef = useRef<{ x: number; y: number } | null>(null);
+  // Raw hit-test pose matrix from the last valid hit (col-major Float32Array)
+  const currentHitMatrixRef = useRef<Float32Array>(new Float32Array(16));
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -278,19 +287,48 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // Camera capture for AI estimation (must happen during valid XR frame)
     if (needCaptureRef.current) {
-      const tapPoint = needCaptureRef.current;
+      const { point: tapPoint, baseHitMatrix, basePosition } = needCaptureRef.current;
       needCaptureRef.current = null;
 
       const xrCtx = xrContextRef.current;
       if (xrCtx) {
+        // Snapshot view matrices and compute JPEG-space tap pixel inside the valid XR frame
+        const viewMatrixC2W = data.view ? Array.from(data.view.transform.matrix) : null;
+        const projMatrix    = data.view ? Array.from(data.view.projectionMatrix)  : null;
+        const camW = (data.view as any)?.camera?.width  ?? 1920;
+        const camH = (data.view as any)?.camera?.height ?? 1080;
+        const jpegW = Math.min(camW, 800);
+        const jpegH = Math.round(camH * (jpegW / camW));
+        const tapPx = tapScreenPxRef.current;
+        const tapPixel = tapPx
+          ? { x: tapPx.x * (jpegW / window.innerWidth), y: tapPx.y * (jpegH / window.innerHeight) }
+          : { x: jpegW / 2, y: jpegH / 2 };
+
         captureXRCameraImage(xrCtx.renderer, xrCtx.glBinding, frame, xrCtx.localFloorSpace)
           .then(async (imageBase64) => {
             if (!imageBase64) throw new Error('Camera capture failed');
 
+            const enrichedPayload = {
+              imageJpegBase64: imageBase64.replace(/^data:image\/jpeg;base64,/, ''),
+              imageSize: { width: jpegW, height: jpegH },
+              camera: {
+                viewMatrix_c2w_colMajor: viewMatrixC2W,
+                projectionMatrix_colMajor: projMatrix,
+              },
+              plane: {
+                hitMatrix_colMajor: baseHitMatrix,
+                normal_world: [0, 1, 0],
+                point_world: basePosition
+                  ? [basePosition.x, basePosition.y, basePosition.z]
+                  : [0, 0, 0],
+              },
+              selection: { type: 'tap', pixel: tapPixel },
+            };
+
             const response = await fetch('/api/estimate-dimensions', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: imageBase64 }),
+              body: JSON.stringify(enrichedPayload),
             });
             const data = await response.json();
 
@@ -320,6 +358,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // Update stabilizer and current hit
     if (hitTest.hasHit) {
+      // Store the raw hit matrix for use at base-tap time
+      currentHitMatrixRef.current = hitTest.rawMatrix;
+
       stabilizerRef.current.addFrame(hitTest.position);
       const stability = stabilizerRef.current.checkStability();
 
@@ -534,6 +575,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     if (!currentHitRef.current) {
       return;
     }
+
+    // Store screen pixel for JPEG-space mapping used in geometric payload
+    tapScreenPxRef.current = { x: touch.clientX, y: touch.clientY };
 
     isTouchingRef.current = true;
     hasDraggedRef.current = false;
@@ -792,7 +836,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         timestamp: Date.now(),
         stability,
       };
-      dispatch({ type: 'SET_BASE', point });
+      dispatch({
+        type: 'SET_BASE',
+        point,
+        hitMatrix: Array.from(currentHitMatrixRef.current),
+      });
       return;
     }
 
@@ -810,7 +858,11 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       const xrCtx = xrContextRef.current;
       if (xrCtx?.hasCameraAccess) {
         dispatch({ type: 'START_LLM_ESTIMATE' });
-        needCaptureRef.current = point;
+        needCaptureRef.current = {
+          point,
+          baseHitMatrix: context.baseHitMatrix,
+          basePosition: context.basePosition,
+        };
         return;
       }
 
@@ -818,7 +870,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, context.isEstimating, dispatch, controlMode, tutorialEnabled]);
+  }, [context.state, context.isEstimating, context.baseHitMatrix, context.basePosition, dispatch, controlMode, tutorialEnabled]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });

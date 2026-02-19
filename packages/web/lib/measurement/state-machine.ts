@@ -5,6 +5,7 @@ export interface StateMachineContext {
   state: MeasurementState;
   baseFloorY: number | null;             // Y position of the established base plane
   basePosition: THREE.Vector3 | null;    // Center of the base plane (for grid placement)
+  baseHitMatrix: number[] | null;        // Raw hit-test pose matrix at base tap (col-major, 16 floats)
   dragStart: MeasurementPoint | null;   // Start corner of drag rectangle
   dragEnd: MeasurementPoint | null;     // End corner of drag rectangle
   targetPoint: MeasurementPoint | null; // Target point for LLM estimation (tap marker)
@@ -32,7 +33,7 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
-  | { type: 'SET_BASE'; point: MeasurementPoint }    // Tap to set base reference plane
+  | { type: 'SET_BASE'; point: MeasurementPoint; hitMatrix: number[] }  // Tap to set base reference plane
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
   | { type: 'PLACE_BOX_WITH_DIMENSIONS'; point: MeasurementPoint; width_m: number; depth_m: number; height_m: number }
   | { type: 'START_DRAG'; point: MeasurementPoint }
@@ -68,6 +69,7 @@ export const initialContext: StateMachineContext = {
   state: 'IDLE',
   baseFloorY: null,
   basePosition: null,
+  baseHitMatrix: null,
   dragStart: null,
   dragEnd: null,
   targetPoint: null,
@@ -113,6 +115,7 @@ export function stateMachineReducer(
           ...context,
           baseFloorY: action.point.position.y,
           basePosition: action.point.position.clone(),
+          baseHitMatrix: action.hitMatrix,
           state: 'READY_TO_MEASURE',
         };
       }
@@ -381,6 +384,7 @@ export function stateMachineReducer(
         ...context,
         baseFloorY: null,
         basePosition: null,
+        baseHitMatrix: null,
         dragStart: null,
         dragEnd: null,
         targetPoint: null,
@@ -436,6 +440,7 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
       ...context,
       baseFloorY: null,
       basePosition: null,
+      baseHitMatrix: null,
       state: 'READY_TO_DRAW',
     };
   }

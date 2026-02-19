@@ -5,6 +5,7 @@ export interface HitTestResult {
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
   matrix: THREE.Matrix4;
+  rawMatrix: Float32Array;  // raw pose.transform.matrix (col-major, 16 floats)
   hasHit: boolean;
 }
 
@@ -20,6 +21,7 @@ export function processHitTest(
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion(),
     matrix: new THREE.Matrix4(),
+    rawMatrix: new Float32Array(16),
     hasHit: false,
   };
 
@@ -37,6 +39,7 @@ export function processHitTest(
         const transform = poseToTransform(pose);
         return {
           ...transform,
+          rawMatrix: pose.transform.matrix as unknown as Float32Array,
           hasHit: true,
         };
       }
