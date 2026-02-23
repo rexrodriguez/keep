@@ -78,6 +78,25 @@ export async function startARSession(
     console.warn('WebXR depth sensing not available');
   }
 
+  // Hide depth-sensing from Three.js to prevent GPU depth crash.
+  // Three.js checks session.enabledFeatures for 'depth-sensing' then calls
+  // glBinding.getDepthInformation() (GPU path) which crashes with cpu-optimized.
+  // Our code uses session.depthUsage + frame.getDepthInformation() (CPU path) instead.
+  if (hasDepthSensing) {
+    try {
+      const origFeatures: string[] = (session as any).enabledFeatures;
+      if (origFeatures) {
+        const filtered = [...origFeatures].filter((f: string) => f !== 'depth-sensing');
+        Object.defineProperty(session, 'enabledFeatures', {
+          value: Object.freeze(filtered),
+          configurable: true,
+        });
+      }
+    } catch (e) {
+      console.warn('Could not hide depth-sensing from Three.js:', e);
+    }
+  }
+
   // Configure renderer for XR
   renderer.xr.enabled = true;
   renderer.xr.setReferenceSpaceType('local-floor');
