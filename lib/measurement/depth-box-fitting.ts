@@ -44,14 +44,20 @@ export function fitBoxFromDepth(
   }
 
   // 3. Flood-fill from tap point
-  const depthTolerance = Math.max(centerDepth * 0.15, 0.10);
+  // Tighter tolerance to avoid leaking into surrounding surfaces
+  const depthTolerance = Math.max(centerDepth * 0.08, 0.05);
+  // Gradient threshold: reject neighbors with sharp depth jumps (object edge detection)
+  const gradientThreshold = Math.max(centerDepth * 0.02, 0.02);
+  // Spatial radius: limit flood-fill to a region around the tap point
+  const maxPixelRadius = Math.round(Math.max(width, height) * 0.25);
   const tapBufX = Math.round(tapNormX * (width - 1));
   const tapBufY = Math.round(tapNormY * (height - 1));
 
   const region = floodFillDepth(
     buffer, width, height,
     tapBufX, tapBufY,
-    centerDepth, depthTolerance
+    centerDepth, depthTolerance,
+    gradientThreshold, maxPixelRadius
   );
 
   if (region.count < 4) {
@@ -119,12 +125,15 @@ function floodFillDepth(
   startX: number,
   startY: number,
   centerDepth: number,
-  tolerance: number
+  tolerance: number,
+  gradientThreshold: number,
+  maxRadius: number
 ): { mask: Uint8Array; count: number; minX: number; maxX: number; minY: number; maxY: number } {
   const mask = new Uint8Array(width * height);
   let count = 0;
   let minX = startX, maxX = startX, minY = startY, maxY = startY;
-  const MAX_FILL_PIXELS = Math.floor(width * height * 0.7);
+  // Cap at 25% of buffer — a single object shouldn't fill more
+  const MAX_FILL_PIXELS = Math.floor(width * height * 0.25);
 
   const queue: [number, number][] = [[startX, startY]];
   const startIdx = startY * width + startX;
@@ -132,6 +141,8 @@ function floodFillDepth(
     return { mask, count: 0, minX, maxX, minY, maxY };
   }
   mask[startIdx] = 1;
+
+  const radiusSq = maxRadius * maxRadius;
 
   let queueHead = 0;
   while (queueHead < queue.length) {
@@ -146,6 +157,8 @@ function floodFillDepth(
     minY = Math.min(minY, y);
     maxY = Math.max(maxY, y);
 
+    const currentDepth = buffer[y * width + x];
+
     const neighbors: [number, number][] = [
       [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]
     ];
@@ -155,12 +168,22 @@ function floodFillDepth(
       const nIdx = ny * width + nx;
       if (mask[nIdx]) continue;
 
+      // Spatial radius check — don't spread too far from tap point
+      const dx = nx - startX;
+      const dy = ny - startY;
+      if (dx * dx + dy * dy > radiusSq) continue;
+
       const d = buffer[nIdx];
       if (d <= 0) continue;
-      if (Math.abs(d - centerDepth) <= tolerance) {
-        mask[nIdx] = 1;
-        queue.push([nx, ny]);
-      }
+
+      // Absolute tolerance: depth must be close to the original tap depth
+      if (Math.abs(d - centerDepth) > tolerance) continue;
+
+      // Gradient check: reject sharp depth jumps between neighbors (object edges)
+      if (Math.abs(d - currentDepth) > gradientThreshold) continue;
+
+      mask[nIdx] = 1;
+      queue.push([nx, ny]);
     }
   }
 
