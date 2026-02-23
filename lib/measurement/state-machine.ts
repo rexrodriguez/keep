@@ -35,7 +35,7 @@ export type StateAction =
   | { type: 'LOCK_FLOOR'; floorY: number; position: THREE.Vector3 }
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
   | { type: 'PLACE_DEPTH_BOX'; dragStart: MeasurementPoint; dragEnd: MeasurementPoint;
-      width_m: number; depth_m: number; height_m: number; confidence: 'HIGH' | 'MEDIUM' | 'LOW' }
+      width_m: number; depth_m: number; height_m: number; rotation_deg: number; confidence: 'HIGH' | 'MEDIUM' | 'LOW' }
   | { type: 'START_DRAG'; point: MeasurementPoint }
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
@@ -172,7 +172,7 @@ export function stateMachineReducer(
           width_m: action.width_m,
           depth_m: action.depth_m,
           height_m: action.height_m,
-          rotation_deg: 0,
+          rotation_deg: action.rotation_deg,
           llmEstimate: {
             width_cm: action.width_m * 100,
             depth_cm: action.depth_m * 100,

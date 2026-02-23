@@ -314,6 +314,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             width_m: boxResult.width_m,
             depth_m: boxResult.depth_m,
             height_m: boxResult.height_m,
+            rotation_deg: boxResult.rotation_deg,
             confidence: boxResult.confidence,
           });
         } else {
