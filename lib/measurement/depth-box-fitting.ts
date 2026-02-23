@@ -129,7 +129,7 @@ export function fitBoxFromDepth(
   // 5. Fit gravity-aligned bounding box
   const result = fitGravityAlignedBox(worldPoints, floorY);
 
-  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}"`);
+  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}°`);
   result._debug = diag.join('\n');
 
   // 6. Size guards
@@ -264,32 +264,51 @@ function fitGravityAlignedBox(
   // Use above-floor points for XZ extents if we have enough, otherwise fall back to all points
   const xzPoints = aboveFloor.length >= 3 ? aboveFloor : points;
 
-  let minX = Infinity, maxX = -Infinity;
-  let minZ = Infinity, maxZ = -Infinity;
+  // Compute principal orientation via PCA on XZ plane
+  const pca = computePCA_XZ(xzPoints);
+
+  // Only apply PCA rotation if object is clearly elongated (ratio > 1.5)
+  const useRotation = pca.ratio > 1.5;
+  const angle = useRotation ? pca.angle : 0;
+
+  // Compute bounding box in the (possibly rotated) frame
+  const cosA = Math.cos(-angle);
+  const sinA = Math.sin(-angle);
+
+  let minU = Infinity, maxU = -Infinity;
+  let minV = Infinity, maxV = -Infinity;
 
   for (const p of xzPoints) {
-    minX = Math.min(minX, p.x);
-    maxX = Math.max(maxX, p.x);
-    minZ = Math.min(minZ, p.z);
-    maxZ = Math.max(maxZ, p.z);
+    const dx = p.x - pca.meanX;
+    const dz = p.z - pca.meanZ;
+    const u = dx * cosA - dz * sinA;
+    const v = dx * sinA + dz * cosA;
+    minU = Math.min(minU, u);
+    maxU = Math.max(maxU, u);
+    minV = Math.min(minV, v);
+    maxV = Math.max(maxV, v);
   }
 
   const bottomY = floorY;
   const topY = maxY;
 
-  const width_m = Math.max(0.05, Math.min(maxX - minX, 5.0));
-  const depth_m = Math.max(0.05, Math.min(maxZ - minZ, 5.0));
+  const width_m = Math.max(0.05, Math.min(maxU - minU, 5.0));
+  const depth_m = Math.max(0.05, Math.min(maxV - minV, 5.0));
   const height_m = Math.max(0.05, Math.min(topY - bottomY, 5.0));
 
+  // Rotate center back to world space
+  const centerU = (minU + maxU) / 2;
+  const centerV = (minV + maxV) / 2;
+  const cosAInv = Math.cos(angle);
+  const sinAInv = Math.sin(angle);
+
   const center = new THREE.Vector3(
-    (minX + maxX) / 2,
+    pca.meanX + centerU * cosAInv - centerV * sinAInv,
     bottomY + height_m / 2,
-    (minZ + maxZ) / 2
+    pca.meanZ + centerU * sinAInv + centerV * cosAInv
   );
 
-  // Axis-aligned: single-viewpoint depth can't reliably determine object orientation.
-  // User can manually rotate with handles after placement.
-  const rotation_deg = 0;
+  const rotation_deg = (angle * 180) / Math.PI;
 
   const pixelCount = points.length;
   let confidence: 'HIGH' | 'MEDIUM' | 'LOW';
@@ -352,4 +371,42 @@ function getCoordTransforms(xform: { matrix: Float32Array } | null | undefined) 
   });
 
   return { viewToBuf, bufToView };
+}
+
+/**
+ * PCA on XZ-projected points to find principal orientation.
+ * Returns angle (radians), centroid, and eigenvalue ratio for elongation check.
+ */
+function computePCA_XZ(points: THREE.Vector3[]) {
+  let sumX = 0, sumZ = 0;
+  for (const p of points) {
+    sumX += p.x;
+    sumZ += p.z;
+  }
+  const n = points.length;
+  const meanX = sumX / n;
+  const meanZ = sumZ / n;
+
+  let cxx = 0, cxz = 0, czz = 0;
+  for (const p of points) {
+    const dx = p.x - meanX;
+    const dz = p.z - meanZ;
+    cxx += dx * dx;
+    cxz += dx * dz;
+    czz += dz * dz;
+  }
+  cxx /= n; cxz /= n; czz /= n;
+
+  // Eigenvalues of 2x2 symmetric matrix
+  const trace = cxx + czz;
+  const det = cxx * czz - cxz * cxz;
+  const disc = Math.sqrt(Math.max(0, trace * trace / 4 - det));
+  const lambda1 = trace / 2 + disc;
+  const lambda2 = trace / 2 - disc;
+  const ratio = lambda2 > 1e-10 ? lambda1 / lambda2 : 999;
+
+  // Angle of principal eigenvector
+  const angle = 0.5 * Math.atan2(2 * cxz, cxx - czz);
+
+  return { angle, meanX, meanZ, ratio };
 }
