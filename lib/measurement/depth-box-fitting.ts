@@ -68,9 +68,12 @@ export function fitBoxFromDepth(
   diag.push(`tapBuf:(${tapBufX},${tapBufY})`);
 
   // 3. Flood-fill from tap point
-  const depthTolerance = Math.max(centerDepth * 0.08, 0.05);
-  const gradientThreshold = Math.max(centerDepth * 0.02, 0.02);
-  const maxPixelRadius = Math.round(Math.max(width, height) * 0.25);
+  // Depth tolerance: how far a pixel's depth can differ from the tap depth
+  const depthTolerance = Math.max(centerDepth * 0.05, 0.03);
+  // Gradient threshold: max depth jump between adjacent pixels (edge detection)
+  const gradientThreshold = Math.max(centerDepth * 0.01, 0.01);
+  // Spatial radius: max pixel distance from tap point
+  const maxPixelRadius = Math.round(Math.max(width, height) * 0.15);
 
   const region = floodFillDepth(
     buffer, width, height,
@@ -156,8 +159,8 @@ function floodFillDepth(
   const mask = new Uint8Array(width * height);
   let count = 0;
   let minX = startX, maxX = startX, minY = startY, maxY = startY;
-  // Cap at 25% of buffer — a single object shouldn't fill more
-  const MAX_FILL_PIXELS = Math.floor(width * height * 0.25);
+  // Cap at 10% of buffer — a single object shouldn't fill more
+  const MAX_FILL_PIXELS = Math.floor(width * height * 0.10);
 
   const queue: [number, number][] = [[startX, startY]];
   const startIdx = startY * width + startX;
