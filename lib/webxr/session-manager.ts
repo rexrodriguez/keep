@@ -1,5 +1,26 @@
 import * as THREE from 'three';
 
+// Prevent Three.js v0.170.0 crash with cpu-optimized depth sensing.
+// Three.js WebXRManager calls glBinding.getDepthInformation() (GPU path) without
+// try/catch. This fails when the session uses cpu-optimized depth. Our code uses
+// the CPU path (frame.getDepthInformation(view)) instead, so we safely suppress
+// the GPU call. See: https://github.com/mrdoob/three.js/pull/30241
+let _depthPatchApplied = false;
+function patchGpuDepthCrash() {
+  if (_depthPatchApplied) return;
+  _depthPatchApplied = true;
+  if (typeof XRWebGLBinding === 'undefined') return;
+  const orig = XRWebGLBinding.prototype.getDepthInformation;
+  (XRWebGLBinding.prototype as any).getDepthInformation = function (view: XRView) {
+    try {
+      if (orig) return orig.call(this, view);
+      return null;
+    } catch {
+      return null;
+    }
+  };
+}
+
 export interface XRSessionContext {
   session: XRSession;
   localFloorSpace: XRReferenceSpace;
@@ -19,6 +40,9 @@ export async function startARSession(
   overlayElement?: HTMLElement
 ): Promise<XRSessionContext> {
   const xr = navigator.xr!;
+
+  // Patch before session creation to prevent Three.js GPU depth crash
+  patchGpuDepthCrash();
 
   // Configure session options
   // camera-access is optional - allows raw camera image capture for AI estimation
