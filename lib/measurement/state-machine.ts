@@ -6,6 +6,8 @@ export interface StateMachineContext {
   dragStart: MeasurementPoint | null;   // Start corner of drag rectangle
   dragEnd: MeasurementPoint | null;     // End corner of drag rectangle
   targetPoint: MeasurementPoint | null; // Target point for LLM estimation (tap marker)
+  floorY: number | null;                // Locked floor Y coordinate (meters)
+  floorLockPoint: THREE.Vector3 | null; // World position where floor was locked (grid center)
   height_m: number;                      // User-adjusted height (default 0.5m)
   width_m: number;                       // User-adjusted width (for LLM mode)
   depth_m: number;                       // User-adjusted depth (for LLM mode)
@@ -30,7 +32,10 @@ export type StateAction =
   | { type: 'START_AR' }
   | { type: 'AR_STARTED' }
   | { type: 'AR_FAILED'; error: string }
+  | { type: 'LOCK_FLOOR'; floorY: number; position: THREE.Vector3 }
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
+  | { type: 'PLACE_DEPTH_BOX'; dragStart: MeasurementPoint; dragEnd: MeasurementPoint;
+      width_m: number; depth_m: number; height_m: number; confidence: 'HIGH' | 'MEDIUM' | 'LOW' }
   | { type: 'START_DRAG'; point: MeasurementPoint }
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
@@ -65,10 +70,12 @@ export const initialContext: StateMachineContext = {
   dragStart: null,
   dragEnd: null,
   targetPoint: null,
+  floorY: null,
+  floorLockPoint: null,
   height_m: DEFAULT_HEIGHT_M,
   width_m: DEFAULT_WIDTH_M,
   depth_m: DEFAULT_DEPTH_M,
-  rotation_deg: 0, // Default 0 degrees (no rotation)
+  rotation_deg: 0,
   llmEstimate: null,
   isEstimating: false,
   error: null,
@@ -100,18 +107,31 @@ export function stateMachineReducer(
     case 'AR_FAILED':
       return { ...context, state: 'SUPPORTED_READY', error: action.error };
 
-    case 'PLACE_BOX':
-      // Tap to place a default-sized box centered on the tap point
+    case 'LOCK_FLOOR':
       if (context.state === 'READY_TO_DRAW') {
+        return {
+          ...context,
+          floorY: action.floorY,
+          floorLockPoint: action.position.clone(),
+          state: 'FLOOR_LOCKED',
+        };
+      }
+      return context;
+
+    case 'PLACE_BOX': {
+      // Tap to place a default-sized box centered on the tap point
+      // Works from both READY_TO_DRAW (legacy) and FLOOR_LOCKED
+      if (context.state === 'READY_TO_DRAW' || context.state === 'FLOOR_LOCKED') {
         const center = action.point.position;
+        // Use locked floor Y if available, otherwise use tap point Y
+        const baseY = context.floorY ?? center.y;
         const halfWidth = DEFAULT_WIDTH_M / 2;
         const halfDepth = DEFAULT_DEPTH_M / 2;
 
-        // Create dragStart and dragEnd as opposite corners of the box
         const dragStart: MeasurementPoint = {
           position: new THREE.Vector3(
             center.x - halfWidth,
-            center.y,
+            baseY,
             center.z - halfDepth
           ),
           timestamp: Date.now(),
@@ -121,7 +141,7 @@ export function stateMachineReducer(
         const dragEnd: MeasurementPoint = {
           position: new THREE.Vector3(
             center.x + halfWidth,
-            center.y,
+            baseY,
             center.z + halfDepth
           ),
           timestamp: Date.now(),
@@ -136,6 +156,30 @@ export function stateMachineReducer(
           depth_m: DEFAULT_DEPTH_M,
           height_m: DEFAULT_HEIGHT_M,
           rotation_deg: 0,
+          state: 'HEIGHT_INPUT',
+        };
+      }
+      return context;
+    }
+
+    case 'PLACE_DEPTH_BOX':
+      // Place a box sized from depth data (from FLOOR_LOCKED state)
+      if (context.state === 'FLOOR_LOCKED') {
+        return {
+          ...context,
+          dragStart: action.dragStart,
+          dragEnd: action.dragEnd,
+          width_m: action.width_m,
+          depth_m: action.depth_m,
+          height_m: action.height_m,
+          rotation_deg: 0,
+          llmEstimate: {
+            width_cm: action.width_m * 100,
+            depth_cm: action.depth_m * 100,
+            height_cm: action.height_m * 100,
+            confidence: action.confidence,
+            objectDescription: 'Depth-sensed object',
+          },
           state: 'HEIGHT_INPUT',
         };
       }
@@ -309,6 +353,8 @@ export function stateMachineReducer(
         dragStart: null,
         dragEnd: null,
         targetPoint: null,
+        floorY: null,
+        floorLockPoint: null,
         height_m: DEFAULT_HEIGHT_M,
         width_m: DEFAULT_WIDTH_M,
         depth_m: DEFAULT_DEPTH_M,
@@ -338,7 +384,7 @@ export function stateMachineReducer(
  * Handle undo action
  */
 function handleUndo(context: StateMachineContext): StateMachineContext {
-  // In height input or review, go back to ready to draw
+  // In height input or review, go back to floor locked (if we have a floor) or ready to draw
   if (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') {
     return {
       ...context,
@@ -350,6 +396,16 @@ function handleUndo(context: StateMachineContext): StateMachineContext {
       depth_m: DEFAULT_DEPTH_M,
       rotation_deg: 0,
       llmEstimate: null,
+      state: context.floorY !== null ? 'FLOOR_LOCKED' : 'READY_TO_DRAW',
+    };
+  }
+
+  // In floor locked, clear floor data and go back to ready to draw
+  if (context.state === 'FLOOR_LOCKED') {
+    return {
+      ...context,
+      floorY: null,
+      floorLockPoint: null,
       state: 'READY_TO_DRAW',
     };
   }
@@ -377,8 +433,8 @@ export function getUIState(context: StateMachineContext): UIState {
   return {
     currentStep: stateInfo.step,
     instruction: stateInfo.instruction,
-    canUndo: context.dragStart !== null || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW',
-    canReset: context.dragStart !== null,
+    canUndo: context.dragStart !== null || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW' || context.state === 'FLOOR_LOCKED',
+    canReset: context.dragStart !== null || context.floorY !== null,
     showMeasurements: context.dragStart !== null && context.dragEnd !== null && context.state !== 'DRAWING',
     trackingWarning: null,
   };
@@ -405,11 +461,13 @@ function getStateInfo(state: MeasurementState): {
     case 'AR_RUNNING':
       return { step: '', instruction: 'Point at a flat surface' };
     case 'READY_TO_DRAW':
-      return { step: '1/2', instruction: 'Tap to place a box at the corner of your object' };
+      return { step: '1/3', instruction: 'Point at the floor and tap to set the surface' };
+    case 'FLOOR_LOCKED':
+      return { step: '2/3', instruction: 'Point at your object and tap to measure' };
     case 'DRAWING':
-      return { step: '1/2', instruction: 'Dragging corner...' };
+      return { step: '2/3', instruction: 'Dragging corner...' };
     case 'HEIGHT_INPUT':
-      return { step: '2/2', instruction: 'Adjust dimensions' };
+      return { step: '3/3', instruction: 'Adjust dimensions' };
     case 'REVIEW':
       return { step: 'Done', instruction: 'Review your measurement' };
     case 'SEARCHING':

@@ -6,8 +6,9 @@ import * as THREE from 'three';
 import { createARScene, disposeScene, SceneContext } from '@/lib/three/scene-setup';
 import { startARSession, endARSession, XRSessionContext } from '@/lib/webxr/session-manager';
 import { createRenderLoop, FrameData } from '@/lib/webxr/render-loop';
-import { createReticle, updateReticle, setReticleColor } from '@/lib/three/reticle';
+import { createReticle, updateReticle, setReticleColor, setReticleMode } from '@/lib/three/reticle';
 import { createTargetMarker, updateTargetMarker, disposeTargetMarker } from '@/lib/three/target-marker';
+import { addFloorGrid, disposeFloorGrid } from '@/lib/three/floor-grid';
 import { updateBoundingBox, disposeBoundingBox, addRotationGuide, removeRotationGuide, setTutorialHighlight } from '@/lib/three/bounding-box';
 import TutorialOverlay, { TutorialStep } from './TutorialOverlay';
 import ModeSelector from './ModeSelector';
@@ -110,6 +111,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     setContext((prev) => stateMachineReducer(prev, action));
   }, []);
 
+  // Track latest context inside handleFrame (avoids stale closure with [] deps)
+  const contextRef = useRef(context);
+  contextRef.current = context;
+
   // Initialize AR session
   useEffect(() => {
     let mounted = true;
@@ -181,6 +186,28 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       );
     }
   }, [context.targetPoint, context.state]);
+
+  // Switch reticle mode based on state
+  useEffect(() => {
+    if (reticleRef.current) {
+      setReticleMode(
+        reticleRef.current,
+        context.state === 'FLOOR_LOCKED' ? 'targeting' : 'surface'
+      );
+    }
+  }, [context.state]);
+
+  // Floor grid lifecycle: add on FLOOR_LOCKED, remove on exit
+  useEffect(() => {
+    if (!sceneContextRef.current) return;
+
+    if (context.state === 'FLOOR_LOCKED' && context.floorLockPoint && context.floorY !== null) {
+      addFloorGrid(sceneContextRef.current.scene, context.floorLockPoint, context.floorY);
+    } else if (context.state === 'READY_TO_DRAW') {
+      // Grid removed when going back to READY_TO_DRAW (undo/reset)
+      disposeFloorGrid(sceneContextRef.current.scene);
+    }
+  }, [context.state, context.floorLockPoint, context.floorY]);
 
   // Calculate hitbox scale factor based on screen size
   // Larger screens need larger hitboxes for easier touch targeting
@@ -280,23 +307,15 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             timestamp: Date.now(),
             stability: pendingTap.stability,
           };
-          setContext((prev) => ({
-            ...prev,
+          dispatch({
+            type: 'PLACE_DEPTH_BOX',
             dragStart: anchorPoint,
             dragEnd: endPoint,
             width_m: boxResult.width_m,
             depth_m: boxResult.depth_m,
             height_m: boxResult.height_m,
-            rotation_deg: 0,
-            llmEstimate: {
-              width_cm: Math.round(boxResult.width_m * 100),
-              depth_cm: Math.round(boxResult.depth_m * 100),
-              height_cm: Math.round(boxResult.height_m * 100),
-              confidence: boxResult.confidence,
-              objectDescription: 'Depth-sensed measurement',
-            },
-            state: 'HEIGHT_INPUT' as const,
-          }));
+            confidence: boxResult.confidence,
+          });
         } else {
           // Depth processing returned null — fallback to default box
           console.log('Depth fitting returned null, placing default box');
@@ -327,13 +346,15 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       dispatch({ type: 'PLACE_BOX', point });
     }
 
-    // Update reticle
+    // Update reticle — only show in READY_TO_DRAW and FLOOR_LOCKED states
+    const currentState = contextRef.current.state;
+    const showReticle = hitTest.hasHit && (currentState === 'READY_TO_DRAW' || currentState === 'FLOOR_LOCKED');
     if (reticleRef.current) {
       updateReticle(
         reticleRef.current,
         hitTest.position,
         hitTest.quaternion,
-        hitTest.hasHit
+        showReticle
       );
     }
 
@@ -380,6 +401,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     if (sceneContextRef.current) {
       disposeBoundingBox(sceneContextRef.current.scene);
       disposeTargetMarker(sceneContextRef.current.scene);
+      disposeFloorGrid(sceneContextRef.current.scene);
       disposeScene(sceneContextRef.current);
     }
   }, []);
@@ -537,8 +559,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       }
     }
 
-    // READY_TO_DRAW state - tap-to-place
-    if (context.state !== 'READY_TO_DRAW') {
+    // READY_TO_DRAW or FLOOR_LOCKED state - tap-to-place / tap-to-measure
+    if (context.state !== 'READY_TO_DRAW' && context.state !== 'FLOOR_LOCKED') {
       return;
     }
 
@@ -794,10 +816,20 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       return;
     }
 
-    // In READY_TO_DRAW state, tap places a box
+    // Step 1: In READY_TO_DRAW state, tap locks the floor
     if (context.state === 'READY_TO_DRAW') {
+      dispatch({
+        type: 'LOCK_FLOOR',
+        floorY: touchStart.position.y,
+        position: touchStart.position.clone(),
+      });
+      return;
+    }
+
+    // Step 2: In FLOOR_LOCKED state, tap the object to measure it
+    if (context.state === 'FLOOR_LOCKED') {
       const stability = currentHitRef.current?.stability || 0.5;
-      const floorY = touchStart.position.y;
+      const floorY = context.floorY ?? touchStart.position.y;
 
       // Queue depth-enhanced placement for next render frame
       // (XRCPUDepthInformation expires outside the animation callback)
@@ -815,9 +847,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         }
       }
 
-      // No depth available — place default box immediately
+      // No depth available — place default box using locked floor Y
       const point: MeasurementPoint = {
-        position: touchStart.position.clone(),
+        position: new THREE.Vector3(
+          touchStart.position.x,
+          floorY,
+          touchStart.position.z
+        ),
         timestamp: Date.now(),
         stability,
       };
