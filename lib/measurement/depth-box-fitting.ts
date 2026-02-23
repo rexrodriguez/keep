@@ -17,6 +17,7 @@ export interface DepthBoxResult {
   rotation_deg: number;
   pixelCount: number;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
+  _debug?: string;
 }
 
 export function fitBoxFromDepth(
@@ -42,30 +43,27 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  // === DEPTH DIAGNOSTIC ===
+  // === DEPTH DIAGNOSTIC (collected for on-screen display) ===
   const depthInfo = depthData.depthInfo;
   const tapBufX = Math.round(tapNormX * (width - 1));
   const tapBufY = Math.round(tapNormY * (height - 1));
   const tapIdx = tapBufY * width + tapBufX;
   const bufferAtTap = buffer[tapIdx];
 
-  console.log(`=== DEPTH DIAGNOSTIC ===`);
-  console.log(`Buffer: ${width}x${height}, format=${depthInfo.dataFormat ?? 'unknown'}, rawValueToMeters=${depthInfo.rawValueToMeters}`);
-  console.log(`Tap depth: getDepthInMeters=${centerDepth.toFixed(4)}m, buffer[${tapIdx}]=${bufferAtTap.toFixed(4)}m, diff=${Math.abs(centerDepth - bufferAtTap).toFixed(4)}m`);
+  const diag: string[] = [];
+  diag.push(`buf:${width}x${height} fmt:${depthInfo.dataFormat ?? '?'} r2m:${depthInfo.rawValueToMeters}`);
+  diag.push(`tap: API=${centerDepth.toFixed(3)}m buf=${bufferAtTap.toFixed(3)}m diff=${Math.abs(centerDepth - bufferAtTap).toFixed(3)}m`);
 
-  // Check normDepthBufferFromNormView transform
   const xform = depthInfo.normDepthBufferFromNormView;
   if (xform?.matrix) {
     const m = xform.matrix;
-    console.log(`normDepthBufferFromNormView 2D: [${m[0].toFixed(3)}, ${m[4].toFixed(3)}, ${m[12].toFixed(3)}] / [${m[1].toFixed(3)}, ${m[5].toFixed(3)}, ${m[13].toFixed(3)}]`);
-    // What the transform gives for our tap coords
     const txX = m[0] * tapNormX + m[4] * tapNormY + m[12];
     const txY = m[1] * tapNormX + m[5] * tapNormY + m[13];
-    console.log(`Tap view(${tapNormX.toFixed(3)},${tapNormY.toFixed(3)}) → transform(${txX.toFixed(3)},${txY.toFixed(3)}) vs direct(${(tapBufX/(width-1)).toFixed(3)},${(tapBufY/(height-1)).toFixed(3)})`);
+    diag.push(`xform:[${m[0].toFixed(2)},${m[4].toFixed(2)},${m[12].toFixed(2)}]/[${m[1].toFixed(2)},${m[5].toFixed(2)},${m[13].toFixed(2)}]`);
+    diag.push(`view(${tapNormX.toFixed(2)},${tapNormY.toFixed(2)})→xf(${txX.toFixed(2)},${txY.toFixed(2)}) direct(${(tapBufX/(width-1)).toFixed(2)},${(tapBufY/(height-1)).toFixed(2)})`);
   } else {
-    console.log(`normDepthBufferFromNormView: NOT AVAILABLE`);
+    diag.push(`xform: N/A`);
   }
-  console.log(`=== END DIAGNOSTIC ===`);
 
   // 3. Flood-fill from tap point
   // Tighter tolerance to avoid leaking into surrounding surfaces
@@ -87,7 +85,7 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  console.log(`Flood-fill: ${region.count} pixels, bounds: [${region.minX},${region.minY}]-[${region.maxX},${region.maxY}]`);
+  diag.push(`fill:${region.count}px [${region.minX},${region.minY}]-[${region.maxX},${region.maxY}]`);
 
   // 4. Unproject boundary points to 3D world space
   const view = viewerPose.views[0];
@@ -95,7 +93,7 @@ export function fitBoxFromDepth(
   const projMatrixInv = projMatrix.clone().invert();
   const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
 
-  // Log rayDir.z at tap point to check unprojection correction magnitude
+  // rayDir.z at tap point — quantifies the unprojection correction
   {
     const tapNdcX = tapNormX * 2 - 1;
     const tapNdcY = 1 - tapNormY * 2;
@@ -103,8 +101,8 @@ export function fitBoxFromDepth(
     tapNear.applyMatrix4(projMatrixInv);
     tapNear.divideScalar(tapNear.w);
     const tapRayDir = new THREE.Vector3(tapNear.x, tapNear.y, tapNear.z).normalize();
-    const zCorrection = 1.0 / Math.abs(tapRayDir.z);
-    console.log(`Tap rayDir=(${tapRayDir.x.toFixed(4)},${tapRayDir.y.toFixed(4)},${tapRayDir.z.toFixed(4)}), |z|=${Math.abs(tapRayDir.z).toFixed(4)}, z-correction=${zCorrection.toFixed(4)}x`);
+    const zCorr = 1.0 / Math.abs(tapRayDir.z);
+    diag.push(`ray.z=${tapRayDir.z.toFixed(3)} correction=${zCorr.toFixed(3)}x`);
   }
 
   const worldPoints: THREE.Vector3[] = [];
@@ -134,10 +132,13 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  console.log(`Unprojected ${worldPoints.length} 3D points`);
+  diag.push(`3D pts:${worldPoints.length}`);
 
   // 5. Fit gravity-aligned bounding box
   const result = fitGravityAlignedBox(worldPoints, floorY);
+
+  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}"`);
+  result._debug = diag.join('\n');
 
   // 6. Size guards
   if (result.width_m < 0.03 || result.depth_m < 0.03 || result.height_m < 0.03) {

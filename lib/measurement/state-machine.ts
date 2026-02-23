@@ -15,6 +15,7 @@ export interface StateMachineContext {
   llmEstimate: LLMEstimate | null;      // LLM dimension estimate
   isEstimating: boolean;                 // LLM estimation in progress
   error: string | null;
+  depthDebug: string | null;            // Diagnostic info from depth fitting
 }
 
 export interface LLMEstimate {
@@ -35,7 +36,7 @@ export type StateAction =
   | { type: 'LOCK_FLOOR'; floorY: number; position: THREE.Vector3 }
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
   | { type: 'PLACE_DEPTH_BOX'; dragStart: MeasurementPoint; dragEnd: MeasurementPoint;
-      width_m: number; depth_m: number; height_m: number; rotation_deg: number; confidence: 'HIGH' | 'MEDIUM' | 'LOW' }
+      width_m: number; depth_m: number; height_m: number; rotation_deg: number; confidence: 'HIGH' | 'MEDIUM' | 'LOW'; debug?: string }
   | { type: 'START_DRAG'; point: MeasurementPoint }
   | { type: 'UPDATE_DRAG'; point: MeasurementPoint }
   | { type: 'END_DRAG'; point: MeasurementPoint }
@@ -79,6 +80,7 @@ export const initialContext: StateMachineContext = {
   llmEstimate: null,
   isEstimating: false,
   error: null,
+  depthDebug: null,
 };
 
 /**
@@ -180,6 +182,7 @@ export function stateMachineReducer(
             confidence: action.confidence,
             objectDescription: 'Depth-sensed object',
           },
+          depthDebug: action.debug ?? null,
           state: 'HEIGHT_INPUT',
         };
       }

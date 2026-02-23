@@ -316,6 +316,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             height_m: boxResult.height_m,
             rotation_deg: boxResult.rotation_deg,
             confidence: boxResult.confidence,
+            debug: boxResult._debug,
           });
         } else {
           // Depth processing returned null — fallback to default box
