@@ -43,34 +43,33 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  // === DEPTH DIAGNOSTIC (collected for on-screen display) ===
+  // === Coordinate transform: view ↔ buffer ===
+  // The depth buffer may be rotated/flipped relative to the viewport.
+  // normDepthBufferFromNormView maps normalized view coords → normalized buffer coords.
   const depthInfo = depthData.depthInfo;
-  const tapBufX = Math.round(tapNormX * (width - 1));
-  const tapBufY = Math.round(tapNormY * (height - 1));
-  const tapIdx = tapBufY * width + tapBufX;
-  const bufferAtTap = buffer[tapIdx];
-
-  const diag: string[] = [];
-  diag.push(`buf:${width}x${height} fmt:${depthInfo.dataFormat ?? '?'} r2m:${depthInfo.rawValueToMeters}`);
-  diag.push(`tap: API=${centerDepth.toFixed(3)}m buf=${bufferAtTap.toFixed(3)}m diff=${Math.abs(centerDepth - bufferAtTap).toFixed(3)}m`);
-
   const xform = depthInfo.normDepthBufferFromNormView;
+  const { viewToBuf, bufToView } = getCoordTransforms(xform);
+
+  // Convert tap from view-space to buffer-space
+  const tapBuf = viewToBuf(tapNormX, tapNormY);
+  const tapBufX = Math.round(tapBuf.x * (width - 1));
+  const tapBufY = Math.round(tapBuf.y * (height - 1));
+
+  // === DEPTH DIAGNOSTIC ===
+  const diag: string[] = [];
+  const tapIdx = tapBufY * width + tapBufX;
+  const bufferAtTap = (tapIdx >= 0 && tapIdx < buffer.length) ? buffer[tapIdx] : 0;
+  diag.push(`buf:${width}x${height} r2m:${depthInfo.rawValueToMeters}`);
+  diag.push(`tap: API=${centerDepth.toFixed(3)}m buf=${bufferAtTap.toFixed(3)}m diff=${Math.abs(centerDepth - bufferAtTap).toFixed(3)}m`);
   if (xform?.matrix) {
     const m = xform.matrix;
-    const txX = m[0] * tapNormX + m[4] * tapNormY + m[12];
-    const txY = m[1] * tapNormX + m[5] * tapNormY + m[13];
     diag.push(`xform:[${m[0].toFixed(2)},${m[4].toFixed(2)},${m[12].toFixed(2)}]/[${m[1].toFixed(2)},${m[5].toFixed(2)},${m[13].toFixed(2)}]`);
-    diag.push(`view(${tapNormX.toFixed(2)},${tapNormY.toFixed(2)})→xf(${txX.toFixed(2)},${txY.toFixed(2)}) direct(${(tapBufX/(width-1)).toFixed(2)},${(tapBufY/(height-1)).toFixed(2)})`);
-  } else {
-    diag.push(`xform: N/A`);
   }
+  diag.push(`tapBuf:(${tapBufX},${tapBufY})`);
 
   // 3. Flood-fill from tap point
-  // Tighter tolerance to avoid leaking into surrounding surfaces
   const depthTolerance = Math.max(centerDepth * 0.08, 0.05);
-  // Gradient threshold: reject neighbors with sharp depth jumps (object edge detection)
   const gradientThreshold = Math.max(centerDepth * 0.02, 0.02);
-  // Spatial radius: limit flood-fill to a region around the tap point
   const maxPixelRadius = Math.round(Math.max(width, height) * 0.25);
 
   const region = floodFillDepth(
@@ -93,18 +92,6 @@ export function fitBoxFromDepth(
   const projMatrixInv = projMatrix.clone().invert();
   const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
 
-  // rayDir.z at tap point — quantifies the unprojection correction
-  {
-    const tapNdcX = tapNormX * 2 - 1;
-    const tapNdcY = 1 - tapNormY * 2;
-    const tapNear = new THREE.Vector4(tapNdcX, tapNdcY, -1, 1);
-    tapNear.applyMatrix4(projMatrixInv);
-    tapNear.divideScalar(tapNear.w);
-    const tapRayDir = new THREE.Vector3(tapNear.x, tapNear.y, tapNear.z).normalize();
-    const zCorr = 1.0 / Math.abs(tapRayDir.z);
-    diag.push(`ray.z=${tapRayDir.z.toFixed(3)} correction=${zCorr.toFixed(3)}x`);
-  }
-
   const worldPoints: THREE.Vector3[] = [];
   const stepX = Math.max(1, Math.floor((region.maxX - region.minX) / 20));
   const stepY = Math.max(1, Math.floor((region.maxY - region.minY) / 20));
@@ -117,10 +104,12 @@ export function fitBoxFromDepth(
       const d = buffer[idx];
       if (d <= 0) continue;
 
-      const nx = (bx + 0.5) / width;
-      const ny = (by + 0.5) / height;
+      // Convert buffer pixel coords → view-normalized coords for unprojection
+      const bufNormX = (bx + 0.5) / width;
+      const bufNormY = (by + 0.5) / height;
+      const viewCoord = bufToView(bufNormX, bufNormY);
 
-      const worldPt = unprojectDepthToWorld(nx, ny, d, projMatrixInv, viewMatrixInv);
+      const worldPt = unprojectDepthToWorld(viewCoord.x, viewCoord.y, d, projMatrixInv, viewMatrixInv);
       if (worldPt) {
         worldPoints.push(worldPt);
       }
@@ -317,4 +306,47 @@ function fitGravityAlignedBox(
   );
 
   return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence };
+}
+
+/**
+ * Extract view↔buffer coordinate transforms from normDepthBufferFromNormView.
+ * The depth buffer may be rotated/flipped relative to the viewport (common on Android).
+ * Returns identity transforms if the matrix is not available.
+ */
+function getCoordTransforms(xform: { matrix: Float32Array } | null | undefined) {
+  type CoordFn = (x: number, y: number) => { x: number; y: number };
+
+  if (!xform?.matrix) {
+    // No transform available — assume identity
+    const identity: CoordFn = (x, y) => ({ x, y });
+    return { viewToBuf: identity, bufToView: identity };
+  }
+
+  const m = xform.matrix;
+  // Extract 2D affine: bufX = a*vx + c*vy + tx, bufY = b*vx + d*vy + ty
+  const a = m[0], c = m[4], tx = m[12];
+  const b = m[1], d = m[5], ty = m[13];
+
+  const viewToBuf: CoordFn = (vx, vy) => ({
+    x: a * vx + c * vy + tx,
+    y: b * vx + d * vy + ty,
+  });
+
+  // Compute 2D affine inverse
+  const det = a * d - b * c;
+  if (Math.abs(det) < 1e-10) {
+    // Degenerate transform — fall back to identity
+    const identity: CoordFn = (x, y) => ({ x, y });
+    return { viewToBuf: identity, bufToView: identity };
+  }
+
+  const ia = d / det, ic = -c / det, itx = (c * ty - d * tx) / det;
+  const ib = -b / det, id = a / det, ity = (b * tx - a * ty) / det;
+
+  const bufToView: CoordFn = (bx, by) => ({
+    x: ia * bx + ic * by + itx,
+    y: ib * bx + id * by + ity,
+  });
+
+  return { viewToBuf, bufToView };
 }
