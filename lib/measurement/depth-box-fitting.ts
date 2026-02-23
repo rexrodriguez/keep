@@ -70,7 +70,8 @@ export function fitBoxFromDepth(
 
   // 3. Flood-fill from tap point
   // Depth tolerance: how far a pixel's depth can differ from the tap depth
-  const depthTolerance = Math.max(centerDepth * 0.06, 0.03);
+  // Cap at 8cm to prevent floor leaking at longer distances
+  const depthTolerance = Math.min(Math.max(centerDepth * 0.06, 0.03), 0.08);
   // Gradient threshold: max depth jump between adjacent pixels (edge detection)
   // Must be loose enough to tolerate sensor noise (~5-10mm) but catch real edges (~10cm+)
   const gradientThreshold = Math.max(centerDepth * 0.02, 0.015);
@@ -126,10 +127,13 @@ export function fitBoxFromDepth(
     return null;
   }
 
+  // Unproject tap point to 3D for XZ proximity filtering
+  const tapWorld = unprojectDepthToWorld(tapNormX, tapNormY, centerDepth, projMatrixInv, viewMatrixInv);
+
   diag.push(`3D pts:${worldPoints.length}`);
 
   // 5. Fit gravity-aligned bounding box
-  const result = fitGravityAlignedBox(worldPoints, floorY);
+  const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld);
 
   diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° pca:${result._pcaRatio?.toFixed(1) ?? '?'}`);
   result._debug = diag.join('\n');
@@ -247,11 +251,12 @@ function unprojectDepthToWorld(
 
 function fitGravityAlignedBox(
   points: THREE.Vector3[],
-  floorY: number
+  floorY: number,
+  tapWorld: THREE.Vector3 | null
 ): DepthBoxResult {
   // Separate points into "above floor" (object surface) and "near floor" (floor contamination).
   // Only use above-floor points for XZ extents to avoid floor pixels inflating width/depth.
-  const FLOOR_MARGIN = 0.03; // 3cm above floor = "on the object"
+  const FLOOR_MARGIN = 0.05; // 5cm above floor = "on the object"
 
   const aboveFloor: THREE.Vector3[] = [];
   let maxY = -Infinity;
@@ -264,7 +269,21 @@ function fitGravityAlignedBox(
   }
 
   // Use above-floor points for XZ extents if we have enough, otherwise fall back to all points
-  const xzPoints = aboveFloor.length >= 3 ? aboveFloor : points;
+  let xzPoints = aboveFloor.length >= 3 ? aboveFloor : points;
+
+  // XZ proximity filter: reject points far from the tap point in XZ plane.
+  // Floor leakage spreads out in XZ while the object stays compact.
+  if (tapWorld && xzPoints.length > 3) {
+    const MAX_XZ_RADIUS = 0.50; // 50cm — most household objects fit within this
+    const filtered = xzPoints.filter(p => {
+      const dx = p.x - tapWorld.x;
+      const dz = p.z - tapWorld.z;
+      return dx * dx + dz * dz <= MAX_XZ_RADIUS * MAX_XZ_RADIUS;
+    });
+    if (filtered.length >= 3) {
+      xzPoints = filtered;
+    }
+  }
 
   // Compute principal orientation via PCA on XZ plane
   const pca = computePCA_XZ(xzPoints);
