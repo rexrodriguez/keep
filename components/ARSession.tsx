@@ -78,6 +78,15 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const currentDepthRef = useRef<DepthData | null>(null);
   // Cache viewer pose for use outside XR animation callback (XRFrame expires)
   const currentViewerPoseRef = useRef<XRViewerPose | null>(null);
+  // Pending depth tap — queued in touch handler, processed in next render frame
+  // (XRCPUDepthInformation expires outside the animation callback)
+  const pendingDepthTapRef = useRef<{
+    normX: number;
+    normY: number;
+    floorY: number;
+    stability: number;
+    fallbackPosition: THREE.Vector3;
+  } | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -236,6 +245,86 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     currentViewerPoseRef.current = data.viewerPose;
     if (data.depthData && !hasDepth) {
       setHasDepth(true);
+    }
+
+    // Process pending depth tap (must happen inside animation callback
+    // where XRCPUDepthInformation is still valid)
+    const pendingTap = pendingDepthTapRef.current;
+    if (pendingTap && data.depthData && data.viewerPose) {
+      pendingDepthTapRef.current = null;
+      try {
+        const boxResult = fitBoxFromDepth(
+          data.depthData,
+          pendingTap.normX,
+          pendingTap.normY,
+          data.viewerPose,
+          pendingTap.floorY
+        );
+        if (boxResult) {
+          console.log('Depth box result:', boxResult);
+          const anchorPoint: MeasurementPoint = {
+            position: new THREE.Vector3(
+              boxResult.center.x - boxResult.width_m / 2,
+              pendingTap.floorY,
+              boxResult.center.z - boxResult.depth_m / 2
+            ),
+            timestamp: Date.now(),
+            stability: pendingTap.stability,
+          };
+          const endPoint: MeasurementPoint = {
+            position: new THREE.Vector3(
+              boxResult.center.x + boxResult.width_m / 2,
+              pendingTap.floorY,
+              boxResult.center.z + boxResult.depth_m / 2
+            ),
+            timestamp: Date.now(),
+            stability: pendingTap.stability,
+          };
+          setContext((prev) => ({
+            ...prev,
+            dragStart: anchorPoint,
+            dragEnd: endPoint,
+            width_m: boxResult.width_m,
+            depth_m: boxResult.depth_m,
+            height_m: boxResult.height_m,
+            rotation_deg: 0,
+            llmEstimate: {
+              width_cm: Math.round(boxResult.width_m * 100),
+              depth_cm: Math.round(boxResult.depth_m * 100),
+              height_cm: Math.round(boxResult.height_m * 100),
+              confidence: boxResult.confidence,
+              objectDescription: 'Depth-sensed measurement',
+            },
+            state: 'HEIGHT_INPUT' as const,
+          }));
+        } else {
+          // Depth processing returned null — fallback to default box
+          console.log('Depth fitting returned null, placing default box');
+          const point: MeasurementPoint = {
+            position: pendingTap.fallbackPosition.clone(),
+            timestamp: Date.now(),
+            stability: pendingTap.stability,
+          };
+          dispatch({ type: 'PLACE_BOX', point });
+        }
+      } catch (err) {
+        console.warn('Depth processing failed:', err);
+        const point: MeasurementPoint = {
+          position: pendingTap.fallbackPosition.clone(),
+          timestamp: Date.now(),
+          stability: pendingTap.stability,
+        };
+        dispatch({ type: 'PLACE_BOX', point });
+      }
+    } else if (pendingTap) {
+      // Depth not available this frame — fallback
+      pendingDepthTapRef.current = null;
+      const point: MeasurementPoint = {
+        position: pendingTap.fallbackPosition.clone(),
+        timestamp: Date.now(),
+        stability: pendingTap.stability,
+      };
+      dispatch({ type: 'PLACE_BOX', point });
     }
 
     // Update reticle
@@ -710,72 +799,23 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       const stability = currentHitRef.current?.stability || 0.5;
       const floorY = touchStart.position.y;
 
-      // Try depth-enhanced placement first
-      // Use cached viewerPose — XRFrame expires outside the animation callback
-      try {
-        const viewerPose = currentViewerPoseRef.current;
-        if (currentDepthRef.current && viewerPose) {
-          const lastTouch = e.changedTouches[0];
-          if (lastTouch) {
-            const normX = lastTouch.clientX / window.innerWidth;
-            const normY = lastTouch.clientY / window.innerHeight;
-
-            const boxResult = fitBoxFromDepth(
-              currentDepthRef.current,
-              normX,
-              normY,
-              viewerPose,
-              floorY
-            );
-
-            if (boxResult) {
-              console.log('Depth box result:', boxResult);
-
-              const anchorPoint: MeasurementPoint = {
-                position: new THREE.Vector3(
-                  boxResult.center.x - boxResult.width_m / 2,
-                  floorY,
-                  boxResult.center.z - boxResult.depth_m / 2
-                ),
-                timestamp: Date.now(),
-                stability,
-              };
-              const endPoint: MeasurementPoint = {
-                position: new THREE.Vector3(
-                  boxResult.center.x + boxResult.width_m / 2,
-                  floorY,
-                  boxResult.center.z + boxResult.depth_m / 2
-                ),
-                timestamp: Date.now(),
-                stability,
-              };
-
-              setContext((prev) => ({
-                ...prev,
-                dragStart: anchorPoint,
-                dragEnd: endPoint,
-                width_m: boxResult.width_m,
-                depth_m: boxResult.depth_m,
-                height_m: boxResult.height_m,
-                rotation_deg: 0,
-                llmEstimate: {
-                  width_cm: Math.round(boxResult.width_m * 100),
-                  depth_cm: Math.round(boxResult.depth_m * 100),
-                  height_cm: Math.round(boxResult.height_m * 100),
-                  confidence: boxResult.confidence,
-                  objectDescription: 'Depth-sensed measurement',
-                },
-                state: 'HEIGHT_INPUT' as const,
-              }));
-              return;
-            }
-          }
+      // Queue depth-enhanced placement for next render frame
+      // (XRCPUDepthInformation expires outside the animation callback)
+      if (hasDepth) {
+        const lastTouch = e.changedTouches[0];
+        if (lastTouch) {
+          pendingDepthTapRef.current = {
+            normX: lastTouch.clientX / window.innerWidth,
+            normY: lastTouch.clientY / window.innerHeight,
+            floorY,
+            stability,
+            fallbackPosition: touchStart.position.clone(),
+          };
+          return;
         }
-      } catch (e) {
-        console.warn('Depth-enhanced placement failed, using fallback:', e);
       }
 
-      // Fallback: place default box (no depth available)
+      // No depth available — place default box immediately
       const point: MeasurementPoint = {
         position: touchStart.position.clone(),
         timestamp: Date.now(),
@@ -784,7 +824,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, dispatch, controlMode, tutorialEnabled]);
+  }, [context.state, dispatch, controlMode, tutorialEnabled, hasDepth]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
