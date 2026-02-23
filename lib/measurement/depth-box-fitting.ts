@@ -18,6 +18,7 @@ export interface DepthBoxResult {
   pixelCount: number;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   _debug?: string;
+  _pcaRatio?: number;
 }
 
 export function fitBoxFromDepth(
@@ -69,11 +70,12 @@ export function fitBoxFromDepth(
 
   // 3. Flood-fill from tap point
   // Depth tolerance: how far a pixel's depth can differ from the tap depth
-  const depthTolerance = Math.max(centerDepth * 0.05, 0.03);
+  const depthTolerance = Math.max(centerDepth * 0.06, 0.03);
   // Gradient threshold: max depth jump between adjacent pixels (edge detection)
-  const gradientThreshold = Math.max(centerDepth * 0.01, 0.01);
+  // Must be loose enough to tolerate sensor noise (~5-10mm) but catch real edges (~10cm+)
+  const gradientThreshold = Math.max(centerDepth * 0.02, 0.015);
   // Spatial radius: max pixel distance from tap point
-  const maxPixelRadius = Math.round(Math.max(width, height) * 0.15);
+  const maxPixelRadius = Math.round(Math.max(width, height) * 0.20);
 
   const region = floodFillDepth(
     buffer, width, height,
@@ -129,7 +131,7 @@ export function fitBoxFromDepth(
   // 5. Fit gravity-aligned bounding box
   const result = fitGravityAlignedBox(worldPoints, floorY);
 
-  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}°`);
+  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° pca:${result._pcaRatio?.toFixed(1) ?? '?'}`);
   result._debug = diag.join('\n');
 
   // 6. Size guards
@@ -159,8 +161,8 @@ function floodFillDepth(
   const mask = new Uint8Array(width * height);
   let count = 0;
   let minX = startX, maxX = startX, minY = startY, maxY = startY;
-  // Cap at 10% of buffer — a single object shouldn't fill more
-  const MAX_FILL_PIXELS = Math.floor(width * height * 0.10);
+  // Cap at 12% of buffer — a single object shouldn't fill more
+  const MAX_FILL_PIXELS = Math.floor(width * height * 0.12);
 
   const queue: [number, number][] = [[startX, startY]];
   const startIdx = startY * width + startX;
@@ -267,8 +269,10 @@ function fitGravityAlignedBox(
   // Compute principal orientation via PCA on XZ plane
   const pca = computePCA_XZ(xzPoints);
 
-  // Only apply PCA rotation if object is clearly elongated (ratio > 1.5)
-  const useRotation = pca.ratio > 1.5;
+  // Only apply PCA rotation if:
+  // 1. Object is clearly elongated (ratio > 1.5)
+  // 2. We have enough points for reliable statistics (>= 20)
+  const useRotation = pca.ratio > 1.5 && xzPoints.length >= 20;
   const angle = useRotation ? pca.angle : 0;
 
   // Compute bounding box in the (possibly rotated) frame
@@ -327,7 +331,7 @@ function fitGravityAlignedBox(
     `${pixelCount} total pts, ${aboveFloor.length} above floor, confidence=${confidence}`
   );
 
-  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence };
+  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence, _pcaRatio: pca.ratio };
 }
 
 /**
