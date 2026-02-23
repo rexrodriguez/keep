@@ -8,6 +8,7 @@ export interface XRSessionContext {
   renderer: THREE.WebGLRenderer;
   glBinding: XRWebGLBinding | null;
   hasCameraAccess: boolean;
+  hasDepthSensing: boolean;
 }
 
 /**
@@ -21,7 +22,7 @@ export async function startARSession(
 
   // Configure session options
   // camera-access is optional - allows raw camera image capture for AI estimation
-  const optionalFeatures: string[] = ['camera-access'];
+  const optionalFeatures: string[] = ['camera-access', 'depth-sensing'];
   if (overlayElement) {
     optionalFeatures.push('dom-overlay');
   }
@@ -29,7 +30,11 @@ export async function startARSession(
   const sessionInit: XRSessionInit = {
     requiredFeatures: ['hit-test', 'local-floor'],
     optionalFeatures,
-  };
+    depthSensing: {
+      usagePreference: ['cpu-optimized'],
+      dataFormatPreference: ['luminance-alpha', 'float32'],
+    },
+  } as any;
 
   if (overlayElement) {
     (sessionInit as any).domOverlay = { root: overlayElement };
@@ -37,6 +42,17 @@ export async function startARSession(
 
   // Request session
   const session = await xr.requestSession('immersive-ar', sessionInit);
+
+  // Check if depth sensing was granted
+  let hasDepthSensing = false;
+  try {
+    hasDepthSensing = !!(session as any).depthUsage;
+    if (hasDepthSensing) {
+      console.log('WebXR depth sensing available:', (session as any).depthUsage, (session as any).depthDataFormat);
+    }
+  } catch {
+    console.warn('WebXR depth sensing not available');
+  }
 
   // Configure renderer for XR
   renderer.xr.enabled = true;
@@ -76,6 +92,7 @@ export async function startARSession(
     renderer,
     glBinding,
     hasCameraAccess,
+    hasDepthSensing,
   };
 }
 

@@ -39,6 +39,8 @@ import {
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
+import { DepthData } from '@/lib/webxr/depth-sensing';
+import { fitBoxFromDepth } from '@/lib/measurement/depth-box-fitting';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -64,6 +66,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const [stabilityMode, setStabilityMode] = useState<StabilityMode>('balanced');
   const [tutorialStep, setTutorialStep] = useState<TutorialStep>(tutorialEnabled ? 'surface' : 'complete');
   const [controlMode, setControlMode] = useState<ControlMode>('move');
+  const [hasDepth, setHasDepth] = useState(false);
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -71,6 +74,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const lastValidHitRef = useRef<{ position: THREE.Vector3; stability: number; timestamp: number } | null>(null);
   // Store latest frame for camera capture
   const currentFrameRef = useRef<XRFrame | null>(null);
+  // Store latest depth data for depth-enhanced placement
+  const currentDepthRef = useRef<DepthData | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -225,6 +230,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // Store frame for camera capture
     currentFrameRef.current = frame;
+    currentDepthRef.current = data.depthData;
+    if (data.depthData && !hasDepth) {
+      setHasDepth(true);
+    }
 
     // Update reticle
     if (reticleRef.current) {
@@ -695,10 +704,78 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
 
     // In READY_TO_DRAW state, tap places a box
     if (context.state === 'READY_TO_DRAW') {
+      const stability = currentHitRef.current?.stability || 0.5;
+      const floorY = touchStart.position.y;
+
+      // Try depth-enhanced placement first
+      if (currentDepthRef.current && currentFrameRef.current && xrContextRef.current) {
+        const frame = currentFrameRef.current;
+        const viewerPose = frame.getViewerPose(xrContextRef.current.localFloorSpace);
+
+        if (viewerPose) {
+          const lastTouch = e.changedTouches[0];
+          if (lastTouch) {
+            const normX = lastTouch.clientX / window.innerWidth;
+            const normY = lastTouch.clientY / window.innerHeight;
+
+            const boxResult = fitBoxFromDepth(
+              currentDepthRef.current,
+              normX,
+              normY,
+              viewerPose,
+              floorY
+            );
+
+            if (boxResult) {
+              console.log('Depth box result:', boxResult);
+
+              const anchorPoint: MeasurementPoint = {
+                position: new THREE.Vector3(
+                  boxResult.center.x - boxResult.width_m / 2,
+                  floorY,
+                  boxResult.center.z - boxResult.depth_m / 2
+                ),
+                timestamp: Date.now(),
+                stability,
+              };
+              const endPoint: MeasurementPoint = {
+                position: new THREE.Vector3(
+                  boxResult.center.x + boxResult.width_m / 2,
+                  floorY,
+                  boxResult.center.z + boxResult.depth_m / 2
+                ),
+                timestamp: Date.now(),
+                stability,
+              };
+
+              setContext((prev) => ({
+                ...prev,
+                dragStart: anchorPoint,
+                dragEnd: endPoint,
+                width_m: boxResult.width_m,
+                depth_m: boxResult.depth_m,
+                height_m: boxResult.height_m,
+                rotation_deg: 0,
+                llmEstimate: {
+                  width_cm: Math.round(boxResult.width_m * 100),
+                  depth_cm: Math.round(boxResult.depth_m * 100),
+                  height_cm: Math.round(boxResult.height_m * 100),
+                  confidence: boxResult.confidence,
+                  objectDescription: 'Depth-sensed measurement',
+                },
+                state: 'HEIGHT_INPUT' as const,
+              }));
+              return;
+            }
+          }
+        }
+      }
+
+      // Fallback: place default box (no depth available)
       const point: MeasurementPoint = {
         position: touchStart.position.clone(),
         timestamp: Date.now(),
-        stability: currentHitRef.current?.stability || 0.5,
+        stability,
       };
       dispatch({ type: 'PLACE_BOX', point });
       return;
@@ -795,6 +872,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         trackingWarning={trackingWarning}
         stabilityMode={stabilityMode}
         isManipulating={isManipulating}
+        hasDepth={hasDepth}
         onReset={handleReset}
         onConfirmHeight={handleConfirmHeight}
         onFindStorage={handleFindStorage}
