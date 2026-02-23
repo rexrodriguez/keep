@@ -35,14 +35,37 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  console.log(`Depth at tap: ${centerDepth.toFixed(3)}m, buffer: ${width}x${height}`);
-
   // 2. Get full depth buffer for flood-fill
   const buffer = getDepthBuffer(depthData);
   if (!buffer) {
     console.warn('Failed to read depth buffer');
     return null;
   }
+
+  // === DEPTH DIAGNOSTIC ===
+  const depthInfo = depthData.depthInfo;
+  const tapBufX = Math.round(tapNormX * (width - 1));
+  const tapBufY = Math.round(tapNormY * (height - 1));
+  const tapIdx = tapBufY * width + tapBufX;
+  const bufferAtTap = buffer[tapIdx];
+
+  console.log(`=== DEPTH DIAGNOSTIC ===`);
+  console.log(`Buffer: ${width}x${height}, format=${depthInfo.dataFormat ?? 'unknown'}, rawValueToMeters=${depthInfo.rawValueToMeters}`);
+  console.log(`Tap depth: getDepthInMeters=${centerDepth.toFixed(4)}m, buffer[${tapIdx}]=${bufferAtTap.toFixed(4)}m, diff=${Math.abs(centerDepth - bufferAtTap).toFixed(4)}m`);
+
+  // Check normDepthBufferFromNormView transform
+  const xform = depthInfo.normDepthBufferFromNormView;
+  if (xform?.matrix) {
+    const m = xform.matrix;
+    console.log(`normDepthBufferFromNormView 2D: [${m[0].toFixed(3)}, ${m[4].toFixed(3)}, ${m[12].toFixed(3)}] / [${m[1].toFixed(3)}, ${m[5].toFixed(3)}, ${m[13].toFixed(3)}]`);
+    // What the transform gives for our tap coords
+    const txX = m[0] * tapNormX + m[4] * tapNormY + m[12];
+    const txY = m[1] * tapNormX + m[5] * tapNormY + m[13];
+    console.log(`Tap view(${tapNormX.toFixed(3)},${tapNormY.toFixed(3)}) → transform(${txX.toFixed(3)},${txY.toFixed(3)}) vs direct(${(tapBufX/(width-1)).toFixed(3)},${(tapBufY/(height-1)).toFixed(3)})`);
+  } else {
+    console.log(`normDepthBufferFromNormView: NOT AVAILABLE`);
+  }
+  console.log(`=== END DIAGNOSTIC ===`);
 
   // 3. Flood-fill from tap point
   // Tighter tolerance to avoid leaking into surrounding surfaces
@@ -51,8 +74,6 @@ export function fitBoxFromDepth(
   const gradientThreshold = Math.max(centerDepth * 0.02, 0.02);
   // Spatial radius: limit flood-fill to a region around the tap point
   const maxPixelRadius = Math.round(Math.max(width, height) * 0.25);
-  const tapBufX = Math.round(tapNormX * (width - 1));
-  const tapBufY = Math.round(tapNormY * (height - 1));
 
   const region = floodFillDepth(
     buffer, width, height,
@@ -73,6 +94,18 @@ export function fitBoxFromDepth(
   const projMatrix = new THREE.Matrix4().fromArray(view.projectionMatrix);
   const projMatrixInv = projMatrix.clone().invert();
   const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
+
+  // Log rayDir.z at tap point to check unprojection correction magnitude
+  {
+    const tapNdcX = tapNormX * 2 - 1;
+    const tapNdcY = 1 - tapNormY * 2;
+    const tapNear = new THREE.Vector4(tapNdcX, tapNdcY, -1, 1);
+    tapNear.applyMatrix4(projMatrixInv);
+    tapNear.divideScalar(tapNear.w);
+    const tapRayDir = new THREE.Vector3(tapNear.x, tapNear.y, tapNear.z).normalize();
+    const zCorrection = 1.0 / Math.abs(tapRayDir.z);
+    console.log(`Tap rayDir=(${tapRayDir.x.toFixed(4)},${tapRayDir.y.toFixed(4)},${tapRayDir.z.toFixed(4)}), |z|=${Math.abs(tapRayDir.z).toFixed(4)}, z-correction=${zCorrection.toFixed(4)}x`);
+  }
 
   const worldPoints: THREE.Vector3[] = [];
   const stepX = Math.max(1, Math.floor((region.maxX - region.minX) / 20));
