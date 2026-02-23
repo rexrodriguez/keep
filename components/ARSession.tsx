@@ -76,6 +76,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const currentFrameRef = useRef<XRFrame | null>(null);
   // Store latest depth data for depth-enhanced placement
   const currentDepthRef = useRef<DepthData | null>(null);
+  // Cache viewer pose for use outside XR animation callback (XRFrame expires)
+  const currentViewerPoseRef = useRef<XRViewerPose | null>(null);
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -228,9 +230,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const handleFrame = useCallback((data: FrameData) => {
     const { hitTest, frame } = data;
 
-    // Store frame for camera capture
+    // Store frame and pose for camera capture / depth placement
     currentFrameRef.current = frame;
     currentDepthRef.current = data.depthData;
+    currentViewerPoseRef.current = data.viewerPose;
     if (data.depthData && !hasDepth) {
       setHasDepth(true);
     }
@@ -708,11 +711,10 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       const floorY = touchStart.position.y;
 
       // Try depth-enhanced placement first
-      if (currentDepthRef.current && currentFrameRef.current && xrContextRef.current) {
-        const frame = currentFrameRef.current;
-        const viewerPose = frame.getViewerPose(xrContextRef.current.localFloorSpace);
-
-        if (viewerPose) {
+      // Use cached viewerPose — XRFrame expires outside the animation callback
+      try {
+        const viewerPose = currentViewerPoseRef.current;
+        if (currentDepthRef.current && viewerPose) {
           const lastTouch = e.changedTouches[0];
           if (lastTouch) {
             const normX = lastTouch.clientX / window.innerWidth;
@@ -769,6 +771,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             }
           }
         }
+      } catch (e) {
+        console.warn('Depth-enhanced placement failed, using fallback:', e);
       }
 
       // Fallback: place default box (no depth available)
