@@ -137,6 +137,17 @@ export default function MeasurementUI({
             </p>
           </div>
         )}
+
+        {/* Debug overlay for depth diagnostics */}
+        {context.depthDebug && (
+          <div className="mt-2 px-2">
+            <div className="bg-black/80 rounded-lg px-2 py-1.5 max-w-sm">
+              <pre className="text-green-400 text-[10px] leading-tight font-mono whitespace-pre-wrap">
+                {context.depthDebug}
+              </pre>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Spacer */}
@@ -158,17 +169,6 @@ export default function MeasurementUI({
           </div>
         )}
       </div>
-
-      {/* Debug overlay for depth diagnostics */}
-      {context.depthDebug && (
-        <div className="pointer-events-none px-2 mb-1">
-          <div className="bg-black/80 rounded-lg px-2 py-1.5 mx-auto max-w-sm">
-            <pre className="text-green-400 text-[10px] leading-tight font-mono whitespace-pre-wrap">
-              {context.depthDebug}
-            </pre>
-          </div>
-        </div>
-      )}
 
       {/* Bottom panel - Adjustment controls (fades when idle to let AR breathe) */}
       {showBottomPanel && (
