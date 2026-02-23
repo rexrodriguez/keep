@@ -256,7 +256,7 @@ function fitGravityAlignedBox(
 ): DepthBoxResult {
   // Separate points into "above floor" (object surface) and "near floor" (floor contamination).
   // Only use above-floor points for XZ extents to avoid floor pixels inflating width/depth.
-  const FLOOR_MARGIN = 0.05; // 5cm above floor = "on the object"
+  const FLOOR_MARGIN = 0.03; // 3cm above floor = "on the object"
 
   const aboveFloor: THREE.Vector3[] = [];
   let maxY = -Infinity;
@@ -289,9 +289,10 @@ function fitGravityAlignedBox(
   const pca = computePCA_XZ(xzPoints);
 
   // Only apply PCA rotation if:
-  // 1. Object is clearly elongated (ratio > 1.5)
+  // 1. Object is very clearly elongated (ratio > 4.0) — conservative threshold
+  //    since single-viewpoint depth data makes PCA view-dependent
   // 2. We have enough points for reliable statistics (>= 20)
-  const useRotation = pca.ratio > 1.5 && xzPoints.length >= 20;
+  const useRotation = pca.ratio > 4.0 && xzPoints.length >= 20;
   const angle = useRotation ? pca.angle : 0;
 
   // Compute bounding box in the (possibly rotated) frame
