@@ -220,15 +220,29 @@ function fitGravityAlignedBox(
   points: THREE.Vector3[],
   floorY: number
 ): DepthBoxResult {
-  let minX = Infinity, maxX = -Infinity;
-  let minY = Infinity, maxY = -Infinity;
-  let minZ = Infinity, maxZ = -Infinity;
+  // Separate points into "above floor" (object surface) and "near floor" (floor contamination).
+  // Only use above-floor points for XZ extents to avoid floor pixels inflating width/depth.
+  const FLOOR_MARGIN = 0.03; // 3cm above floor = "on the object"
+
+  const aboveFloor: THREE.Vector3[] = [];
+  let maxY = -Infinity;
 
   for (const p of points) {
+    if (p.y > maxY) maxY = p.y;
+    if (p.y > floorY + FLOOR_MARGIN) {
+      aboveFloor.push(p);
+    }
+  }
+
+  // Use above-floor points for XZ extents if we have enough, otherwise fall back to all points
+  const xzPoints = aboveFloor.length >= 3 ? aboveFloor : points;
+
+  let minX = Infinity, maxX = -Infinity;
+  let minZ = Infinity, maxZ = -Infinity;
+
+  for (const p of xzPoints) {
     minX = Math.min(minX, p.x);
     maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y);
-    maxY = Math.max(maxY, p.y);
     minZ = Math.min(minZ, p.z);
     maxZ = Math.max(maxZ, p.z);
   }
@@ -259,7 +273,7 @@ function fitGravityAlignedBox(
   console.log(
     `Box fit: ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
     `center=(${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}), ` +
-    `${pixelCount} pts, confidence=${confidence}`
+    `${pixelCount} total pts, ${aboveFloor.length} above floor, confidence=${confidence}`
   );
 
   return { center, width_m, depth_m, height_m, pixelCount, confidence };
