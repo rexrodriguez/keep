@@ -314,14 +314,15 @@ function fitGravityAlignedBox(
     }
   }
 
-  // Rotation selection: prefer silhouette yaw, fall back to 3D PCA, else 0°.
+  // Rotation selection: prefer silhouette yaw (if quality > 0.3), fall back to 3D PCA, else 0°.
   const pca = computePCA_XZ(xzPoints);
   const usePcaRotation = pca.ratio > 4.0 && xzPoints.length >= 20;
+  const useSilhouette = overrideYawRad !== null && overrideYawQuality >= 0.3;
   const angle =
-    overrideYawRad !== null ? overrideYawRad :
+    useSilhouette ? overrideYawRad! :
     (usePcaRotation ? pca.angle : 0);
   const yawSource: 'silhouette' | 'pca' | 'none' =
-    overrideYawRad !== null ? 'silhouette' : (usePcaRotation ? 'pca' : 'none');
+    useSilhouette ? 'silhouette' : (usePcaRotation ? 'pca' : 'none');
 
   // Compute XZ centroid for rotation frame
   let meanX = 0, meanZ = 0;
