@@ -190,7 +190,8 @@ export function fitBoxFromDepth(
   const marchOpts: RayMarchOpts = {
     depthBuf: buffer, bufW: width, bufH: height,
     viewToBuf, bufToView, worldToView,
-    proj: projMatrix, projInv: projMatrixInv, viewInv: viewMatrixInv
+    proj: projMatrix, projInv: projMatrixInv, viewInv: viewMatrixInv,
+    depthMeters: centerDepth
   };
 
   const result = fitGravityAlignedBox(
@@ -360,8 +361,12 @@ function marchExtentXZ(
   worldToView: THREE.Matrix4,
   proj: THREE.Matrix4,
   projInv: THREE.Matrix4,
-  viewInv: THREE.Matrix4
+  viewInv: THREE.Matrix4,
+  depthMeters: number
 ): number {
+  // Scale pixel search radius with distance — at far range, 1 cm in world
+  // projects to < 1 pixel, so a fixed 2-pixel radius misses the surface.
+  const pixelRadius = Math.max(2, Math.round(depthMeters * 3));
   // Neighborhood search: find the depth sample whose unprojected world point
   // best matches the marched target P in XZ (and is above floor).
   function bestMatchNear(target: THREE.Vector3, bx: number, by: number, radius: number) {
@@ -412,8 +417,8 @@ function marchExtentXZ(
     const by = Math.floor(b.y * (bufH - 1));
     if (bx < 0 || by < 0 || bx >= bufW || by >= bufH) break;
 
-    // Search a 5×5 neighborhood for the best XZ match above floor
-    const { bestW, bestDist } = bestMatchNear(P, bx, by, 2);
+    // Search neighborhood for the best XZ match above floor (radius scales with distance)
+    const { bestW, bestDist } = bestMatchNear(P, bx, by, pixelRadius);
 
     if (bestW && bestDist <= xzEpsM) {
       // Directional consistency: matched point must lie at the correct
@@ -451,6 +456,7 @@ interface RayMarchOpts {
   proj: THREE.Matrix4;
   projInv: THREE.Matrix4;
   viewInv: THREE.Matrix4;
+  depthMeters: number; // depth at tap point — used to scale pixel search radius
 }
 
 function fitGravityAlignedBox(
@@ -498,14 +504,14 @@ function fitGravityAlignedBox(
   const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
   const V = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
 
-  const stepM = 0.01;     // 1cm steps
+  const stepM = 0.015;    // 1.5cm steps (ensures pixel movement at distance)
   const upOffsetM = 0.08; // sample 8cm above floor
   const xzEpsM = 0.06;    // 6cm proximity tolerance
 
-  const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv } = marchOpts;
+  const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv, depthMeters } = marchOpts;
 
   // First pass: march from tap point
-  const marchArgs = [floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv] as const;
+  const marchArgs = [floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv, depthMeters] as const;
   let posU = marchExtentXZ(marchCenter, U, ...marchArgs);
   let negU = marchExtentXZ(marchCenter, U.clone().negate(), ...marchArgs);
   let posV = marchExtentXZ(marchCenter, V, ...marchArgs);
