@@ -1,6 +1,6 @@
 'use client';
 
-import { StorageSearchResponse, StorageFacility, StorageUnit } from '@/lib/types';
+import { StorageSearchResponse, StorageFacility, StorageUnit, MeasuredItem } from '@/lib/types';
 
 // Conversion helpers
 const cmToInches = (cm: number) => cm / 2.54;
@@ -11,14 +11,17 @@ interface ResultsDisplayProps {
   results: StorageSearchResponse;
   onBack: () => void;
   onNewMeasurement: () => void;
+  items?: MeasuredItem[];
 }
 
 export default function ResultsDisplay({
   results,
   onBack,
   onNewMeasurement,
+  items,
 }: ResultsDisplayProps) {
   const { facilities, object_dimensions } = results;
+  const totalCuFt = items ? items.reduce((s, i) => s + i.width_m * i.depth_m * i.height_m, 0) * 35.3147 : 0;
 
   return (
     <div className="scrollable-page bg-gray-900 text-white flex flex-col">
@@ -51,6 +54,27 @@ export default function ResultsDisplay({
 
       {/* Scrollable results list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {items && items.length > 0 && (
+          <div className="bg-white/5 rounded-xl p-4 mb-4">
+            <div className="text-white/60 text-sm mb-2">Your items ({items.length})</div>
+            {items.map(item => (
+              <div key={item.id} className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0">
+                {item.thumbnail && (
+                  <img src={item.thumbnail} className="w-10 h-10 rounded object-cover" alt="" />
+                )}
+                <div className="text-white text-sm">
+                  {Math.round(item.width_m * 39.3701)}&quot; &times; {Math.round(item.depth_m * 39.3701)}&quot; &times; {Math.round(item.height_m * 39.3701)}&quot;
+                </div>
+                <div className="text-white/40 text-xs ml-auto">
+                  {(item.width_m * item.depth_m * item.height_m * 35.3147).toFixed(1)} ft&sup3;
+                </div>
+              </div>
+            ))}
+            <div className="text-white font-medium text-sm mt-2 pt-2 border-t border-white/10">
+              Total: {totalCuFt.toFixed(1)} cu ft
+            </div>
+          </div>
+        )}
         {facilities.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">

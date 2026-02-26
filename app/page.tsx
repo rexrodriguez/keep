@@ -312,6 +312,7 @@ export default function Home() {
         results={searchResults}
         onBack={handleBackToRadius}
         onNewMeasurement={handleNewMeasurement}
+        items={measuredItems}
       />
     );
   }
