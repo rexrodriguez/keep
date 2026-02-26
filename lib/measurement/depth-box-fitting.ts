@@ -21,6 +21,7 @@ export interface DepthBoxResult {
   _pcaRatio?: number;
   _yawSource?: 'silhouette' | 'pca' | 'none';
   _xzRadius?: number;
+  _marchExtents?: string;
 }
 
 export function fitBoxFromDepth(
@@ -198,7 +199,7 @@ export function fitBoxFromDepth(
     marchOpts
   );
 
-  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'}`);
+  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'} march:${result._marchExtents ?? '?'}`);
   result._debug = diag.join('\n');
 
   // 6. Size guards
@@ -394,6 +395,9 @@ function marchExtentXZ(
   let lastGood = 0;
   let missStreak = 0;
 
+  const perpEps = 0.06;   // perpendicular tolerance (m)
+  const alongEps = 0.08;  // along-axis tolerance (m)
+
   for (let t = 0; t <= maxDistM; t += stepM) {
     P.copy(center).addScaledVector(dirXZ, t);
     P.y = floorY + upOffsetM; // march on a consistent slice above the floor
@@ -408,12 +412,26 @@ function marchExtentXZ(
     const by = Math.floor(b.y * (bufH - 1));
     if (bx < 0 || by < 0 || bx >= bufW || by >= bufH) break;
 
-    // Search a 7×7 neighborhood for the best XZ match above floor
-    const { bestW, bestDist } = bestMatchNear(P, bx, by, 3);
+    // Search a 5×5 neighborhood for the best XZ match above floor
+    const { bestW, bestDist } = bestMatchNear(P, bx, by, 2);
 
     if (bestW && bestDist <= xzEpsM) {
-      lastGood = t;
-      missStreak = 0;
+      // Directional consistency: matched point must lie at the correct
+      // distance along the march direction, not just be "close in XZ"
+      const vx = bestW.x - center.x;
+      const vz = bestW.z - center.z;
+      const along = vx * dirXZ.x + vz * dirXZ.z;
+      const px = vx - along * dirXZ.x;
+      const pz = vz - along * dirXZ.z;
+      const perp = Math.sqrt(px * px + pz * pz);
+
+      if (Math.abs(along - t) <= alongEps && perp <= perpEps) {
+        lastGood = t;
+        missStreak = 0;
+      } else {
+        missStreak++;
+        if (missStreak >= 2) break;
+      }
     } else {
       missStreak++;
       if (missStreak >= 2) break;
@@ -482,7 +500,7 @@ function fitGravityAlignedBox(
 
   const stepM = 0.01;     // 1cm steps
   const upOffsetM = 0.08; // sample 8cm above floor
-  const xzEpsM = 0.10;    // 10cm proximity tolerance (forgiving; tighten later)
+  const xzEpsM = 0.06;    // 6cm proximity tolerance
 
   const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv } = marchOpts;
 
@@ -526,7 +544,8 @@ function fitGravityAlignedBox(
 
   return {
     center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence,
-    _pcaRatio: pca.ratio, _yawSource: yawSource, _xzRadius: maxSearchDist
+    _pcaRatio: pca.ratio, _yawSource: yawSource, _xzRadius: maxSearchDist,
+    _marchExtents: `U+${posU.toFixed(2)}-${negU.toFixed(2)} V+${posV.toFixed(2)}-${negV.toFixed(2)}`
   };
 }
 
