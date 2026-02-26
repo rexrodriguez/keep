@@ -20,8 +20,7 @@ export interface DepthBoxResult {
   _debug?: string;
   _pcaRatio?: number;
   _yawSource?: 'silhouette' | 'pca' | 'none';
-  _xzRadius?: number;
-  _marchExtents?: string;
+  _quantileExtents?: string;
 }
 
 export function fitBoxFromDepth(
@@ -188,22 +187,34 @@ export function fitBoxFromDepth(
   diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m`);
   diag.push(`yaw:${silhouetteYaw ? (silhouetteYaw.yaw * 180 / Math.PI).toFixed(0) + '°' : 'n/a'} q:${silhouetteYaw?.quality.toFixed(2) ?? '0'}`);
 
-  // 5. Fit gravity-aligned bounding box via ray-march
-  const worldToView = viewMatrixInv.clone().invert();
-  const marchOpts: RayMarchOpts = {
-    depthBuf: buffer, bufW: width, bufH: height,
-    viewToBuf, bufToView, worldToView,
-    proj: projMatrix, projInv: projMatrixInv, viewInv: viewMatrixInv,
-    depthMeters: centerDepth
-  };
+  // 5. Build dense local cloud and fit quantile box
+  if (!tapWorld) {
+    console.warn('No tap world point for local cloud');
+    return null;
+  }
 
-  const result = fitGravityAlignedBox(
-    worldPoints, floorY, tapWorld, maxXZRadius,
-    silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0,
-    marchOpts
+  const worldToView = viewMatrixInv.clone().invert();
+  const localCloud = buildLocalCloud(
+    tapBufX, tapBufY, tapWorld, floorY,
+    buffer, width, height, bufToView,
+    projMatrixInv, viewMatrixInv, worldToView,
+    35,           // rPx: sample disk radius in buffer pixels
+    maxXZRadius   // maxXZ: adaptive gating radius
   );
 
-  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'} march:${result._marchExtents ?? '?'}`);
+  diag.push(`cloud:${localCloud.length}pts`);
+
+  if (localCloud.length < 10) {
+    console.warn('Too few points in local cloud:', localCloud.length);
+    return null;
+  }
+
+  const result = fitQuantileBox(
+    localCloud, floorY, tapWorld,
+    silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0
+  );
+
+  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'} ext:${result._quantileExtents ?? '?'}`);
   result._debug = diag.join('\n');
 
   // 6. Size guards
@@ -221,6 +232,82 @@ export function fitBoxFromDepth(
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return NaN;
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const t = idx - lo;
+  return sorted[lo] * (1 - t) + sorted[hi] * t;
+}
+
+/**
+ * Build a dense local point cloud by sampling a disk of pixels around the
+ * tap point in buffer space. Filters by floor, XZ distance, and view-space
+ * depth consistency. This is more robust than flood-fill or ray-march at
+ * 160×90 resolution because it uses all available depth signal statistically.
+ */
+function buildLocalCloud(
+  tapBufX: number,
+  tapBufY: number,
+  tapWorld: THREE.Vector3,
+  floorY: number,
+  depthBuf: Float32Array,
+  bufW: number,
+  bufH: number,
+  bufToView: (x: number, y: number) => { x: number; y: number },
+  projInv: THREE.Matrix4,
+  viewInv: THREE.Matrix4,
+  worldToView: THREE.Matrix4,
+  rPx: number,
+  maxXZ: number
+): THREE.Vector3[] {
+  const pts: THREE.Vector3[] = [];
+  const r2 = rPx * rPx;
+
+  const x0 = Math.max(0, Math.floor(tapBufX - rPx));
+  const x1 = Math.min(bufW - 1, Math.ceil(tapBufX + rPx));
+  const y0 = Math.max(0, Math.floor(tapBufY - rPx));
+  const y1 = Math.min(bufH - 1, Math.ceil(tapBufY + rPx));
+
+  // View-space Z of tap point for depth consistency
+  const tv = new THREE.Vector4(tapWorld.x, tapWorld.y, tapWorld.z, 1).applyMatrix4(worldToView);
+  const tapViewZ = Math.abs(tv.z);
+  // Allow surfaces up to 5cm + 4% behind the tap depth (reject background walls)
+  const zTol = 0.05 + 0.04 * tapViewZ;
+
+  for (let y = y0; y <= y1; y++) {
+    const dy = y - tapBufY;
+    for (let x = x0; x <= x1; x++) {
+      const dx = x - tapBufX;
+      if (dx * dx + dy * dy > r2) continue;
+
+      const d = depthBuf[y * bufW + x];
+      if (!(d > 0)) continue;
+
+      const v = bufToView((x + 0.5) / bufW, (y + 0.5) / bufH);
+      const W = unprojectDepthToWorld(v.x, v.y, d, projInv, viewInv);
+      if (!W) continue;
+
+      // Reject floor
+      if (W.y <= floorY + 0.02) continue;
+
+      // Reject points too far in XZ from tap
+      const ddx = W.x - tapWorld.x;
+      const ddz = W.z - tapWorld.z;
+      if (Math.sqrt(ddx * ddx + ddz * ddz) > maxXZ) continue;
+
+      // Reject background surfaces (view-space Z consistency)
+      const wv = new THREE.Vector4(W.x, W.y, W.z, 1).applyMatrix4(worldToView);
+      if (Math.abs(wv.z) > tapViewZ + zTol) continue;
+
+      pts.push(W);
+    }
+  }
+  return pts;
 }
 
 function floodFillDepth(
@@ -324,178 +411,28 @@ function unprojectDepthToWorld(
 }
 
 /**
- * Project a world point to view-normalized coords [0,1].
- * Accounts for: world → view → clip → NDC → normalized.
+ * Fit a gravity-aligned bounding box using a local point cloud and
+ * yaw-aligned quantile extents. This replaces ray-march which was
+ * fundamentally unstable at 160×90 depth buffer resolution.
  */
-function worldToViewNorm(
-  pWorld: THREE.Vector3,
-  worldToView: THREE.Matrix4,
-  proj: THREE.Matrix4
-): { x: number; y: number } | null {
-  const v = new THREE.Vector4(pWorld.x, pWorld.y, pWorld.z, 1);
-  v.applyMatrix4(worldToView);
-  v.applyMatrix4(proj);
-  if (Math.abs(v.w) < 1e-8) return null;
-  const ndcX = v.x / v.w;
-  const ndcY = v.y / v.w;
-  const x = ndcX * 0.5 + 0.5;
-  const y = 1 - (ndcY * 0.5 + 0.5);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return { x, y };
-}
-
-/**
- * March outward from center along dirXZ in world space, sampling the depth
- * buffer at each step to find where the object surface ends.
- * Returns the distance (meters) of the last "on-object" sample.
- */
-function marchExtentXZ(
-  center: THREE.Vector3,
-  dirXZ: THREE.Vector3,
+function fitQuantileBox(
+  localCloud: THREE.Vector3[],
   floorY: number,
-  upOffsetM: number,
-  stepM: number,
-  maxDistM: number,
-  xzEpsM: number,
-  depthBuf: Float32Array,
-  bufW: number, bufH: number,
-  viewToBuf: (x: number, y: number) => { x: number; y: number },
-  bufToView: (x: number, y: number) => { x: number; y: number },
-  worldToView: THREE.Matrix4,
-  proj: THREE.Matrix4,
-  projInv: THREE.Matrix4,
-  viewInv: THREE.Matrix4,
-  depthMeters: number
-): number {
-  // Scale pixel search radius with distance — at far range, 1 cm in world
-  // projects to < 1 pixel, so a fixed 2-pixel radius misses the surface.
-  const pixelRadius = Math.max(2, Math.round(depthMeters * 3));
-  // Neighborhood search: find the depth sample whose unprojected world point
-  // best matches the marched target P in XZ (and is above floor).
-  // Precompute candidate view-space Z for depth consistency check
-  const _tv = new THREE.Vector4();
-  function viewZ(p: THREE.Vector3): number {
-    _tv.set(p.x, p.y, p.z, 1).applyMatrix4(worldToView);
-    return Math.abs(_tv.z);
-  }
-
-  function bestMatchNear(target: THREE.Vector3, targetViewZ: number, bx: number, by: number, radius: number) {
-    let bestW: THREE.Vector3 | null = null;
-    let bestDist = Infinity;
-    // View-space Z tolerance: 5cm + 4% of candidate depth
-    const zTol = 0.05 + 0.04 * targetViewZ;
-    for (let oy = -radius; oy <= radius; oy++) {
-      const yy = by + oy;
-      if (yy < 0 || yy >= bufH) continue;
-      for (let ox = -radius; ox <= radius; ox++) {
-        const xx = bx + ox;
-        if (xx < 0 || xx >= bufW) continue;
-        const d = depthBuf[yy * bufW + xx];
-        if (!(d > 0)) continue;
-        const v = bufToView((xx + 0.5) / bufW, (yy + 0.5) / bufH);
-        const W = unprojectDepthToWorld(v.x, v.y, d, projInv, viewInv);
-        if (!W) continue;
-        if (W.y <= floorY + 0.02) continue; // reject floor
-        // Reject surfaces far behind candidate in view space (background walls)
-        const surfZ = viewZ(W);
-        if (surfZ > targetViewZ + zTol) continue;
-        const dx = W.x - target.x;
-        const dz = W.z - target.z;
-        const xzDist = Math.sqrt(dx * dx + dz * dz);
-        if (xzDist < bestDist) {
-          bestDist = xzDist;
-          bestW = W;
-        }
-      }
-    }
-    return { bestW, bestDist };
-  }
-
-  const P = new THREE.Vector3();
-  let lastGood = 0;
-  let missStreak = 0;
-
-  const perpEps = 0.06;   // perpendicular tolerance (m)
-  const alongEps = 0.08;  // along-axis tolerance (m)
-
-  for (let t = 0; t <= maxDistM; t += stepM) {
-    P.copy(center).addScaledVector(dirXZ, t);
-    P.y = floorY + upOffsetM; // march on a consistent slice above the floor
-
-    // Project candidate world point to view-normalized coords
-    const vNorm = worldToViewNorm(P, worldToView, proj);
-    if (!vNorm || vNorm.x < 0 || vNorm.x > 1 || vNorm.y < 0 || vNorm.y > 1) break;
-
-    // View-normalized → buffer pixel (handles Android 90° rotation)
-    const b = viewToBuf(vNorm.x, vNorm.y);
-    const bx = Math.floor(b.x * (bufW - 1));
-    const by = Math.floor(b.y * (bufH - 1));
-    if (bx < 0 || by < 0 || bx >= bufW || by >= bufH) break;
-
-    // Search neighborhood for the best XZ match above floor (radius scales with distance)
-    const pViewZ = viewZ(P);
-    const { bestW, bestDist } = bestMatchNear(P, pViewZ, bx, by, pixelRadius);
-
-    if (bestW && bestDist <= xzEpsM) {
-      // Directional consistency: matched point must lie at the correct
-      // distance along the march direction, not just be "close in XZ"
-      const vx = bestW.x - center.x;
-      const vz = bestW.z - center.z;
-      const along = vx * dirXZ.x + vz * dirXZ.z;
-      const px = vx - along * dirXZ.x;
-      const pz = vz - along * dirXZ.z;
-      const perp = Math.sqrt(px * px + pz * pz);
-
-      if (Math.abs(along - t) <= alongEps && perp <= perpEps) {
-        lastGood = t;
-        missStreak = 0;
-      } else {
-        missStreak++;
-        if (missStreak >= 2) break;
-      }
-    } else {
-      missStreak++;
-      if (missStreak >= 2) break;
-    }
-  }
-
-  return lastGood;
-}
-
-interface RayMarchOpts {
-  depthBuf: Float32Array;
-  bufW: number;
-  bufH: number;
-  viewToBuf: (x: number, y: number) => { x: number; y: number };
-  bufToView: (x: number, y: number) => { x: number; y: number };
-  worldToView: THREE.Matrix4;
-  proj: THREE.Matrix4;
-  projInv: THREE.Matrix4;
-  viewInv: THREE.Matrix4;
-  depthMeters: number; // depth at tap point — used to scale pixel search radius
-}
-
-function fitGravityAlignedBox(
-  points: THREE.Vector3[],
-  floorY: number,
-  tapWorld: THREE.Vector3 | null,
-  maxSearchDist: number,
+  tapWorld: THREE.Vector3,
   overrideYawRad: number | null,
-  overrideYawQuality: number,
-  marchOpts: RayMarchOpts
+  overrideYawQuality: number
 ): DepthBoxResult {
-  // --- Height from point cloud (maxY - floorY) ---
-  let maxY = -Infinity;
-  for (const p of points) {
-    if (p.y > maxY) maxY = p.y;
-  }
-  const bottomY = floorY;
-  const topY = Number.isFinite(maxY) ? maxY : floorY + 0.05;
-  const height_m = clamp(topY - bottomY, 0.05, 5.0);
+  // --- Height from local cloud (95th percentile Y - floorY) ---
+  const yVals = localCloud.map(p => p.y).sort((a, b) => a - b);
+  const topY = percentile(yVals, 0.95);
+  const height_m = clamp(
+    Number.isFinite(topY) ? topY - floorY : 0.05,
+    0.05, 5.0
+  );
 
-  // --- Yaw selection (unchanged: silhouette > PCA > 0°) ---
-  const pca = computePCA_XZ(points);
-  const usePcaRotation = pca.ratio > 4.0 && points.length >= 20;
+  // --- Yaw selection: silhouette > PCA > 0° ---
+  const pca = computePCA_XZ(localCloud);
+  const usePcaRotation = pca.ratio > 4.0 && localCloud.length >= 20;
   const useSilhouette = overrideYawRad !== null && overrideYawQuality >= 0.3;
   const yaw =
     useSilhouette ? overrideYawRad! :
@@ -503,87 +440,59 @@ function fitGravityAlignedBox(
   const yawSource: 'silhouette' | 'pca' | 'none' =
     useSilhouette ? 'silhouette' : (usePcaRotation ? 'pca' : 'none');
 
-  // --- Center: use tapWorld if available, else point cloud centroid ---
-  let cx: number, cz: number;
-  if (tapWorld) {
-    cx = tapWorld.x;
-    cz = tapWorld.z;
-  } else {
-    cx = 0; cz = 0;
-    for (const p of points) { cx += p.x; cz += p.z; }
-    cx /= points.length;
-    cz /= points.length;
+  // --- Rotate into yaw-aligned frame and compute quantile extents ---
+  const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  const V = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+
+  const uVals: number[] = [];
+  const vVals: number[] = [];
+  for (const p of localCloud) {
+    const dx = p.x - tapWorld.x;
+    const dz = p.z - tapWorld.z;
+    uVals.push(dx * U.x + dz * U.z);
+    vVals.push(dx * V.x + dz * V.z);
   }
-  const marchCenter = new THREE.Vector3(cx, floorY, cz);
+  uVals.sort((a, b) => a - b);
+  vVals.sort((a, b) => a - b);
 
-  // --- Ray-march width/depth along rotated axes ---
-  const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
-  const V = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
+  const qLo = 0.05, qHi = 0.95;
+  const u0 = percentile(uVals, qLo), u1 = percentile(uVals, qHi);
+  const v0 = percentile(vVals, qLo), v1 = percentile(vVals, qHi);
 
-  const stepM = 0.015;    // 1.5cm steps (ensures pixel movement at distance)
-  const upOffsetM = 0.08; // sample 8cm above floor
-  const xzEpsM = 0.06;    // 6cm proximity tolerance
+  const width_m = clamp(u1 - u0, 0.05, 5.0);
+  const depth_m = clamp(v1 - v0, 0.05, 5.0);
 
-  const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv, depthMeters } = marchOpts;
-
-  // First pass: march from tap point
-  const marchArgs = [floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv, depthMeters] as const;
-  let posU = marchExtentXZ(marchCenter, U, ...marchArgs);
-  let negU = marchExtentXZ(marchCenter, U.clone().negate(), ...marchArgs);
-  let posV = marchExtentXZ(marchCenter, V, ...marchArgs);
-  let negV = marchExtentXZ(marchCenter, V.clone().negate(), ...marchArgs);
-
-  // One-step recenter: shift center by half the imbalance, then re-march
-  const du = (posU - negU) * 0.5;
-  const dv = (posV - negV) * 0.5;
-  if (Math.abs(du) > 0.02 || Math.abs(dv) > 0.02) {
-    marchCenter.addScaledVector(U, du);
-    marchCenter.addScaledVector(V, dv);
-    posU = marchExtentXZ(marchCenter, U, ...marchArgs);
-    negU = marchExtentXZ(marchCenter, U.clone().negate(), ...marchArgs);
-    posV = marchExtentXZ(marchCenter, V, ...marchArgs);
-    negV = marchExtentXZ(marchCenter, V.clone().negate(), ...marchArgs);
-    cx = marchCenter.x;
-    cz = marchCenter.z;
-  }
-
-  const width_m = clamp(posU + negU, 0.05, 5.0);
-  const depth_m = clamp(posV + negV, 0.05, 5.0);
-
-  // Center box at final march center
-  const halfShiftU = (posU - negU) / 2;
-  const halfShiftV = (posV - negV) / 2;
-  const center = new THREE.Vector3(
-    cx + U.x * halfShiftU + V.x * halfShiftV,
-    bottomY + height_m / 2,
-    cz + U.z * halfShiftU + V.z * halfShiftV
-  );
+  // Center at quantile midpoint
+  const uMid = (u0 + u1) * 0.5;
+  const vMid = (v0 + v1) * 0.5;
+  const center = tapWorld.clone()
+    .addScaledVector(U, uMid)
+    .addScaledVector(V, vMid);
+  center.y = floorY + height_m / 2;
 
   const rotation_deg = (yaw * 180) / Math.PI;
-  const pixelCount = points.length;
+  const pixelCount = localCloud.length;
 
-  // Confidence based on march coverage + point count
-  const marchTotal = posU + negU + posV + negV;
   let confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  if (pixelCount > 50 && marchTotal > 0.15) {
+  if (pixelCount > 100 && width_m > 0.08 && depth_m > 0.08) {
     confidence = 'HIGH';
-  } else if (pixelCount > 20 || marchTotal > 0.08) {
+  } else if (pixelCount > 30) {
     confidence = 'MEDIUM';
   } else {
     confidence = 'LOW';
   }
 
   console.log(
-    `Box fit (ray-march): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
+    `Box fit (quantile): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
     `rot=${rotation_deg.toFixed(1)}°, yaw=${yawSource}, ` +
-    `march: +U=${posU.toFixed(2)} -U=${negU.toFixed(2)} +V=${posV.toFixed(2)} -V=${negV.toFixed(2)}, ` +
-    `${pixelCount} pts, confidence=${confidence}`
+    `cloud=${pixelCount} pts, U=[${u0.toFixed(2)},${u1.toFixed(2)}] V=[${v0.toFixed(2)},${v1.toFixed(2)}], ` +
+    `confidence=${confidence}`
   );
 
   return {
     center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence,
-    _pcaRatio: pca.ratio, _yawSource: yawSource, _xzRadius: maxSearchDist,
-    _marchExtents: `U+${posU.toFixed(2)}-${negU.toFixed(2)} V+${posV.toFixed(2)}-${negV.toFixed(2)}`
+    _pcaRatio: pca.ratio, _yawSource: yawSource,
+    _quantileExtents: `U[${u0.toFixed(2)},${u1.toFixed(2)}] V[${v0.toFixed(2)},${v1.toFixed(2)}]`
   };
 }
 
