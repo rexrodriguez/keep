@@ -15,7 +15,9 @@ interface MeasurementUIProps {
   hasDepth?: boolean;
   onReset: () => void;
   onConfirmHeight: () => void;
-  onFindStorage: () => void;
+  onAddItem: () => void;
+  onDone: () => void;
+  itemCount: number;
   onSetStabilityMode: (mode: StabilityMode) => void;
   onExit: () => void;
 }
@@ -28,7 +30,9 @@ export default function MeasurementUI({
   hasDepth,
   onReset,
   onConfirmHeight,
-  onFindStorage,
+  onAddItem,
+  onDone,
+  itemCount,
   onExit,
 }: MeasurementUIProps) {
   const isHeightInput = context.state === 'HEIGHT_INPUT';
@@ -104,6 +108,21 @@ export default function MeasurementUI({
             </svg>
           </button>
 
+          {/* Item counter + Done button */}
+          {itemCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="bg-black/50 backdrop-blur-sm text-white/80 px-3 py-1.5 rounded-full text-sm">
+                {itemCount} item{itemCount !== 1 ? 's' : ''}
+              </span>
+              <button
+                onClick={onDone}
+                className="bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-medium"
+              >
+                Done
+              </button>
+            </div>
+          )}
+
           {/* Floating dimension display when adjusting */}
           {showBottomPanel && measurements && (
             <div className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2">
@@ -118,7 +137,7 @@ export default function MeasurementUI({
           )}
 
           {/* Spacer for symmetry */}
-          <div className="w-9" />
+          {itemCount === 0 && <div className="w-9" />}
         </div>
 
         {/* Tracking warning - only show when relevant */}
@@ -182,6 +201,7 @@ export default function MeasurementUI({
           {isHeightInput && (
             <AdjustmentPanel
               onConfirm={onConfirmHeight}
+              onUndo={onReset}
             />
           )}
 
@@ -190,7 +210,7 @@ export default function MeasurementUI({
               measurements={measurements}
               confidence={confidence}
               onRedo={onReset}
-              onFindStorage={onFindStorage}
+              onAddItem={onAddItem}
             />
           )}
         </div>
@@ -259,18 +279,25 @@ export default function MeasurementUI({
 
 function AdjustmentPanel({
   onConfirm,
+  onUndo,
 }: {
   onConfirm: () => void;
+  onUndo: () => void;
 }) {
   return (
-    <div className="p-3">
+    <div className="p-3 flex gap-3">
+      <button
+        onClick={onUndo}
+        onTouchEnd={(e) => { e.preventDefault(); onUndo(); }}
+        className="flex-1 py-3 px-4 rounded-xl font-medium bg-white/10 text-white active:bg-white/20 transition-colors"
+        style={{ touchAction: 'manipulation' }}
+      >
+        Undo
+      </button>
       <button
         onClick={onConfirm}
-        onTouchEnd={(e) => {
-          e.preventDefault();
-          onConfirm();
-        }}
-        className="w-full py-3 px-6 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
+        onTouchEnd={(e) => { e.preventDefault(); onConfirm(); }}
+        className="flex-1 py-3 px-6 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
         style={{ touchAction: 'manipulation' }}
       >
         Confirm Dimensions
@@ -301,12 +328,12 @@ function ReviewPanel({
   measurements,
   confidence,
   onRedo,
-  onFindStorage,
+  onAddItem,
 }: {
   measurements: ComputedMeasurements;
   confidence: ConfidenceLevel | null;
   onRedo: () => void;
-  onFindStorage: () => void;
+  onAddItem: () => void;
 }) {
   // Convert cm to inches
   const widthIn = measurements.width_cm / 2.54;
@@ -360,13 +387,13 @@ function ReviewPanel({
           onClick={onRedo}
           className="flex-1 py-3 px-4 rounded-xl font-medium bg-white/10 text-white active:bg-white/20 transition-colors"
         >
-          Measure Again
+          Undo
         </button>
         <button
-          onClick={onFindStorage}
+          onClick={onAddItem}
           className="flex-1 py-3 px-4 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
         >
-          Find Storage
+          Add to List
         </button>
       </div>
     </div>
