@@ -83,8 +83,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const accumulatedCloudRef = useRef<THREE.Vector3[]>([]);
   const measureFrameCountRef = useRef(0);
   const measureStartTimeRef = useRef(0);
-  const MEASURE_TARGET_FRAMES = 15;
-  const MEASURE_TIMEOUT_MS = 500;
+  const MEASURE_TIMEOUT_MS = 500; // minimum accumulation window
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -300,8 +299,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           console.warn('Frame cloud build failed:', err);
         }
 
-        // Check if we've accumulated enough
-        const done = measureFrameCountRef.current >= MEASURE_TARGET_FRAMES || elapsed >= MEASURE_TIMEOUT_MS;
+        // Always wait the full timeout so the user sees the measuring indicator.
+        // Frame count is just for logging — time is the gate.
+        const done = elapsed >= MEASURE_TIMEOUT_MS;
         if (done) {
           const cloud = accumulatedCloudRef.current;
           console.log(`Depth accumulation complete: ${cloud.length} pts from ${measureFrameCountRef.current} frames in ${elapsed}ms`);
