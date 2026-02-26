@@ -232,6 +232,52 @@ export function fitBoxFromDepth(
   return result;
 }
 
+/**
+ * Build a point cloud from a single depth frame for multi-frame accumulation.
+ * Returns world-space points, or null if depth data is invalid.
+ */
+export function buildCloudFromDepth(
+  depthData: DepthData,
+  tapNormX: number,
+  tapNormY: number,
+  viewerPose: XRViewerPose,
+  floorY: number
+): THREE.Vector3[] | null {
+  const { width, height } = depthData;
+
+  const centerDepth = getDepthAtNormalized(depthData, tapNormX, tapNormY);
+  if (centerDepth <= 0 || centerDepth > 10) return null;
+
+  const buffer = getDepthBuffer(depthData);
+  if (!buffer) return null;
+
+  const depthInfo = depthData.depthInfo;
+  const xform = depthInfo.normDepthBufferFromNormView;
+  const { viewToBuf, bufToView } = getCoordTransforms(xform);
+
+  const tapBuf = viewToBuf(tapNormX, tapNormY);
+  const tapBufX = Math.round(tapBuf.x * (width - 1));
+  const tapBufY = Math.round(tapBuf.y * (height - 1));
+
+  const view = viewerPose.views[0];
+  const projMatrixInv = new THREE.Matrix4().fromArray(view.projectionMatrix).invert();
+  const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
+  const worldToView = viewMatrixInv.clone().invert();
+
+  const tapWorld = unprojectDepthToWorld(tapNormX, tapNormY, centerDepth, projMatrixInv, viewMatrixInv);
+  if (!tapWorld) return null;
+
+  // Use a fixed generous XZ radius for accumulation (individual frame clouds get merged)
+  const maxXZRadius = 0.35;
+
+  return buildLocalCloud(
+    tapBufX, tapBufY, tapWorld, floorY,
+    buffer, width, height, bufToView,
+    projMatrixInv, viewMatrixInv, worldToView,
+    38, 10, 1, maxXZRadius
+  );
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -422,7 +468,7 @@ function unprojectDepthToWorld(
  * yaw-aligned quantile extents. This replaces ray-march which was
  * fundamentally unstable at 160×90 depth buffer resolution.
  */
-function fitQuantileBox(
+export function fitQuantileBox(
   localCloud: THREE.Vector3[],
   floorY: number,
   tapWorld: THREE.Vector3,

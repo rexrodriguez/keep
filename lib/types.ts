@@ -21,6 +21,7 @@ export type MeasurementState =
   | 'AR_RUNNING'
   | 'READY_TO_DRAW'  // Ready for user to tap floor
   | 'FLOOR_LOCKED'   // Floor plane locked, ready to tap object
+  | 'MEASURING'      // Accumulating depth frames (~0.5s)
   | 'DRAWING'        // User is dragging to draw rectangle
   | 'HEIGHT_INPUT'   // User adjusts height via slider
   | 'REVIEW'

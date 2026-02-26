@@ -36,6 +36,7 @@ export default function MeasurementUI({
   const isDrawing = context.state === 'DRAWING';
   const isReadyToDraw = context.state === 'READY_TO_DRAW';
   const isFloorLocked = context.state === 'FLOOR_LOCKED';
+  const isMeasuring = context.state === 'MEASURING';
   const showBottomPanel = isHeightInput || isReview;
 
   // Convert dimensions to inches for display (1 meter = 39.3701 inches)
@@ -121,7 +122,7 @@ export default function MeasurementUI({
         </div>
 
         {/* Tracking warning - only show when relevant */}
-        {trackingWarning && !context.isEstimating && (isReadyToDraw || isFloorLocked || isDrawing) && (
+        {trackingWarning && !context.isEstimating && (isReadyToDraw || isFloorLocked || isMeasuring || isDrawing) && (
           <div className="mt-2 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-3 py-2 mx-auto max-w-xs">
             <p className="text-yellow-200 text-xs text-center">
               {trackingWarning}
@@ -218,6 +219,15 @@ export default function MeasurementUI({
               Depth sensing active
             </div>
           )}
+        </div>
+      )}
+
+      {isMeasuring && (
+        <div className="pointer-events-none pb-8 px-4">
+          <div className="bg-black/60 backdrop-blur-sm px-4 py-3 rounded-full mx-auto w-fit flex items-center gap-3">
+            <div className="w-5 h-5 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
+            <span className="text-white text-sm">Measuring...</span>
+          </div>
         </div>
       )}
 

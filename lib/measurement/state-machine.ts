@@ -16,6 +16,13 @@ export interface StateMachineContext {
   isEstimating: boolean;                 // LLM estimation in progress
   error: string | null;
   depthDebug: string | null;            // Diagnostic info from depth fitting
+  measuringTap: {                       // Pending multi-frame measurement tap
+    normX: number;
+    normY: number;
+    floorY: number;
+    stability: number;
+    fallbackPosition: THREE.Vector3;
+  } | null;
 }
 
 export interface LLMEstimate {
@@ -35,6 +42,7 @@ export type StateAction =
   | { type: 'AR_FAILED'; error: string }
   | { type: 'LOCK_FLOOR'; floorY: number; position: THREE.Vector3 }
   | { type: 'PLACE_BOX'; point: MeasurementPoint }  // Tap to place default box
+  | { type: 'START_MEASURING'; normX: number; normY: number; floorY: number; stability: number; fallbackPosition: THREE.Vector3 }
   | { type: 'PLACE_DEPTH_BOX'; dragStart: MeasurementPoint; dragEnd: MeasurementPoint;
       width_m: number; depth_m: number; height_m: number; rotation_deg: number; confidence: 'HIGH' | 'MEDIUM' | 'LOW'; debug?: string }
   | { type: 'START_DRAG'; point: MeasurementPoint }
@@ -81,6 +89,7 @@ export const initialContext: StateMachineContext = {
   isEstimating: false,
   error: null,
   depthDebug: null,
+  measuringTap: null,
 };
 
 /**
@@ -122,8 +131,8 @@ export function stateMachineReducer(
 
     case 'PLACE_BOX': {
       // Tap to place a default-sized box centered on the tap point
-      // Works from both READY_TO_DRAW (legacy) and FLOOR_LOCKED
-      if (context.state === 'READY_TO_DRAW' || context.state === 'FLOOR_LOCKED') {
+      // Works from READY_TO_DRAW (legacy), FLOOR_LOCKED, or MEASURING (fallback)
+      if (context.state === 'READY_TO_DRAW' || context.state === 'FLOOR_LOCKED' || context.state === 'MEASURING') {
         const center = action.point.position;
         // Use locked floor Y if available, otherwise use tap point Y
         const baseY = context.floorY ?? center.y;
@@ -164,11 +173,28 @@ export function stateMachineReducer(
       return context;
     }
 
-    case 'PLACE_DEPTH_BOX':
-      // Place a box sized from depth data (from FLOOR_LOCKED state)
+    case 'START_MEASURING':
       if (context.state === 'FLOOR_LOCKED') {
         return {
           ...context,
+          measuringTap: {
+            normX: action.normX,
+            normY: action.normY,
+            floorY: action.floorY,
+            stability: action.stability,
+            fallbackPosition: action.fallbackPosition.clone(),
+          },
+          state: 'MEASURING',
+        };
+      }
+      return context;
+
+    case 'PLACE_DEPTH_BOX':
+      // Place a box sized from depth data (from MEASURING or FLOOR_LOCKED state)
+      if (context.state === 'MEASURING' || context.state === 'FLOOR_LOCKED') {
+        return {
+          ...context,
+          measuringTap: null,
           dragStart: action.dragStart,
           dragEnd: action.dragEnd,
           width_m: action.width_m,
@@ -363,6 +389,7 @@ export function stateMachineReducer(
         depth_m: DEFAULT_DEPTH_M,
         rotation_deg: 0,
         llmEstimate: null,
+        measuringTap: null,
         state: 'READY_TO_DRAW',
       };
 
@@ -387,6 +414,15 @@ export function stateMachineReducer(
  * Handle undo action
  */
 function handleUndo(context: StateMachineContext): StateMachineContext {
+  // In measuring, cancel and go back to floor locked
+  if (context.state === 'MEASURING') {
+    return {
+      ...context,
+      measuringTap: null,
+      state: 'FLOOR_LOCKED',
+    };
+  }
+
   // In height input or review, go back to floor locked (if we have a floor) or ready to draw
   if (context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') {
     return {
@@ -436,8 +472,8 @@ export function getUIState(context: StateMachineContext): UIState {
   return {
     currentStep: stateInfo.step,
     instruction: stateInfo.instruction,
-    canUndo: context.dragStart !== null || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW' || context.state === 'FLOOR_LOCKED',
-    canReset: context.dragStart !== null || context.floorY !== null,
+    canUndo: context.dragStart !== null || context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW' || context.state === 'FLOOR_LOCKED' || context.state === 'MEASURING',
+    canReset: context.dragStart !== null || context.floorY !== null || context.state === 'MEASURING',
     showMeasurements: context.dragStart !== null && context.dragEnd !== null && context.state !== 'DRAWING',
     trackingWarning: null,
   };
@@ -467,6 +503,8 @@ function getStateInfo(state: MeasurementState): {
       return { step: '1/3', instruction: 'Point at the floor and tap to set the surface' };
     case 'FLOOR_LOCKED':
       return { step: '2/3', instruction: 'Point at your object and tap to measure' };
+    case 'MEASURING':
+      return { step: '2/3', instruction: 'Measuring...' };
     case 'DRAWING':
       return { step: '2/3', instruction: 'Dragging corner...' };
     case 'HEIGHT_INPUT':

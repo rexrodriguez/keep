@@ -41,7 +41,7 @@ import {
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
 import { DepthData } from '@/lib/webxr/depth-sensing';
-import { fitBoxFromDepth } from '@/lib/measurement/depth-box-fitting';
+import { buildCloudFromDepth, fitQuantileBox } from '@/lib/measurement/depth-box-fitting';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -79,15 +79,12 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const currentDepthRef = useRef<DepthData | null>(null);
   // Cache viewer pose for use outside XR animation callback (XRFrame expires)
   const currentViewerPoseRef = useRef<XRViewerPose | null>(null);
-  // Pending depth tap — queued in touch handler, processed in next render frame
-  // (XRCPUDepthInformation expires outside the animation callback)
-  const pendingDepthTapRef = useRef<{
-    normX: number;
-    normY: number;
-    floorY: number;
-    stability: number;
-    fallbackPosition: THREE.Vector3;
-  } | null>(null);
+  // Multi-frame depth accumulation refs
+  const accumulatedCloudRef = useRef<THREE.Vector3[]>([]);
+  const measureFrameCountRef = useRef(0);
+  const measureStartTimeRef = useRef(0);
+  const MEASURE_TARGET_FRAMES = 15;
+  const MEASURE_TIMEOUT_MS = 500;
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -192,7 +189,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     if (reticleRef.current) {
       setReticleMode(
         reticleRef.current,
-        context.state === 'FLOOR_LOCKED' ? 'targeting' : 'surface'
+        (context.state === 'FLOOR_LOCKED' || context.state === 'MEASURING') ? 'targeting' : 'surface'
       );
     }
   }, [context.state]);
@@ -274,81 +271,102 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       setHasDepth(true);
     }
 
-    // Process pending depth tap (must happen inside animation callback
-    // where XRCPUDepthInformation is still valid)
-    const pendingTap = pendingDepthTapRef.current;
-    if (pendingTap && data.depthData && data.viewerPose) {
-      pendingDepthTapRef.current = null;
-      try {
-        const boxResult = fitBoxFromDepth(
-          data.depthData,
-          pendingTap.normX,
-          pendingTap.normY,
-          data.viewerPose,
-          pendingTap.floorY
-        );
-        if (boxResult) {
-          console.log('Depth box result:', boxResult);
-          const anchorPoint: MeasurementPoint = {
-            position: new THREE.Vector3(
-              boxResult.center.x - boxResult.width_m / 2,
-              pendingTap.floorY,
-              boxResult.center.z - boxResult.depth_m / 2
-            ),
-            timestamp: Date.now(),
-            stability: pendingTap.stability,
-          };
-          const endPoint: MeasurementPoint = {
-            position: new THREE.Vector3(
-              boxResult.center.x + boxResult.width_m / 2,
-              pendingTap.floorY,
-              boxResult.center.z + boxResult.depth_m / 2
-            ),
-            timestamp: Date.now(),
-            stability: pendingTap.stability,
-          };
-          dispatch({
-            type: 'PLACE_DEPTH_BOX',
-            dragStart: anchorPoint,
-            dragEnd: endPoint,
-            width_m: boxResult.width_m,
-            depth_m: boxResult.depth_m,
-            height_m: boxResult.height_m,
-            rotation_deg: boxResult.rotation_deg,
-            confidence: boxResult.confidence,
-            debug: boxResult._debug,
-          });
-        } else {
-          // Depth processing returned null — fallback to default box
-          console.log('Depth fitting returned null, placing default box');
-          const point: MeasurementPoint = {
-            position: pendingTap.fallbackPosition.clone(),
-            timestamp: Date.now(),
-            stability: pendingTap.stability,
-          };
-          dispatch({ type: 'PLACE_BOX', point });
+    // Multi-frame depth accumulation (MEASURING state)
+    const ctx = contextRef.current;
+    if (ctx.state === 'MEASURING' && ctx.measuringTap) {
+      const tap = ctx.measuringTap;
+      const elapsed = Date.now() - measureStartTimeRef.current;
+
+      if (data.depthData && data.viewerPose) {
+        // Build cloud from this frame and accumulate
+        try {
+          const frameCloud = buildCloudFromDepth(
+            data.depthData,
+            tap.normX,
+            tap.normY,
+            data.viewerPose,
+            tap.floorY
+          );
+          if (frameCloud && frameCloud.length > 0) {
+            // Append new points, cap at 3000 total
+            const cloud = accumulatedCloudRef.current;
+            const remaining = 3000 - cloud.length;
+            if (remaining > 0) {
+              cloud.push(...frameCloud.slice(0, remaining));
+            }
+            measureFrameCountRef.current++;
+          }
+        } catch (err) {
+          console.warn('Frame cloud build failed:', err);
         }
-      } catch (err) {
-        console.warn('Depth processing failed:', err);
-        const point: MeasurementPoint = {
-          position: pendingTap.fallbackPosition.clone(),
-          timestamp: Date.now(),
-          stability: pendingTap.stability,
-        };
-        dispatch({ type: 'PLACE_BOX', point });
+
+        // Check if we've accumulated enough
+        const done = measureFrameCountRef.current >= MEASURE_TARGET_FRAMES || elapsed >= MEASURE_TIMEOUT_MS;
+        if (done) {
+          const cloud = accumulatedCloudRef.current;
+          console.log(`Depth accumulation complete: ${cloud.length} pts from ${measureFrameCountRef.current} frames in ${elapsed}ms`);
+
+          if (cloud.length >= 20) {
+            // Compute tap world point for centering using the cloud's centroid
+            // (more stable than single-frame unprojection)
+            const tapWorld = (() => {
+              const cx = cloud.reduce((s, p) => s + p.x, 0) / cloud.length;
+              const cz = cloud.reduce((s, p) => s + p.z, 0) / cloud.length;
+              const cy = cloud.reduce((s, p) => s + p.y, 0) / cloud.length;
+              return new THREE.Vector3(cx, cy, cz);
+            })();
+
+            const boxResult = fitQuantileBox(cloud, tap.floorY, tapWorld, null, 0);
+            console.log('Multi-frame box result:', boxResult);
+
+            const anchorPoint: MeasurementPoint = {
+              position: new THREE.Vector3(
+                boxResult.center.x - boxResult.width_m / 2,
+                tap.floorY,
+                boxResult.center.z - boxResult.depth_m / 2
+              ),
+              timestamp: Date.now(),
+              stability: tap.stability,
+            };
+            const endPoint: MeasurementPoint = {
+              position: new THREE.Vector3(
+                boxResult.center.x + boxResult.width_m / 2,
+                tap.floorY,
+                boxResult.center.z + boxResult.depth_m / 2
+              ),
+              timestamp: Date.now(),
+              stability: tap.stability,
+            };
+            dispatch({
+              type: 'PLACE_DEPTH_BOX',
+              dragStart: anchorPoint,
+              dragEnd: endPoint,
+              width_m: boxResult.width_m,
+              depth_m: boxResult.depth_m,
+              height_m: boxResult.height_m,
+              rotation_deg: boxResult.rotation_deg,
+              confidence: boxResult.confidence,
+            });
+          } else {
+            // Not enough points accumulated — fallback
+            console.warn('Too few accumulated points:', cloud.length);
+            dispatch({ type: 'PLACE_BOX', point: { position: tap.fallbackPosition.clone(), timestamp: Date.now(), stability: tap.stability } });
+          }
+
+          // Reset accumulation state
+          accumulatedCloudRef.current = [];
+          measureFrameCountRef.current = 0;
+        }
+      } else if (elapsed >= MEASURE_TIMEOUT_MS) {
+        // Timeout with no depth data — fallback
+        console.warn('Measuring timed out with no depth data');
+        dispatch({ type: 'PLACE_BOX', point: { position: tap.fallbackPosition.clone(), timestamp: Date.now(), stability: tap.stability } });
+        accumulatedCloudRef.current = [];
+        measureFrameCountRef.current = 0;
       }
-    } else if (pendingTap) {
-      // Depth not available this frame — fallback
-      pendingDepthTapRef.current = null;
-      const point: MeasurementPoint = {
-        position: pendingTap.fallbackPosition.clone(),
-        timestamp: Date.now(),
-        stability: pendingTap.stability,
-      };
-      dispatch({ type: 'PLACE_BOX', point });
     }
 
-    // Update reticle — only show in READY_TO_DRAW and FLOOR_LOCKED states
+    // Update reticle — only show in READY_TO_DRAW and FLOOR_LOCKED states (not during MEASURING)
     const currentState = contextRef.current.state;
     const showReticle = hitTest.hasHit && (currentState === 'READY_TO_DRAW' || currentState === 'FLOOR_LOCKED');
     if (reticleRef.current) {
@@ -833,18 +851,21 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
       const stability = currentHitRef.current?.stability || 0.5;
       const floorY = context.floorY ?? touchStart.position.y;
 
-      // Queue depth-enhanced placement for next render frame
-      // (XRCPUDepthInformation expires outside the animation callback)
       if (hasDepth) {
         const lastTouch = e.changedTouches[0];
         if (lastTouch) {
-          pendingDepthTapRef.current = {
+          // Start multi-frame depth accumulation
+          accumulatedCloudRef.current = [];
+          measureFrameCountRef.current = 0;
+          measureStartTimeRef.current = Date.now();
+          dispatch({
+            type: 'START_MEASURING',
             normX: lastTouch.clientX / window.innerWidth,
             normY: lastTouch.clientY / window.innerHeight,
             floorY,
             stability,
             fallbackPosition: touchStart.position.clone(),
-          };
+          });
           return;
         }
       }
