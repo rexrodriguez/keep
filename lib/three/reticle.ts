@@ -81,12 +81,12 @@ export function createReticle(): THREE.Group {
   vLine2.userData.mode = 'surface';
   group.add(vLine2);
 
-  // === Targeting mode children (cyan crosshair) ===
-  const CYAN = 0x22d3ee;
+  // === Targeting mode children (red crosshair) ===
+  const TARGET_COLOR = 0xff2222;
   const ARM = 0.05;  // 5cm arms
   const GAP = 0.015; // 1.5cm center gap
 
-  const targetLineMat = new THREE.LineBasicMaterial({ color: CYAN, linewidth: 2 });
+  const targetLineMat = new THREE.LineBasicMaterial({ color: TARGET_COLOR, linewidth: 3 });
 
   // Horizontal arms
   const thLeft = new THREE.Line(
@@ -137,7 +137,7 @@ export function createReticle(): THREE.Group {
   // Center dot for targeting
   const targetDotGeo = new THREE.CircleGeometry(0.005, 16);
   const targetDotMat = new THREE.MeshBasicMaterial({
-    color: CYAN,
+    color: TARGET_COLOR,
     side: THREE.DoubleSide,
   });
   const targetDot = new THREE.Mesh(targetDotGeo, targetDotMat);

@@ -198,7 +198,9 @@ export function fitBoxFromDepth(
     tapBufX, tapBufY, tapWorld, floorY,
     buffer, width, height, bufToView,
     projMatrixInv, viewMatrixInv, worldToView,
-    35,           // rPx: sample disk radius in buffer pixels
+    38,           // rOuterPx: outer annulus radius in buffer pixels
+    10,           // rInnerPx: inner annulus radius (skip tap-center bias)
+    1,            // stride: sample every pixel
     maxXZRadius   // maxXZ: adaptive gating radius
   );
 
@@ -245,10 +247,10 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
- * Build a dense local point cloud by sampling a disk of pixels around the
- * tap point in buffer space. Filters by floor, XZ distance, and view-space
- * depth consistency. This is more robust than flood-fill or ray-march at
- * 160×90 resolution because it uses all available depth signal statistically.
+ * Build a local point cloud by sampling an annulus of pixels around the
+ * tap point in buffer space. The annulus (ring) skips interior pixels near
+ * the tap center, reducing bias toward the tap point and emphasizing
+ * edge-relevant samples for better extent estimation.
  */
 function buildLocalCloud(
   tapBufX: number,
@@ -262,16 +264,19 @@ function buildLocalCloud(
   projInv: THREE.Matrix4,
   viewInv: THREE.Matrix4,
   worldToView: THREE.Matrix4,
-  rPx: number,
+  rOuterPx: number,
+  rInnerPx: number,
+  stride: number,
   maxXZ: number
 ): THREE.Vector3[] {
   const pts: THREE.Vector3[] = [];
-  const r2 = rPx * rPx;
+  const rOuter2 = rOuterPx * rOuterPx;
+  const rInner2 = rInnerPx * rInnerPx;
 
-  const x0 = Math.max(0, Math.floor(tapBufX - rPx));
-  const x1 = Math.min(bufW - 1, Math.ceil(tapBufX + rPx));
-  const y0 = Math.max(0, Math.floor(tapBufY - rPx));
-  const y1 = Math.min(bufH - 1, Math.ceil(tapBufY + rPx));
+  const x0 = Math.max(0, Math.floor(tapBufX - rOuterPx));
+  const x1 = Math.min(bufW - 1, Math.ceil(tapBufX + rOuterPx));
+  const y0 = Math.max(0, Math.floor(tapBufY - rOuterPx));
+  const y1 = Math.min(bufH - 1, Math.ceil(tapBufY + rOuterPx));
 
   // View-space Z of tap point for depth consistency
   const tv = new THREE.Vector4(tapWorld.x, tapWorld.y, tapWorld.z, 1).applyMatrix4(worldToView);
@@ -279,11 +284,13 @@ function buildLocalCloud(
   // Allow surfaces up to 5cm + 4% behind the tap depth (reject background walls)
   const zTol = 0.05 + 0.04 * tapViewZ;
 
-  for (let y = y0; y <= y1; y++) {
+  for (let y = y0; y <= y1; y += stride) {
     const dy = y - tapBufY;
-    for (let x = x0; x <= x1; x++) {
+    for (let x = x0; x <= x1; x += stride) {
       const dx = x - tapBufX;
-      if (dx * dx + dy * dy > r2) continue;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > rOuter2) continue;
+      if (d2 < rInner2) continue; // annulus: skip interior
 
       const d = depthBuf[y * bufW + x];
       if (!(d > 0)) continue;
@@ -455,19 +462,23 @@ function fitQuantileBox(
   uVals.sort((a, b) => a - b);
   vVals.sort((a, b) => a - b);
 
-  const qLo = 0.05, qHi = 0.95;
+  // Adaptive quantiles: tighten when cloud is small, widen when dense
+  const n = localCloud.length;
+  const qLo = n < 150 ? 0.10 : (n > 600 ? 0.02 : 0.05);
+  const qHi = 1 - qLo;
+
   const u0 = percentile(uVals, qLo), u1 = percentile(uVals, qHi);
   const v0 = percentile(vVals, qLo), v1 = percentile(vVals, qHi);
 
   const width_m = clamp(u1 - u0, 0.05, 5.0);
   const depth_m = clamp(v1 - v0, 0.05, 5.0);
 
-  // Center at quantile midpoint
-  const uMid = (u0 + u1) * 0.5;
-  const vMid = (v0 + v1) * 0.5;
+  // Center from medians (more stable than midpoint when outliers are asymmetric)
+  const uMed = percentile(uVals, 0.50);
+  const vMed = percentile(vVals, 0.50);
   const center = tapWorld.clone()
-    .addScaledVector(U, uMid)
-    .addScaledVector(V, vMid);
+    .addScaledVector(U, uMed)
+    .addScaledVector(V, vMed);
   center.y = floorY + height_m / 2;
 
   const rotation_deg = (yaw * 180) / Math.PI;
@@ -492,7 +503,7 @@ function fitQuantileBox(
   return {
     center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence,
     _pcaRatio: pca.ratio, _yawSource: yawSource,
-    _quantileExtents: `U[${u0.toFixed(2)},${u1.toFixed(2)}] V[${v0.toFixed(2)},${v1.toFixed(2)}]`
+    _quantileExtents: `q=${qLo.toFixed(2)}..${qHi.toFixed(2)} U[${u0.toFixed(2)},${u1.toFixed(2)}] V[${v0.toFixed(2)},${v1.toFixed(2)}]`
   };
 }
 
