@@ -50,18 +50,30 @@ export default function MeasurementUI({
 
   // Show confirmation popup when entering REVIEW state
   const [showConfirmPopup, setShowConfirmPopup] = React.useState(false);
+  // Show "Added!" toast when item is added (REVIEW → READY_TO_DRAW transition)
+  const [showAddedToast, setShowAddedToast] = React.useState(false);
   const prevStateRef = React.useRef(context.state);
+  const prevItemCountRef = React.useRef(itemCount);
 
   React.useEffect(() => {
     // Detect transition from HEIGHT_INPUT to REVIEW
     if (prevStateRef.current === 'HEIGHT_INPUT' && context.state === 'REVIEW') {
       setShowConfirmPopup(true);
-      // Auto-hide after 2 seconds
       const timer = setTimeout(() => setShowConfirmPopup(false), 2000);
+      prevStateRef.current = context.state;
+      return () => clearTimeout(timer);
+    }
+    // Detect item added (REVIEW → READY_TO_DRAW with itemCount increase)
+    if (prevStateRef.current === 'REVIEW' && context.state === 'READY_TO_DRAW' && itemCount > prevItemCountRef.current) {
+      setShowAddedToast(true);
+      const timer = setTimeout(() => setShowAddedToast(false), 1500);
+      prevStateRef.current = context.state;
+      prevItemCountRef.current = itemCount;
       return () => clearTimeout(timer);
     }
     prevStateRef.current = context.state;
-  }, [context.state]);
+    prevItemCountRef.current = itemCount;
+  }, [context.state, itemCount]);
 
   // Fade UI after inactivity to let AR breathe
   const [isIdle, setIsIdle] = React.useState(false);
@@ -188,6 +200,12 @@ export default function MeasurementUI({
             </div>
           </div>
         )}
+        {showAddedToast && (
+          <div className="bg-green-500/90 backdrop-blur-md rounded-2xl px-6 py-3 text-center animate-fade-in-out">
+            <div className="text-white font-medium">Added to list</div>
+            <div className="text-white/80 text-sm">Tap Done when finished</div>
+          </div>
+        )}
       </div>
 
       {/* Bottom panel - Adjustment controls (fades when idle to let AR breathe) */}
@@ -221,7 +239,9 @@ export default function MeasurementUI({
         <div className="pointer-events-none pb-8 px-4">
           <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm">
-              Point at the floor and tap to set the surface
+              {itemCount > 0
+                ? 'Measure another item, or tap Done'
+                : 'Point at the floor and tap to set the surface'}
             </span>
           </div>
         </div>

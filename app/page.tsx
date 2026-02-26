@@ -61,9 +61,13 @@ export default function Home() {
   }, []);
 
   const handleExitAR = useCallback(() => {
-    setAppState('READY');
-    setMeasuredItems([]);
-  }, []);
+    // If items exist, go to list instead of discarding them
+    if (measuredItems.length > 0) {
+      setAppState('ITEM_LIST');
+    } else {
+      setAppState('READY');
+    }
+  }, [measuredItems.length]);
 
   const handleAddItem = useCallback((item: MeasuredItem) => {
     setMeasuredItems(prev => [...prev, item]);

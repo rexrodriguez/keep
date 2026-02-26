@@ -938,13 +938,13 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   }, [context.dragStart, context.dragEnd, context.width_m, context.depth_m, context.height_m, context.llmEstimate, onAddItem, dispatch]);
 
   const handleDone = useCallback(() => {
-    cleanup();
+    try { cleanup(); } catch (e) { console.error('Cleanup error:', e); }
     dispatch({ type: 'END_SESSION' });
     onDone();
   }, [cleanup, dispatch, onDone]);
 
   const handleExit = useCallback(() => {
-    cleanup();
+    try { cleanup(); } catch (e) { console.error('Cleanup error:', e); }
     dispatch({ type: 'END_SESSION' });
     onExit();
   }, [cleanup, dispatch, onExit]);
