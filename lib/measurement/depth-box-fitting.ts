@@ -548,9 +548,14 @@ export function fitQuantileBox(
     0.05, 5.0
   );
 
-  // --- Yaw from minimum-area bounding rectangle (view-invariant) ---
-  const xzPoints = localCloud.map(p => ({ x: p.x, z: p.z }));
-  const yaw = localCloud.length >= 3 ? minimumAreaBoundingRect(xzPoints) : 0;
+  // --- Yaw from minimum-area bounding rectangle on TOP surface ---
+  // Side-face points shift the XZ footprint depending on viewing angle.
+  // Top-face points project to the true footprint regardless of camera position.
+  const topThreshold = topY - 0.03; // within 3cm of top surface
+  const topPoints = localCloud.filter(p => p.y > topThreshold);
+  const orientCloud = topPoints.length >= 10 ? topPoints : localCloud;
+  const xzPoints = orientCloud.map(p => ({ x: p.x, z: p.z }));
+  const yaw = xzPoints.length >= 3 ? minimumAreaBoundingRect(xzPoints) : 0;
 
   // --- Rotate into yaw-aligned frame and compute quantile extents ---
   const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -601,7 +606,7 @@ export function fitQuantileBox(
 
   console.log(
     `Box fit (MABR): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
-    `rot=${rotation_deg.toFixed(1)}°, ` +
+    `rot=${rotation_deg.toFixed(1)}°, topPts=${topPoints.length}/${pixelCount}, ` +
     `cloud=${pixelCount} pts, U=[${u0.toFixed(2)},${u1.toFixed(2)}] V=[${v0.toFixed(2)},${v1.toFixed(2)}], ` +
     `ctr_offset=(${uC.toFixed(3)},${vC.toFixed(3)}), confidence=${confidence}`
   );
