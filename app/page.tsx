@@ -6,8 +6,8 @@ import LandingPage from '@/components/LandingPage';
 import CapabilityCheck from '@/components/CapabilityCheck';
 import RadiusSlider from '@/components/RadiusSlider';
 import ResultsDisplay from '@/components/ResultsDisplay';
-import { MeasurementData, StorageSearchResponse, StorageSearchRequest } from '@/lib/types';
-import { toComputedMeasurements } from '@/lib/measurement/calculations';
+import { MeasuredItem, StorageSearchResponse, StorageSearchRequest } from '@/lib/types';
+import { totalVolume } from '@/lib/measurement/calculations';
 
 // Dynamically import ARSession to avoid SSR issues with Three.js
 const ARSession = dynamic(() => import('@/components/ARSession'), {
@@ -25,13 +25,21 @@ type AppState =
   | 'UNSUPPORTED'
   | 'READY'
   | 'AR_ACTIVE'
+  | 'ITEM_LIST'
   | 'RADIUS_SELECT'
   | 'SEARCHING'
   | 'RESULTS';
 
+// Temporary placeholder — will be replaced in Task 5
+const ItemListView = ({ onAddMore }: { items: MeasuredItem[]; onDelete: (id: string) => void; onAddMore: () => void; onFindStorage: () => void }) => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-900">
+    <button onClick={onAddMore} className="text-white">Placeholder - Add More</button>
+  </div>
+);
+
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('LANDING');
-  const [measurementData, setMeasurementData] = useState<MeasurementData | null>(null);
+  const [measuredItems, setMeasuredItems] = useState<MeasuredItem[]>([]);
   const [radiusMiles, setRadiusMiles] = useState(5);
   const [searchResults, setSearchResults] = useState<StorageSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,20 +67,27 @@ export default function Home() {
 
   const handleExitAR = useCallback(() => {
     setAppState('READY');
-    setMeasurementData(null);
+    setMeasuredItems([]);
   }, []);
 
-  const handleFindStorage = useCallback((data: MeasurementData) => {
-    setMeasurementData(data);
-    setAppState('RADIUS_SELECT');
+  const handleAddItem = useCallback((item: MeasuredItem) => {
+    setMeasuredItems(prev => [...prev, item]);
   }, []);
 
-  const handleBackToAR = useCallback(() => {
+  const handleDone = useCallback(() => {
+    setAppState('ITEM_LIST');
+  }, []);
+
+  const handleDeleteItem = useCallback((id: string) => {
+    setMeasuredItems(prev => prev.filter(item => item.id !== id));
+  }, []);
+
+  const handleAddMore = useCallback(() => {
     setAppState('AR_ACTIVE');
   }, []);
 
   const handleSearch = useCallback(async () => {
-    if (!measurementData) return;
+    if (measuredItems.length === 0) return;
 
     setAppState('SEARCHING');
 
@@ -97,15 +112,16 @@ export default function Home() {
         // Continue without location
       }
 
-      // Prepare request (convert miles to km for API)
-      const computed = toComputedMeasurements(measurementData);
-      const radiusKm = radiusMiles * 1.60934;
+      // Use the largest item's dimensions for the API request
+      const largest = measuredItems.reduce((a, b) =>
+        a.width_m * a.depth_m * a.height_m > b.width_m * b.depth_m * b.height_m ? a : b
+      );
       const request: StorageSearchRequest = {
-        width_cm: computed.width_cm,
-        depth_cm: computed.depth_cm,
-        height_cm: computed.height_cm,
-        volume_m3: computed.volume_m3,
-        radius_km: radiusKm,
+        width_cm: largest.width_m * 100,
+        depth_cm: largest.depth_m * 100,
+        height_cm: largest.height_m * 100,
+        volume_m3: totalVolume(measuredItems),
+        radius_km: radiusMiles * 1.60934,
         user_location: userLocation,
         timestamp: new Date().toISOString(),
       };
@@ -129,16 +145,15 @@ export default function Home() {
       setError('Failed to search for storage. Please try again.');
       setAppState('RADIUS_SELECT');
     }
-  }, [measurementData, radiusMiles]);
+  }, [measuredItems, radiusMiles]);
 
   const handleBackToRadius = useCallback(() => {
     setAppState('RADIUS_SELECT');
   }, []);
 
   const handleNewMeasurement = useCallback(() => {
-    setMeasurementData(null);
     setSearchResults(null);
-    setAppState('AR_ACTIVE');
+    setAppState('ITEM_LIST');
   }, []);
 
   // Render based on app state
@@ -263,10 +278,23 @@ export default function Home() {
         <ARSession
           overlayRef={overlayRef}
           onExit={handleExitAR}
-          onFindStorage={handleFindStorage}
+          onAddItem={handleAddItem}
+          onDone={handleDone}
+          itemCount={measuredItems.length}
           tutorialEnabled={tutorialEnabled}
         />
       </>
+    );
+  }
+
+  if (appState === 'ITEM_LIST') {
+    return (
+      <ItemListView
+        items={measuredItems}
+        onDelete={handleDeleteItem}
+        onAddMore={handleAddMore}
+        onFindStorage={() => setAppState('RADIUS_SELECT')}
+      />
     );
   }
 
@@ -276,7 +304,7 @@ export default function Home() {
         value={radiusMiles}
         onChange={setRadiusMiles}
         onSearch={handleSearch}
-        onBack={handleBackToAR}
+        onBack={() => setAppState('ITEM_LIST')}
         isSearching={appState === 'SEARCHING'}
       />
     );
