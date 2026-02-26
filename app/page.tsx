@@ -38,7 +38,6 @@ export default function Home() {
   const [radiusMiles, setRadiusMiles] = useState(5);
   const [searchResults, setSearchResults] = useState<StorageSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tutorialEnabled, setTutorialEnabled] = useState(true);
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -216,39 +215,28 @@ export default function Home() {
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   1
                 </span>
-                Point your camera at the floor until a surface is detected
+                Tap the floor to lock the surface, then tap your object to measure it
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   2
                 </span>
-                Tap to place a measurement box on the floor
+                Adjust the bounding box by dragging to resize, rotate, or move
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   3
                 </span>
-                Aim the reticle at an arrow handle, then drag to resize, rotate, or move the box
+                Add each item to your list, then tap Done when finished
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 bg-blue-500/20 text-blue-400 rounded-full flex items-center justify-center flex-shrink-0 text-xs">
                   4
                 </span>
-                Confirm dimensions and find matching storage units nearby
+                Find storage units nearby that fit all your items
               </li>
             </ol>
           </div>
-
-          {/* Tutorial toggle */}
-          <label className="flex items-center justify-center gap-3 mb-6 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={tutorialEnabled}
-              onChange={(e) => setTutorialEnabled(e.target.checked)}
-              className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-900"
-            />
-            <span className="text-gray-300 text-sm">Show tutorial walkthrough</span>
-          </label>
 
           {/* Start button */}
           <button
@@ -280,7 +268,6 @@ export default function Home() {
           onAddItem={handleAddItem}
           onDone={handleDone}
           itemCount={measuredItems.length}
-          tutorialEnabled={tutorialEnabled}
         />
       </>
     );
