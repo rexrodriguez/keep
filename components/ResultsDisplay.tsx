@@ -44,7 +44,7 @@ export default function ResultsDisplay({
         <div className="bg-gray-800 rounded-lg p-3 text-sm">
           <span className="text-gray-400">Your object: </span>
           <span className="text-white">
-            {cmToInches(object_dimensions.width_cm).toFixed(0)}" × {cmToInches(object_dimensions.depth_cm).toFixed(0)}" × {cmToInches(object_dimensions.height_cm).toFixed(0)}"
+            {cmToInches(object_dimensions.width_cm).toFixed(0)}&quot; &times; {cmToInches(object_dimensions.depth_cm).toFixed(0)}&quot; &times; {cmToInches(object_dimensions.height_cm).toFixed(0)}&quot;
           </span>
           <span className="text-gray-400 ml-2">
             ({m3ToCubicFeet(object_dimensions.volume_m3).toFixed(1)} cu ft)
@@ -196,7 +196,7 @@ function FacilityCard({ facility, objectDimensions }: FacilityCardProps) {
                     )}
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {cmToInches(unit.width_cm).toFixed(0)}" × {cmToInches(unit.depth_cm).toFixed(0)}" × {cmToInches(unit.height_cm).toFixed(0)}"
+                    {cmToInches(unit.width_cm).toFixed(0)}&quot; &times; {cmToInches(unit.depth_cm).toFixed(0)}&quot; &times; {cmToInches(unit.height_cm).toFixed(0)}&quot;
                   </p>
                 </div>
                 <div className="text-right">

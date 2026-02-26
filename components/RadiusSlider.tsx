@@ -75,8 +75,8 @@ export default function RadiusSlider({
 
           {/* Info text */}
           <p className="text-white/60 text-center text-sm">
-            We'll search for storage facilities within {value} {value === 1 ? 'mile' : 'miles'} of your location.
-            If location access is denied, we'll show results without distance info.
+            We&apos;ll search for storage facilities within {value} {value === 1 ? 'mile' : 'miles'} of your location.
+            If location access is denied, we&apos;ll show results without distance info.
           </p>
         </div>
       </div>

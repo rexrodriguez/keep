@@ -127,11 +127,11 @@ export default function MeasurementUI({
           {showBottomPanel && measurements && (
             <div className="bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2">
               <div className="flex items-center gap-3 text-sm text-white">
-                <span>{widthInches}"</span>
-                <span className="text-white/40">×</span>
-                <span>{depthInches}"</span>
-                <span className="text-white/40">×</span>
-                <span>{heightInches}"</span>
+                <span>{widthInches}&quot;</span>
+                <span className="text-white/40">&times;</span>
+                <span>{depthInches}&quot;</span>
+                <span className="text-white/40">&times;</span>
+                <span>{heightInches}&quot;</span>
               </div>
             </div>
           )}

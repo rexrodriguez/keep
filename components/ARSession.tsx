@@ -70,6 +70,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   const [tutorialStep, setTutorialStep] = useState<TutorialStep>(tutorialEnabled ? 'surface' : 'complete');
   const [controlMode, setControlMode] = useState<ControlMode>('move');
   const [hasDepth, setHasDepth] = useState(false);
+  const hasDepthRef = useRef(false);
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -112,154 +113,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   // Track latest context inside handleFrame (avoids stale closure with [] deps)
   const contextRef = useRef(context);
   contextRef.current = context;
-
-  // Initialize AR session
-  useEffect(() => {
-    let mounted = true;
-
-    async function init() {
-      if (!containerRef.current) return;
-
-      try {
-        // Create Three.js scene
-        const sceneCtx = createARScene(containerRef.current);
-        sceneContextRef.current = sceneCtx;
-
-        // Create reticle
-        const reticle = createReticle();
-        sceneCtx.scene.add(reticle);
-        reticleRef.current = reticle;
-
-        // Create target marker for LLM estimation
-        const targetMarker = createTargetMarker();
-        sceneCtx.scene.add(targetMarker);
-        targetMarkerRef.current = targetMarker;
-
-        // Start AR session
-        const xrCtx = await startARSession(
-          sceneCtx.renderer,
-          overlayRef.current || undefined
-        );
-        xrContextRef.current = xrCtx;
-
-        // Create render loop
-        const loop = createRenderLoop(
-          xrCtx,
-          sceneCtx.scene,
-          sceneCtx.camera,
-          handleFrame
-        );
-        renderLoopRef.current = loop;
-        loop.start();
-
-        if (mounted) {
-          dispatch({ type: 'AR_STARTED' });
-        }
-      } catch (error) {
-        console.error('Failed to start AR session:', error);
-        if (mounted) {
-          dispatch({
-            type: 'AR_FAILED',
-            error: error instanceof Error ? error.message : 'Failed to start AR',
-          });
-        }
-      }
-    }
-
-    init();
-
-    return () => {
-      mounted = false;
-      cleanup();
-    };
-  }, [dispatch, overlayRef]);
-
-  // Update target marker when target point changes
-  useEffect(() => {
-    if (targetMarkerRef.current) {
-      updateTargetMarker(
-        targetMarkerRef.current,
-        context.targetPoint?.position || null,
-        context.targetPoint !== null && context.state === 'READY_TO_DRAW'
-      );
-    }
-  }, [context.targetPoint, context.state]);
-
-  // Switch reticle mode based on state
-  useEffect(() => {
-    if (reticleRef.current) {
-      setReticleMode(
-        reticleRef.current,
-        (context.state === 'FLOOR_LOCKED' || context.state === 'MEASURING') ? 'targeting' : 'surface'
-      );
-    }
-  }, [context.state]);
-
-  // Floor grid lifecycle: add on FLOOR_LOCKED, remove on exit
-  useEffect(() => {
-    if (!sceneContextRef.current) return;
-
-    if (context.state === 'FLOOR_LOCKED' && context.floorLockPoint && context.floorY !== null) {
-      addFloorGrid(sceneContextRef.current.scene, context.floorLockPoint, context.floorY);
-    } else if (context.state === 'READY_TO_DRAW') {
-      // Grid removed when going back to READY_TO_DRAW (undo/reset)
-      disposeFloorGrid(sceneContextRef.current.scene);
-    }
-  }, [context.state, context.floorLockPoint, context.floorY]);
-
-  // Calculate hitbox scale factor based on screen size
-  // Larger screens need larger hitboxes for easier touch targeting
-  // Baseline: iPhone 13 width (~390px) = 1.0, larger screens scale up
-  const getHitScaleFactor = useCallback(() => {
-    const baselineWidth = 390; // iPhone 13 width
-    const screenWidth = window.innerWidth;
-    // Scale up for larger screens, minimum 1.0, cap at 1.8
-    return Math.min(1.8, Math.max(1.0, screenWidth / baselineWidth));
-  }, []);
-
-  // Update bounding box when drag points or dimensions change
-  useEffect(() => {
-    if (sceneContextRef.current) {
-      // Show bounding box during drawing, height input, or review
-      const showBox = context.dragStart && context.dragEnd;
-
-      if (showBox) {
-        // Always pass width/depth from state so rollers affect the box
-        updateBoundingBox(
-          sceneContextRef.current.scene,
-          context.dragStart,
-          context.dragEnd,
-          context.height_m,
-          context.width_m,
-          context.depth_m,
-          context.rotation_deg,
-          getHitScaleFactor(),
-          controlMode
-        );
-      } else {
-        disposeBoundingBox(sceneContextRef.current.scene);
-      }
-    }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, getHitScaleFactor, controlMode]);
-
-  // Update measurements when dimensions change
-  useEffect(() => {
-    if (context.dragStart && context.dragEnd && context.state !== 'DRAWING') {
-      // Always use width/depth/height from state
-      const data = calculateMeasurementsFromLLM(
-        context.dragStart,
-        context.width_m,
-        context.depth_m,
-        context.height_m,
-        context.llmEstimate?.confidence || 'MEDIUM'
-      );
-      setMeasurements(toComputedMeasurements(data));
-      setConfidence(data.confidence);
-    } else if (!context.dragStart || !context.dragEnd) {
-      setMeasurements(null);
-      setConfidence(null);
-    }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.state, context.llmEstimate]);
+  hasDepthRef.current = hasDepth;
 
   const handleFrame = useCallback((data: FrameData) => {
     const { hitTest, frame } = data;
@@ -268,7 +122,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
     currentFrameRef.current = frame;
     currentDepthRef.current = data.depthData;
     currentViewerPoseRef.current = data.viewerPose;
-    if (data.depthData && !hasDepth) {
+    if (data.depthData && !hasDepthRef.current) {
       setHasDepth(true);
     }
 
@@ -409,7 +263,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       // Don't clear lastValidHitRef - keep it for dragging continuity
       setTrackingWarning('Point at a flat surface');
     }
-  }, []);
+  }, [dispatch]);
 
   const cleanup = useCallback(() => {
     if (renderLoopRef.current) {
@@ -427,6 +281,154 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       disposeScene(sceneContextRef.current);
     }
   }, []);
+
+  // Initialize AR session
+  useEffect(() => {
+    let mounted = true;
+
+    async function init() {
+      if (!containerRef.current) return;
+
+      try {
+        // Create Three.js scene
+        const sceneCtx = createARScene(containerRef.current);
+        sceneContextRef.current = sceneCtx;
+
+        // Create reticle
+        const reticle = createReticle();
+        sceneCtx.scene.add(reticle);
+        reticleRef.current = reticle;
+
+        // Create target marker for LLM estimation
+        const targetMarker = createTargetMarker();
+        sceneCtx.scene.add(targetMarker);
+        targetMarkerRef.current = targetMarker;
+
+        // Start AR session
+        const xrCtx = await startARSession(
+          sceneCtx.renderer,
+          overlayRef.current || undefined
+        );
+        xrContextRef.current = xrCtx;
+
+        // Create render loop
+        const loop = createRenderLoop(
+          xrCtx,
+          sceneCtx.scene,
+          sceneCtx.camera,
+          handleFrame
+        );
+        renderLoopRef.current = loop;
+        loop.start();
+
+        if (mounted) {
+          dispatch({ type: 'AR_STARTED' });
+        }
+      } catch (error) {
+        console.error('Failed to start AR session:', error);
+        if (mounted) {
+          dispatch({
+            type: 'AR_FAILED',
+            error: error instanceof Error ? error.message : 'Failed to start AR',
+          });
+        }
+      }
+    }
+
+    init();
+
+    return () => {
+      mounted = false;
+      cleanup();
+    };
+  }, [dispatch, overlayRef, handleFrame, cleanup]);
+
+  // Update target marker when target point changes
+  useEffect(() => {
+    if (targetMarkerRef.current) {
+      updateTargetMarker(
+        targetMarkerRef.current,
+        context.targetPoint?.position || null,
+        context.targetPoint !== null && context.state === 'READY_TO_DRAW'
+      );
+    }
+  }, [context.targetPoint, context.state]);
+
+  // Switch reticle mode based on state
+  useEffect(() => {
+    if (reticleRef.current) {
+      setReticleMode(
+        reticleRef.current,
+        (context.state === 'FLOOR_LOCKED' || context.state === 'MEASURING') ? 'targeting' : 'surface'
+      );
+    }
+  }, [context.state]);
+
+  // Floor grid lifecycle: add on FLOOR_LOCKED, remove on exit
+  useEffect(() => {
+    if (!sceneContextRef.current) return;
+
+    if (context.state === 'FLOOR_LOCKED' && context.floorLockPoint && context.floorY !== null) {
+      addFloorGrid(sceneContextRef.current.scene, context.floorLockPoint, context.floorY);
+    } else if (context.state === 'READY_TO_DRAW') {
+      // Grid removed when going back to READY_TO_DRAW (undo/reset)
+      disposeFloorGrid(sceneContextRef.current.scene);
+    }
+  }, [context.state, context.floorLockPoint, context.floorY]);
+
+  // Calculate hitbox scale factor based on screen size
+  // Larger screens need larger hitboxes for easier touch targeting
+  // Baseline: iPhone 13 width (~390px) = 1.0, larger screens scale up
+  const getHitScaleFactor = useCallback(() => {
+    const baselineWidth = 390; // iPhone 13 width
+    const screenWidth = window.innerWidth;
+    // Scale up for larger screens, minimum 1.0, cap at 1.8
+    return Math.min(1.8, Math.max(1.0, screenWidth / baselineWidth));
+  }, []);
+
+  // Update bounding box when drag points or dimensions change
+  useEffect(() => {
+    if (sceneContextRef.current) {
+      // Show bounding box during drawing, height input, or review
+      const showBox = context.dragStart && context.dragEnd;
+
+      if (showBox) {
+        // Always pass width/depth from state so rollers affect the box
+        updateBoundingBox(
+          sceneContextRef.current.scene,
+          context.dragStart,
+          context.dragEnd,
+          context.height_m,
+          context.width_m,
+          context.depth_m,
+          context.rotation_deg,
+          getHitScaleFactor(),
+          controlMode
+        );
+      } else {
+        disposeBoundingBox(sceneContextRef.current.scene);
+      }
+    }
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.rotation_deg, getHitScaleFactor, controlMode]);
+
+  // Update measurements when dimensions change
+  useEffect(() => {
+    if (context.dragStart && context.dragEnd && context.state !== 'DRAWING') {
+      // Always use width/depth/height from state
+      const data = calculateMeasurementsFromLLM(
+        context.dragStart,
+        context.width_m,
+        context.depth_m,
+        context.height_m,
+        context.llmEstimate?.confidence || 'MEDIUM'
+      );
+      setMeasurements(toComputedMeasurements(data));
+      setConfidence(data.confidence);
+    } else if (!context.dragStart || !context.dragEnd) {
+      setMeasurements(null);
+      setConfidence(null);
+    }
+  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.state, context.llmEstimate]);
 
   // Handle browser back button - exit AR gracefully instead of navigating away
   useEffect(() => {
@@ -885,7 +887,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, dispatch, controlMode, tutorialEnabled, hasDepth]);
+  }, [context.state, context.floorY, dispatch, controlMode, tutorialEnabled, hasDepth]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
