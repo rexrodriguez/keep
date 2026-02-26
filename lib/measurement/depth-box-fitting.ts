@@ -70,6 +70,9 @@ export function fitBoxFromDepth(
     diag.push(`xform:[${m[0].toFixed(2)},${m[4].toFixed(2)},${m[12].toFixed(2)}]/[${m[1].toFixed(2)},${m[5].toFixed(2)},${m[13].toFixed(2)}]`);
   }
   diag.push(`tapBuf:(${tapBufX},${tapBufY})`);
+  // Sanity check: log how corners map through viewToBuf
+  const t0 = viewToBuf(0, 0), t1 = viewToBuf(1, 0), t2 = viewToBuf(0, 1);
+  diag.push(`v2b: (0,0)->(${t0.x.toFixed(2)},${t0.y.toFixed(2)}) (1,0)->(${t1.x.toFixed(2)},${t1.y.toFixed(2)}) (0,1)->(${t2.x.toFixed(2)},${t2.y.toFixed(2)})`);
 
   // 3. Flood-fill from tap point
   // Depth tolerance: how far a pixel's depth can differ from the tap depth
@@ -574,42 +577,32 @@ function fitGravityAlignedBox(
 /**
  * Extract view↔buffer coordinate transforms from normDepthBufferFromNormView.
  * The depth buffer may be rotated/flipped relative to the viewport (common on Android).
+ * Uses full Matrix4 multiply to avoid row/column-major index ambiguity.
  * Returns identity transforms if the matrix is not available.
  */
 function getCoordTransforms(xform: { matrix: Float32Array } | null | undefined) {
   type CoordFn = (x: number, y: number) => { x: number; y: number };
 
   if (!xform?.matrix) {
-    // No transform available — assume identity
     const identity: CoordFn = (x, y) => ({ x, y });
     return { viewToBuf: identity, bufToView: identity };
   }
 
-  const m = xform.matrix;
-  // Extract 2D affine: bufX = a*vx + c*vy + tx, bufY = b*vx + d*vy + ty
-  const a = m[0], c = m[4], tx = m[12];
-  const b = m[1], d = m[5], ty = m[13];
+  // Use the 4x4 matrix directly — avoids all layout/index assumptions.
+  const M = new THREE.Matrix4().fromArray(xform.matrix);
+  const Minv = M.clone().invert();
 
-  const viewToBuf: CoordFn = (vx, vy) => ({
-    x: a * vx + c * vy + tx,
-    y: b * vx + d * vy + ty,
-  });
+  const viewToBuf: CoordFn = (vx, vy) => {
+    const v = new THREE.Vector4(vx, vy, 0, 1).applyMatrix4(M);
+    const iw = Math.abs(v.w) > 1e-8 ? 1 / v.w : 1;
+    return { x: v.x * iw, y: v.y * iw };
+  };
 
-  // Compute 2D affine inverse
-  const det = a * d - b * c;
-  if (Math.abs(det) < 1e-10) {
-    // Degenerate transform — fall back to identity
-    const identity: CoordFn = (x, y) => ({ x, y });
-    return { viewToBuf: identity, bufToView: identity };
-  }
-
-  const ia = d / det, ic = -c / det, itx = (c * ty - d * tx) / det;
-  const ib = -b / det, id = a / det, ity = (b * tx - a * ty) / det;
-
-  const bufToView: CoordFn = (bx, by) => ({
-    x: ia * bx + ic * by + itx,
-    y: ib * bx + id * by + ity,
-  });
+  const bufToView: CoordFn = (bx, by) => {
+    const v = new THREE.Vector4(bx, by, 0, 1).applyMatrix4(Minv);
+    const iw = Math.abs(v.w) > 1e-8 ? 1 / v.w : 1;
+    return { x: v.x * iw, y: v.y * iw };
+  };
 
   return { viewToBuf, bufToView };
 }
