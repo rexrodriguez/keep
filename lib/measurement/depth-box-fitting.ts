@@ -399,6 +399,10 @@ function marchExtentXZ(
     return { bestW, bestDist };
   }
 
+  // Camera world position from view inverse (translation column of camera transform)
+  const camPos = new THREE.Vector3();
+  camPos.setFromMatrixPosition(viewInv);
+
   const P = new THREE.Vector3();
   let lastGood = 0;
   let missStreak = 0;
@@ -433,7 +437,12 @@ function marchExtentXZ(
       const pz = vz - along * dirXZ.z;
       const perp = Math.sqrt(px * px + pz * pz);
 
-      if (Math.abs(along - t) <= alongEps && perp <= perpEps) {
+      // Depth ordering: surface must not be significantly farther from
+      // camera than candidate P — rejects background walls behind the object
+      const camToP = P.distanceTo(camPos);
+      const camToW = bestW.distanceTo(camPos);
+
+      if (Math.abs(along - t) <= alongEps && perp <= perpEps && camToW <= camToP + 0.03) {
         lastGood = t;
         missStreak = 0;
       } else {
