@@ -293,6 +293,74 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
+ * Compute silhouette-based yaw from a single depth frame.
+ * Runs flood-fill → boundary extraction → 2D PCA → world-space yaw.
+ * Used during multi-frame accumulation to get orientation from the first good frame.
+ */
+export function computeSilhouetteYawFromDepth(
+  depthData: DepthData,
+  tapNormX: number,
+  tapNormY: number,
+  viewerPose: XRViewerPose
+): { yaw: number; quality: number } | null {
+  const { width, height } = depthData;
+
+  const centerDepth = getDepthAtNormalized(depthData, tapNormX, tapNormY);
+  if (centerDepth <= 0 || centerDepth > 10) return null;
+
+  const buffer = getDepthBuffer(depthData);
+  if (!buffer) return null;
+
+  const depthInfo = depthData.depthInfo;
+  const xform = depthInfo.normDepthBufferFromNormView;
+  const { viewToBuf, bufToView } = getCoordTransforms(xform);
+
+  const tapBuf = viewToBuf(tapNormX, tapNormY);
+  const tapBufX = Math.round(tapBuf.x * (width - 1));
+  const tapBufY = Math.round(tapBuf.y * (height - 1));
+
+  // Flood-fill
+  const depthTolerance = Math.min(Math.max(centerDepth * 0.06, 0.03), 0.12);
+  const gradientThreshold = Math.max(centerDepth * 0.02, 0.015);
+  const maxPixelRadius = Math.round(Math.max(width, height) * 0.30);
+
+  const region = floodFillDepth(
+    buffer, width, height,
+    tapBufX, tapBufY,
+    centerDepth, depthTolerance,
+    gradientThreshold, maxPixelRadius
+  );
+
+  if (region.count < 20) return null;
+
+  // Extract boundary
+  const boundary: [number, number][] = [];
+  for (let by = region.minY; by <= region.maxY; by++) {
+    for (let bx = region.minX; bx <= region.maxX; bx++) {
+      const idx = by * width + bx;
+      if (!region.mask[idx]) continue;
+      const left  = bx > 0          ? region.mask[idx - 1] : 0;
+      const right = bx < width - 1  ? region.mask[idx + 1] : 0;
+      const up    = by > 0          ? region.mask[idx - width] : 0;
+      const down  = by < height - 1 ? region.mask[idx + width] : 0;
+      if (!(left && right && up && down)) {
+        boundary.push([bx, by]);
+      }
+    }
+  }
+
+  if (boundary.length < 20) return null;
+
+  const view = viewerPose.views[0];
+  const projMatrixInv = new THREE.Matrix4().fromArray(view.projectionMatrix).invert();
+  const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
+
+  return estimateYawFromSilhouette(
+    boundary, buffer, width, height, bufToView, projMatrixInv, viewMatrixInv
+  );
+}
+
+/**
  * Build a local point cloud by sampling an annulus of pixels around the
  * tap point in buffer space. The annulus (ring) skips interior pixels near
  * the tap center, reducing bias toward the tap point and emphasizing

@@ -41,7 +41,7 @@ import {
 } from '@/lib/measurement/calculations';
 import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
 import { DepthData } from '@/lib/webxr/depth-sensing';
-import { buildCloudFromDepth, fitQuantileBox } from '@/lib/measurement/depth-box-fitting';
+import { buildCloudFromDepth, fitQuantileBox, computeSilhouetteYawFromDepth } from '@/lib/measurement/depth-box-fitting';
 import MeasurementUI from './MeasurementUI';
 
 interface ARSessionProps {
@@ -83,6 +83,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
   const accumulatedCloudRef = useRef<THREE.Vector3[]>([]);
   const measureFrameCountRef = useRef(0);
   const measureStartTimeRef = useRef(0);
+  const silhouetteYawRef = useRef<{ yaw: number; quality: number } | null>(null);
   const MEASURE_TIMEOUT_MS = 500; // minimum accumulation window
   // Track touch gesture state
   const isTouchingRef = useRef(false);
@@ -294,6 +295,13 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
               cloud.push(...frameCloud.slice(0, remaining));
             }
             measureFrameCountRef.current++;
+
+            // Compute silhouette yaw from first good frame (most stable orientation signal)
+            if (!silhouetteYawRef.current && data.depthData && data.viewerPose) {
+              silhouetteYawRef.current = computeSilhouetteYawFromDepth(
+                data.depthData, tap.normX, tap.normY, data.viewerPose
+              );
+            }
           }
         } catch (err) {
           console.warn('Frame cloud build failed:', err);
@@ -316,7 +324,8 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
               return new THREE.Vector3(cx, cy, cz);
             })();
 
-            const boxResult = fitQuantileBox(cloud, tap.floorY, tapWorld, null, 0);
+            const sYaw = silhouetteYawRef.current;
+            const boxResult = fitQuantileBox(cloud, tap.floorY, tapWorld, sYaw?.yaw ?? null, sYaw?.quality ?? 0);
             console.log('Multi-frame box result:', boxResult);
 
             const anchorPoint: MeasurementPoint = {
@@ -356,6 +365,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           // Reset accumulation state
           accumulatedCloudRef.current = [];
           measureFrameCountRef.current = 0;
+          silhouetteYawRef.current = null;
         }
       } else if (elapsed >= MEASURE_TIMEOUT_MS) {
         // Timeout with no depth data — fallback
@@ -363,6 +373,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         dispatch({ type: 'PLACE_BOX', point: { position: tap.fallbackPosition.clone(), timestamp: Date.now(), stability: tap.stability } });
         accumulatedCloudRef.current = [];
         measureFrameCountRef.current = 0;
+        silhouetteYawRef.current = null;
       }
     }
 
@@ -858,6 +869,7 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
           accumulatedCloudRef.current = [];
           measureFrameCountRef.current = 0;
           measureStartTimeRef.current = Date.now();
+          silhouetteYawRef.current = null;
           dispatch({
             type: 'START_MEASURING',
             normX: lastTouch.clientX / window.innerWidth,
