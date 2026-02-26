@@ -26,6 +26,7 @@ export function createARScene(container: HTMLElement): SceneContext {
     antialias: true,
     alpha: true,
     powerPreference: 'high-performance',
+    preserveDrawingBuffer: true,
   });
 
   renderer.setPixelRatio(window.devicePixelRatio);

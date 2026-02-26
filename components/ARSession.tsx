@@ -39,7 +39,7 @@ import {
   calculateMeasurementsFromLLM,
   toComputedMeasurements,
 } from '@/lib/measurement/calculations';
-import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasurementData } from '@/lib/types';
+import { MeasurementPoint, ComputedMeasurements, ConfidenceLevel, MeasuredItem } from '@/lib/types';
 import { DepthData } from '@/lib/webxr/depth-sensing';
 import { buildCloudFromDepth, fitQuantileBox } from '@/lib/measurement/depth-box-fitting';
 import MeasurementUI from './MeasurementUI';
@@ -47,11 +47,13 @@ import MeasurementUI from './MeasurementUI';
 interface ARSessionProps {
   overlayRef: React.RefObject<HTMLDivElement | null>;
   onExit: () => void;
-  onFindStorage: (measurements: MeasurementData) => void;
+  onAddItem: (item: MeasuredItem) => void;
+  onDone: () => void;
+  itemCount: number;
   tutorialEnabled?: boolean;
 }
 
-export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialEnabled = false }: ARSessionProps) {
+export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemCount, tutorialEnabled = false }: ARSessionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneContextRef = useRef<SceneContext | null>(null);
   const xrContextRef = useRef<XRSessionContext | null>(null);
@@ -905,20 +907,39 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
     }
   }, []);
 
-  const handleFindStorage = useCallback(() => {
+  const handleAddItem = useCallback(() => {
     if (context.dragStart && context.dragEnd) {
-      // Always use width/depth/height from state
-      const data = calculateMeasurementsFromLLM(
-        context.dragStart,
-        context.width_m,
-        context.depth_m,
-        context.height_m,
-        context.llmEstimate?.confidence || 'MEDIUM'
-      );
+      // Capture thumbnail from canvas
+      let thumbnail = '';
+      if (sceneContextRef.current?.renderer) {
+        try {
+          thumbnail = sceneContextRef.current.renderer.domElement.toDataURL('image/jpeg', 0.5);
+        } catch (e) {
+          console.warn('Failed to capture thumbnail:', e);
+        }
+      }
 
-      onFindStorage(data);
+      const item: MeasuredItem = {
+        id: crypto.randomUUID(),
+        width_m: context.width_m,
+        depth_m: context.depth_m,
+        height_m: context.height_m,
+        confidence: context.llmEstimate?.confidence || 'MEDIUM',
+        thumbnail,
+        addedAt: Date.now(),
+      };
+
+      onAddItem(item);
+      // Reset to measure another object (re-lock floor for different elevations)
+      dispatch({ type: 'RESET' });
     }
-  }, [context.dragStart, context.dragEnd, context.height_m, context.width_m, context.depth_m, context.llmEstimate, onFindStorage]);
+  }, [context.dragStart, context.dragEnd, context.width_m, context.depth_m, context.height_m, context.llmEstimate, onAddItem, dispatch]);
+
+  const handleDone = useCallback(() => {
+    cleanup();
+    dispatch({ type: 'END_SESSION' });
+    onDone();
+  }, [cleanup, dispatch, onDone]);
 
   const handleExit = useCallback(() => {
     cleanup();
@@ -978,7 +999,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
         hasDepth={hasDepth}
         onReset={handleReset}
         onConfirmHeight={handleConfirmHeight}
-        onFindStorage={handleFindStorage}
+        onAddItem={handleAddItem}
+        onDone={handleDone}
+        itemCount={itemCount}
         onSetStabilityMode={handleSetStabilityMode}
         onExit={handleExit}
       />
