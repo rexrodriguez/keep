@@ -1,11 +1,14 @@
 'use client';
 
+import { MeasuredItem } from '@/lib/types';
+
 interface RadiusSliderProps {
   value: number;
   onChange: (value: number) => void;
   onSearch: () => void;
   onBack: () => void;
   isSearching: boolean;
+  items?: MeasuredItem[];
 }
 
 export default function RadiusSlider({
@@ -14,7 +17,10 @@ export default function RadiusSlider({
   onSearch,
   onBack,
   isSearching,
+  items,
 }: RadiusSliderProps) {
+  const totalVol = items ? items.reduce((s, i) => s + i.width_m * i.depth_m * i.height_m, 0) * 35.3147 : 0;
+
   return (
     <div className="scrollable-page bg-gray-900 flex flex-col">
       {/* Fixed header */}
@@ -35,6 +41,15 @@ export default function RadiusSlider({
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
         <div className="max-w-md mx-auto">
+          {items && items.length > 0 && (
+            <div className="bg-white/5 rounded-xl p-3 mb-4">
+              <div className="text-white/60 text-xs mb-1">Measuring for</div>
+              <div className="text-white font-medium">
+                {items.length} item{items.length !== 1 ? 's' : ''} — {totalVol.toFixed(1)} cu ft
+              </div>
+            </div>
+          )}
+
           {/* Current value display */}
           <div className="text-center mb-6">
             <span className="text-5xl font-bold text-white">{value}</span>

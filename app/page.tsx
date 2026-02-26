@@ -301,6 +301,7 @@ export default function Home() {
         onSearch={handleSearch}
         onBack={() => setAppState('ITEM_LIST')}
         isSearching={appState === 'SEARCHING'}
+        items={measuredItems}
       />
     );
   }
