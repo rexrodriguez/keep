@@ -113,7 +113,9 @@ export default function MeasurementUI({
         <div className="flex items-start justify-between">
           <button
             onClick={onExit}
+            onTouchEnd={(e) => { e.preventDefault(); onExit(); }}
             className="bg-black/50 backdrop-blur-sm text-white/80 hover:text-white p-2 rounded-full"
+            style={{ touchAction: 'manipulation' }}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -128,7 +130,9 @@ export default function MeasurementUI({
               </span>
               <button
                 onClick={onDone}
+                onTouchEnd={(e) => { e.preventDefault(); onDone(); }}
                 className="bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-medium"
+                style={{ touchAction: 'manipulation' }}
               >
                 Done
               </button>
@@ -405,13 +409,17 @@ function ReviewPanel({
       <div className="flex gap-3">
         <button
           onClick={onRedo}
+          onTouchEnd={(e) => { e.preventDefault(); onRedo(); }}
           className="flex-1 py-3 px-4 rounded-xl font-medium bg-white/10 text-white active:bg-white/20 transition-colors"
+          style={{ touchAction: 'manipulation' }}
         >
           Undo
         </button>
         <button
           onClick={onAddItem}
+          onTouchEnd={(e) => { e.preventDefault(); onAddItem(); }}
           className="flex-1 py-3 px-4 rounded-xl font-medium bg-blue-500 text-white active:bg-blue-600 transition-colors"
+          style={{ touchAction: 'manipulation' }}
         >
           Add to List
         </button>
