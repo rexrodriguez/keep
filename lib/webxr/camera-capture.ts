@@ -88,8 +88,8 @@ export async function captureXRCameraImage(
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // Resize if needed and convert to base64
-    return resizeAndConvert(canvas, 800);
+    // Resize and convert to base64 (320px wide for list thumbnails)
+    return resizeAndConvert(canvas, 320);
   } catch (error) {
     console.error('Failed to capture XR camera image:', error);
     return null;
@@ -116,7 +116,7 @@ function resizeAndConvert(canvas: HTMLCanvasElement, maxWidth: number): string {
     }
   }
 
-  return targetCanvas.toDataURL('image/jpeg', 0.85);
+  return targetCanvas.toDataURL('image/jpeg', 0.5);
 }
 
 /**
