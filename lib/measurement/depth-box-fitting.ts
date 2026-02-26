@@ -18,8 +18,7 @@ export interface DepthBoxResult {
   pixelCount: number;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
   _debug?: string;
-  _pcaRatio?: number;
-  _yawSource?: 'silhouette' | 'pca' | 'none';
+  _yawSource?: string;
   _quantileExtents?: string;
 }
 
@@ -179,13 +178,7 @@ export function fitBoxFromDepth(
     }
   }
 
-  // Estimate world yaw from 2D silhouette (more stable than 3D PCA)
-  const silhouetteYaw = estimateYawFromSilhouette(
-    boundary, buffer, width, height, bufToView, projMatrixInv, viewMatrixInv
-  );
-
   diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m`);
-  diag.push(`yaw:${silhouetteYaw ? (silhouetteYaw.yaw * 180 / Math.PI).toFixed(0) + '°' : 'n/a'} q:${silhouetteYaw?.quality.toFixed(2) ?? '0'}`);
 
   // 5. Build dense local cloud and fit quantile box
   if (!tapWorld) {
@@ -211,10 +204,7 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  const result = fitQuantileBox(
-    localCloud, floorY, tapWorld,
-    silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0
-  );
+  const result = fitQuantileBox(localCloud, floorY, tapWorld);
 
   diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'} ext:${result._quantileExtents ?? '?'}`);
   result._debug = diag.join('\n');
@@ -290,74 +280,6 @@ function percentile(sorted: number[], p: number): number {
   if (lo === hi) return sorted[lo];
   const t = idx - lo;
   return sorted[lo] * (1 - t) + sorted[hi] * t;
-}
-
-/**
- * Compute silhouette-based yaw from a single depth frame.
- * Runs flood-fill → boundary extraction → 2D PCA → world-space yaw.
- * Used during multi-frame accumulation to get orientation from the first good frame.
- */
-export function computeSilhouetteYawFromDepth(
-  depthData: DepthData,
-  tapNormX: number,
-  tapNormY: number,
-  viewerPose: XRViewerPose
-): { yaw: number; quality: number } | null {
-  const { width, height } = depthData;
-
-  const centerDepth = getDepthAtNormalized(depthData, tapNormX, tapNormY);
-  if (centerDepth <= 0 || centerDepth > 10) return null;
-
-  const buffer = getDepthBuffer(depthData);
-  if (!buffer) return null;
-
-  const depthInfo = depthData.depthInfo;
-  const xform = depthInfo.normDepthBufferFromNormView;
-  const { viewToBuf, bufToView } = getCoordTransforms(xform);
-
-  const tapBuf = viewToBuf(tapNormX, tapNormY);
-  const tapBufX = Math.round(tapBuf.x * (width - 1));
-  const tapBufY = Math.round(tapBuf.y * (height - 1));
-
-  // Flood-fill
-  const depthTolerance = Math.min(Math.max(centerDepth * 0.06, 0.03), 0.12);
-  const gradientThreshold = Math.max(centerDepth * 0.02, 0.015);
-  const maxPixelRadius = Math.round(Math.max(width, height) * 0.30);
-
-  const region = floodFillDepth(
-    buffer, width, height,
-    tapBufX, tapBufY,
-    centerDepth, depthTolerance,
-    gradientThreshold, maxPixelRadius
-  );
-
-  if (region.count < 20) return null;
-
-  // Extract boundary
-  const boundary: [number, number][] = [];
-  for (let by = region.minY; by <= region.maxY; by++) {
-    for (let bx = region.minX; bx <= region.maxX; bx++) {
-      const idx = by * width + bx;
-      if (!region.mask[idx]) continue;
-      const left  = bx > 0          ? region.mask[idx - 1] : 0;
-      const right = bx < width - 1  ? region.mask[idx + 1] : 0;
-      const up    = by > 0          ? region.mask[idx - width] : 0;
-      const down  = by < height - 1 ? region.mask[idx + width] : 0;
-      if (!(left && right && up && down)) {
-        boundary.push([bx, by]);
-      }
-    }
-  }
-
-  if (boundary.length < 20) return null;
-
-  const view = viewerPose.views[0];
-  const projMatrixInv = new THREE.Matrix4().fromArray(view.projectionMatrix).invert();
-  const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
-
-  return estimateYawFromSilhouette(
-    boundary, buffer, width, height, bufToView, projMatrixInv, viewMatrixInv
-  );
 }
 
 /**
@@ -532,16 +454,91 @@ function unprojectDepthToWorld(
 }
 
 /**
- * Fit a gravity-aligned bounding box using a local point cloud and
- * yaw-aligned quantile extents. This replaces ray-march which was
- * fundamentally unstable at 160×90 depth buffer resolution.
+ * 2D convex hull via Andrew's monotone chain algorithm.
+ * Input: XZ-projected points. Output: hull in counter-clockwise order.
+ */
+function convexHullXZ(points: { x: number; z: number }[]): { x: number; z: number }[] {
+  const pts = [...points].sort((a, b) => a.x - b.x || a.z - b.z);
+  const n = pts.length;
+  if (n <= 2) return pts;
+
+  const cross = (o: { x: number; z: number }, a: { x: number; z: number }, b: { x: number; z: number }) =>
+    (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+
+  const hull: { x: number; z: number }[] = [];
+
+  // Lower hull
+  for (const p of pts) {
+    while (hull.length >= 2 && cross(hull[hull.length - 2], hull[hull.length - 1], p) <= 0) hull.pop();
+    hull.push(p);
+  }
+
+  // Upper hull
+  const lower = hull.length + 1;
+  for (let i = n - 2; i >= 0; i--) {
+    while (hull.length >= lower && cross(hull[hull.length - 2], hull[hull.length - 1], pts[i]) <= 0) hull.pop();
+    hull.push(pts[i]);
+  }
+
+  hull.pop(); // last point duplicates first
+  return hull;
+}
+
+/**
+ * Minimum-area bounding rectangle via rotating calipers on the convex hull.
+ * Returns the yaw angle that produces the tightest-fitting oriented rectangle.
+ * This is view-invariant — depends only on the XZ footprint geometry.
+ */
+function minimumAreaBoundingRect(points: { x: number; z: number }[]): number {
+  const hull = convexHullXZ(points);
+  if (hull.length < 3) return 0;
+
+  let bestArea = Infinity;
+  let bestYaw = 0;
+
+  const n = hull.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const ex = hull[j].x - hull[i].x;
+    const ez = hull[j].z - hull[i].z;
+    const len = Math.sqrt(ex * ex + ez * ez);
+    if (len < 1e-10) continue;
+
+    // Unit vectors along and perpendicular to this hull edge
+    const ux = ex / len, uz = ez / len;
+    const vx = -uz, vz = ux;
+
+    // Project all hull points onto these axes
+    let minU = Infinity, maxU = -Infinity;
+    let minV = Infinity, maxV = -Infinity;
+    for (const p of hull) {
+      const u = p.x * ux + p.z * uz;
+      const v = p.x * vx + p.z * vz;
+      minU = Math.min(minU, u);
+      maxU = Math.max(maxU, u);
+      minV = Math.min(minV, v);
+      maxV = Math.max(maxV, v);
+    }
+
+    const area = (maxU - minU) * (maxV - minV);
+    if (area < bestArea) {
+      bestArea = area;
+      bestYaw = Math.atan2(ux, uz);
+    }
+  }
+
+  return bestYaw;
+}
+
+/**
+ * Fit a gravity-aligned bounding box using a local point cloud.
+ * Orientation comes from minimum-area bounding rectangle on the XZ
+ * convex hull (view-invariant). Sizing uses quantile extents (outlier-robust).
  */
 export function fitQuantileBox(
   localCloud: THREE.Vector3[],
   floorY: number,
   tapWorld: THREE.Vector3,
-  overrideYawRad: number | null,
-  overrideYawQuality: number
 ): DepthBoxResult {
   // --- Height from local cloud (95th percentile Y - floorY) ---
   const yVals = localCloud.map(p => p.y).sort((a, b) => a - b);
@@ -551,15 +548,9 @@ export function fitQuantileBox(
     0.05, 5.0
   );
 
-  // --- Yaw selection: silhouette > PCA > 0° ---
-  const pca = computePCA_XZ(localCloud);
-  const usePcaRotation = pca.ratio > 4.0 && localCloud.length >= 20;
-  const useSilhouette = overrideYawRad !== null && overrideYawQuality >= 0.3;
-  const yaw =
-    useSilhouette ? overrideYawRad! :
-    (usePcaRotation ? pca.angle : 0);
-  const yawSource: 'silhouette' | 'pca' | 'none' =
-    useSilhouette ? 'silhouette' : (usePcaRotation ? 'pca' : 'none');
+  // --- Yaw from minimum-area bounding rectangle (view-invariant) ---
+  const xzPoints = localCloud.map(p => ({ x: p.x, z: p.z }));
+  const yaw = localCloud.length >= 3 ? minimumAreaBoundingRect(xzPoints) : 0;
 
   // --- Rotate into yaw-aligned frame and compute quantile extents ---
   const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -609,15 +600,15 @@ export function fitQuantileBox(
   }
 
   console.log(
-    `Box fit (quantile): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
-    `rot=${rotation_deg.toFixed(1)}°, yaw=${yawSource}, ` +
+    `Box fit (MABR): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
+    `rot=${rotation_deg.toFixed(1)}°, ` +
     `cloud=${pixelCount} pts, U=[${u0.toFixed(2)},${u1.toFixed(2)}] V=[${v0.toFixed(2)},${v1.toFixed(2)}], ` +
     `ctr_offset=(${uC.toFixed(3)},${vC.toFixed(3)}), confidence=${confidence}`
   );
 
   return {
     center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence,
-    _pcaRatio: pca.ratio, _yawSource: yawSource,
+    _yawSource: 'mabr' as 'silhouette' | 'pca' | 'none',
     _quantileExtents: `q=${qLo.toFixed(2)}..${qHi.toFixed(2)} U[${u0.toFixed(2)},${u1.toFixed(2)}] V[${v0.toFixed(2)},${v1.toFixed(2)}]`
   };
 }
@@ -656,35 +647,6 @@ function getCoordTransforms(xform: { matrix: Float32Array } | null | undefined) 
 }
 
 /**
- * PCA on 2D boundary pixels in buffer space.
- * More stable than 3D PCA because buffer pixels are clean and dense,
- * while 3D points have depth noise and view-dependent coverage.
- */
-function pca2D(boundary: [number, number][]) {
-  let mx = 0, my = 0;
-  for (const [x, y] of boundary) { mx += x; my += y; }
-  const n = boundary.length;
-  mx /= n; my /= n;
-
-  let cxx = 0, cxy = 0, cyy = 0;
-  for (const [x, y] of boundary) {
-    const dx = x - mx, dy = y - my;
-    cxx += dx * dx; cxy += dx * dy; cyy += dy * dy;
-  }
-  cxx /= n; cxy /= n; cyy /= n;
-
-  const trace = cxx + cyy;
-  const det = cxx * cyy - cxy * cxy;
-  const disc = Math.sqrt(Math.max(0, trace * trace / 4 - det));
-  const lambda1 = trace / 2 + disc;
-  const lambda2 = trace / 2 - disc;
-  const ratio = lambda2 > 1e-10 ? lambda1 / lambda2 : 1;
-
-  const angle = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
-  return { angle, mx, my, ratio };
-}
-
-/**
  * Sample depth at (x,y), falling back to a small neighborhood search
  * if the exact pixel has no valid depth (common at silhouette edges).
  */
@@ -710,75 +672,3 @@ function sampleDepthNearest(
   return 0;
 }
 
-/**
- * Estimate world-space yaw from the 2D silhouette's principal axis.
- * Always attempts to compute yaw (no ratio gate) — even slightly
- * non-symmetric silhouettes from perspective provide useful signal.
- * Returns null only if boundary is too small or depth sampling fails.
- */
-function estimateYawFromSilhouette(
-  boundary: [number, number][],
-  depthBuf: Float32Array,
-  width: number,
-  height: number,
-  bufToView: (x: number, y: number) => { x: number; y: number },
-  projInv: THREE.Matrix4,
-  viewInv: THREE.Matrix4
-): { yaw: number; quality: number } | null {
-  if (boundary.length < 20) return null;
-
-  const pca = pca2D(boundary);
-
-  const ax = Math.cos(pca.angle), ay = Math.sin(pca.angle);
-  const L = Math.max(8, Math.min(24, Math.round(Math.sqrt(boundary.length) / 2)));
-
-  const x0 = Math.round(pca.mx - ax * L), y0 = Math.round(pca.my - ay * L);
-  const x1 = Math.round(pca.mx + ax * L), y1 = Math.round(pca.my + ay * L);
-
-  const d0 = sampleDepthNearest(depthBuf, width, height, x0, y0, 2);
-  const d1 = sampleDepthNearest(depthBuf, width, height, x1, y1, 2);
-  if (!(d0 > 0 && d1 > 0)) return null;
-
-  const v0 = bufToView((x0 + 0.5) / width, (y0 + 0.5) / height);
-  const v1 = bufToView((x1 + 0.5) / width, (y1 + 0.5) / height);
-
-  const w0 = unprojectDepthToWorld(v0.x, v0.y, d0, projInv, viewInv);
-  const w1 = unprojectDepthToWorld(v1.x, v1.y, d1, projInv, viewInv);
-  if (!w0 || !w1) return null;
-
-  const dir = w1.clone().sub(w0);
-  dir.y = 0;
-  if (dir.lengthSq() < 1e-6) return null;
-  dir.normalize();
-
-  const yaw = Math.atan2(dir.x, dir.z);
-  const quality = Math.min(1, boundary.length / 400);
-  return { yaw, quality };
-}
-
-/**
- * PCA on XZ-projected 3D points. Used as fallback when silhouette yaw is unavailable.
- */
-function computePCA_XZ(points: THREE.Vector3[]) {
-  let sumX = 0, sumZ = 0;
-  for (const p of points) { sumX += p.x; sumZ += p.z; }
-  const n = points.length;
-  const meanX = sumX / n, meanZ = sumZ / n;
-
-  let cxx = 0, cxz = 0, czz = 0;
-  for (const p of points) {
-    const dx = p.x - meanX, dz = p.z - meanZ;
-    cxx += dx * dx; cxz += dx * dz; czz += dz * dz;
-  }
-  cxx /= n; cxz /= n; czz /= n;
-
-  const trace = cxx + czz;
-  const det = cxx * czz - cxz * cxz;
-  const disc = Math.sqrt(Math.max(0, trace * trace / 4 - det));
-  const lambda1 = trace / 2 + disc;
-  const lambda2 = trace / 2 - disc;
-  const ratio = lambda2 > 1e-10 ? lambda1 / lambda2 : 999;
-  const angle = 0.5 * Math.atan2(2 * cxz, cxx - czz);
-
-  return { angle, meanX, meanZ, ratio };
-}
