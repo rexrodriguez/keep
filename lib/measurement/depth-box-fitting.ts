@@ -70,13 +70,13 @@ export function fitBoxFromDepth(
 
   // 3. Flood-fill from tap point
   // Depth tolerance: how far a pixel's depth can differ from the tap depth
-  // Cap at 8cm to prevent floor leaking at longer distances
-  const depthTolerance = Math.min(Math.max(centerDepth * 0.06, 0.03), 0.08);
+  // Cap at 12cm — safe to be generous since XZ proximity filter catches floor leaking in 3D
+  const depthTolerance = Math.min(Math.max(centerDepth * 0.06, 0.03), 0.12);
   // Gradient threshold: max depth jump between adjacent pixels (edge detection)
   // Must be loose enough to tolerate sensor noise (~5-10mm) but catch real edges (~10cm+)
   const gradientThreshold = Math.max(centerDepth * 0.02, 0.015);
   // Spatial radius: max pixel distance from tap point
-  const maxPixelRadius = Math.round(Math.max(width, height) * 0.20);
+  const maxPixelRadius = Math.round(Math.max(width, height) * 0.30);
 
   const region = floodFillDepth(
     buffer, width, height,
@@ -90,35 +90,53 @@ export function fitBoxFromDepth(
     return null;
   }
 
-  diag.push(`fill:${region.count}px [${region.minX},${region.minY}]-[${region.maxX},${region.maxY}]`);
+  diag.push(`fill:${region.count}px${region.hitCap ? ' CAP!' : ''} [${region.minX},${region.minY}]-[${region.maxX},${region.maxY}]`);
 
-  // 4. Unproject boundary points to 3D world space
+  // 4. Extract boundary pixels from flood-fill region
+  // Boundary pixels define the true silhouette extents — interior grid sampling
+  // misses outermost pixels and systematically undersizes the bounding box.
+  const boundary: [number, number][] = [];
+  for (let by = region.minY; by <= region.maxY; by++) {
+    for (let bx = region.minX; bx <= region.maxX; bx++) {
+      const idx = by * width + bx;
+      if (!region.mask[idx]) continue;
+
+      // Pixel is on the boundary if any 4-neighbor is outside the mask
+      const left  = bx > 0          ? region.mask[idx - 1] : 0;
+      const right = bx < width - 1  ? region.mask[idx + 1] : 0;
+      const up    = by > 0          ? region.mask[idx - width] : 0;
+      const down  = by < height - 1 ? region.mask[idx + width] : 0;
+
+      if (!(left && right && up && down)) {
+        boundary.push([bx, by]);
+      }
+    }
+  }
+
+  // Unproject boundary points to 3D world space
   const view = viewerPose.views[0];
   const projMatrix = new THREE.Matrix4().fromArray(view.projectionMatrix);
   const projMatrixInv = projMatrix.clone().invert();
   const viewMatrixInv = new THREE.Matrix4().fromArray(view.transform.matrix);
 
   const worldPoints: THREE.Vector3[] = [];
-  const stepX = Math.max(1, Math.floor((region.maxX - region.minX) / 20));
-  const stepY = Math.max(1, Math.floor((region.maxY - region.minY) / 20));
 
-  for (let by = region.minY; by <= region.maxY; by += stepY) {
-    for (let bx = region.minX; bx <= region.maxX; bx += stepX) {
-      const idx = by * width + bx;
-      if (!region.mask[idx]) continue;
+  // Subsample boundary if very large (cap at ~400 points for performance)
+  const everyNth = boundary.length > 400 ? Math.ceil(boundary.length / 400) : 1;
 
-      const d = buffer[idx];
-      if (d <= 0) continue;
+  for (let i = 0; i < boundary.length; i += everyNth) {
+    const [bx, by] = boundary[i];
+    const d = buffer[by * width + bx];
+    if (d <= 0) continue;
 
-      // Convert buffer pixel coords → view-normalized coords for unprojection
-      const bufNormX = (bx + 0.5) / width;
-      const bufNormY = (by + 0.5) / height;
-      const viewCoord = bufToView(bufNormX, bufNormY);
+    // Convert buffer pixel coords → view-normalized coords for unprojection
+    const bufNormX = (bx + 0.5) / width;
+    const bufNormY = (by + 0.5) / height;
+    const viewCoord = bufToView(bufNormX, bufNormY);
 
-      const worldPt = unprojectDepthToWorld(viewCoord.x, viewCoord.y, d, projMatrixInv, viewMatrixInv);
-      if (worldPt) {
-        worldPoints.push(worldPt);
-      }
+    const worldPt = unprojectDepthToWorld(viewCoord.x, viewCoord.y, d, projMatrixInv, viewMatrixInv);
+    if (worldPt) {
+      worldPoints.push(worldPt);
     }
   }
 
@@ -130,7 +148,7 @@ export function fitBoxFromDepth(
   // Unproject tap point to 3D for XZ proximity filtering
   const tapWorld = unprojectDepthToWorld(tapNormX, tapNormY, centerDepth, projMatrixInv, viewMatrixInv);
 
-  diag.push(`3D pts:${worldPoints.length}`);
+  diag.push(`bnd:${boundary.length} 3D:${worldPoints.length}`);
 
   // 5. Fit gravity-aligned bounding box
   const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld);
@@ -161,17 +179,18 @@ function floodFillDepth(
   tolerance: number,
   gradientThreshold: number,
   maxRadius: number
-): { mask: Uint8Array; count: number; minX: number; maxX: number; minY: number; maxY: number } {
+): { mask: Uint8Array; count: number; minX: number; maxX: number; minY: number; maxY: number; hitCap: boolean } {
   const mask = new Uint8Array(width * height);
   let count = 0;
+  let hitCap = false;
   let minX = startX, maxX = startX, minY = startY, maxY = startY;
-  // Cap at 12% of buffer — a single object shouldn't fill more
-  const MAX_FILL_PIXELS = Math.floor(width * height * 0.12);
+  // Cap at 20% of buffer — safe to be generous since XZ proximity filter catches floor leaking in 3D
+  const MAX_FILL_PIXELS = Math.floor(width * height * 0.20);
 
   const queue: [number, number][] = [[startX, startY]];
   const startIdx = startY * width + startX;
   if (buffer[startIdx] <= 0) {
-    return { mask, count: 0, minX, maxX, minY, maxY };
+    return { mask, count: 0, minX, maxX, minY, maxY, hitCap: false };
   }
   mask[startIdx] = 1;
 
@@ -181,6 +200,7 @@ function floodFillDepth(
   while (queueHead < queue.length) {
     if (count >= MAX_FILL_PIXELS) {
       console.warn('Flood-fill hit max pixel limit');
+      hitCap = true;
       break;
     }
     const [x, y] = queue[queueHead++];
@@ -220,7 +240,7 @@ function floodFillDepth(
     }
   }
 
-  return { mask, count, minX, maxX, minY, maxY };
+  return { mask, count, minX, maxX, minY, maxY, hitCap };
 }
 
 function unprojectDepthToWorld(
