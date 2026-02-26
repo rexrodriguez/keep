@@ -172,7 +172,7 @@ export function fitBoxFromDepth(
       }
     }
     if (maxDistSq > 0) {
-      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.35, 0.15, 0.60);
+      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.10, 0.15, 0.35);
     }
   }
 
@@ -184,8 +184,19 @@ export function fitBoxFromDepth(
   diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m`);
   diag.push(`yaw:${silhouetteYaw ? (silhouetteYaw.yaw * 180 / Math.PI).toFixed(0) + '°' : 'n/a'} q:${silhouetteYaw?.quality.toFixed(2) ?? '0'}`);
 
-  // 5. Fit gravity-aligned bounding box
-  const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld, maxXZRadius, silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0);
+  // 5. Fit gravity-aligned bounding box via ray-march
+  const worldToView = viewMatrixInv.clone().invert();
+  const marchOpts: RayMarchOpts = {
+    depthBuf: buffer, bufW: width, bufH: height,
+    viewToBuf, bufToView, worldToView,
+    proj: projMatrix, projInv: projMatrixInv, viewInv: viewMatrixInv
+  };
+
+  const result = fitGravityAlignedBox(
+    worldPoints, floorY, tapWorld, maxXZRadius,
+    silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0,
+    marchOpts
+  );
 
   diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'}`);
   result._debug = diag.join('\n');
@@ -205,19 +216,6 @@ export function fitBoxFromDepth(
 
 function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
-}
-
-/**
- * Quantile-trimmed bounds: sort values, discard bottom/top `trim` fraction,
- * return [min, max] of the remaining central portion.
- * Falls back to raw min/max for small arrays.
- */
-function quantileBounds(vals: number[], trim = 0.02): [number, number] {
-  if (vals.length < 2) return [vals[0] ?? 0, vals[0] ?? 0];
-  vals.sort((a, b) => a - b);
-  const lo = Math.floor(vals.length * trim);
-  const hi = Math.max(lo + 1, Math.ceil(vals.length * (1 - trim)) - 1);
-  return [vals[lo], vals[hi]];
 }
 
 function floodFillDepth(
@@ -320,124 +318,205 @@ function unprojectDepthToWorld(
   return new THREE.Vector3(pointWorld.x, pointWorld.y, pointWorld.z);
 }
 
+/**
+ * Project a world point to view-normalized coords [0,1].
+ * Accounts for: world → view → clip → NDC → normalized.
+ */
+function worldToViewNorm(
+  pWorld: THREE.Vector3,
+  worldToView: THREE.Matrix4,
+  proj: THREE.Matrix4
+): { x: number; y: number } | null {
+  const v = new THREE.Vector4(pWorld.x, pWorld.y, pWorld.z, 1);
+  v.applyMatrix4(worldToView);
+  v.applyMatrix4(proj);
+  if (Math.abs(v.w) < 1e-8) return null;
+  const ndcX = v.x / v.w;
+  const ndcY = v.y / v.w;
+  const x = ndcX * 0.5 + 0.5;
+  const y = 1 - (ndcY * 0.5 + 0.5);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+/**
+ * March outward from center along dirXZ in world space, sampling the depth
+ * buffer at each step to find where the object surface ends.
+ * Returns the distance (meters) of the last "on-object" sample.
+ */
+function marchExtentXZ(
+  center: THREE.Vector3,
+  dirXZ: THREE.Vector3,
+  floorY: number,
+  upOffsetM: number,
+  stepM: number,
+  maxDistM: number,
+  xzEpsM: number,
+  depthBuf: Float32Array,
+  bufW: number, bufH: number,
+  viewToBuf: (x: number, y: number) => { x: number; y: number },
+  bufToView: (x: number, y: number) => { x: number; y: number },
+  worldToView: THREE.Matrix4,
+  proj: THREE.Matrix4,
+  projInv: THREE.Matrix4,
+  viewInv: THREE.Matrix4
+): number {
+  const P = new THREE.Vector3();
+  let lastGood = 0;
+  let missStreak = 0;
+
+  for (let t = 0; t <= maxDistM; t += stepM) {
+    P.copy(center).addScaledVector(dirXZ, t);
+    P.y = Math.max(P.y, floorY + upOffsetM);
+
+    // Project candidate world point to view-normalized coords
+    const vNorm = worldToViewNorm(P, worldToView, proj);
+    if (!vNorm || vNorm.x < 0 || vNorm.x > 1 || vNorm.y < 0 || vNorm.y > 1) break;
+
+    // View-normalized → buffer pixel (handles Android 90° rotation)
+    const b = viewToBuf(vNorm.x, vNorm.y);
+    const bx = Math.floor(b.x * (bufW - 1));
+    const by = Math.floor(b.y * (bufH - 1));
+    if (bx < 0 || by < 0 || bx >= bufW || by >= bufH) break;
+
+    // Read depth and unproject to world to test "on object"
+    const d = depthBuf[by * bufW + bx];
+    if (!(d > 0)) {
+      missStreak++;
+      if (missStreak >= 3) break;
+      continue;
+    }
+
+    const bvNorm = bufToView((bx + 0.5) / bufW, (by + 0.5) / bufH);
+    const W = unprojectDepthToWorld(bvNorm.x, bvNorm.y, d, projInv, viewInv);
+    if (!W) {
+      missStreak++;
+      if (missStreak >= 3) break;
+      continue;
+    }
+
+    // On-object test: depth world point should be near candidate in XZ and above floor
+    const dx = W.x - P.x;
+    const dz = W.z - P.z;
+    const xzDist = Math.sqrt(dx * dx + dz * dz);
+
+    if (xzDist <= xzEpsM && W.y > floorY + 0.02) {
+      lastGood = t;
+      missStreak = 0;
+    } else {
+      missStreak++;
+      if (missStreak >= 2) break;
+    }
+  }
+
+  return lastGood;
+}
+
+interface RayMarchOpts {
+  depthBuf: Float32Array;
+  bufW: number;
+  bufH: number;
+  viewToBuf: (x: number, y: number) => { x: number; y: number };
+  bufToView: (x: number, y: number) => { x: number; y: number };
+  worldToView: THREE.Matrix4;
+  proj: THREE.Matrix4;
+  projInv: THREE.Matrix4;
+  viewInv: THREE.Matrix4;
+}
+
 function fitGravityAlignedBox(
   points: THREE.Vector3[],
   floorY: number,
   tapWorld: THREE.Vector3 | null,
-  maxXZRadiusMeters: number,
+  maxSearchDist: number,
   overrideYawRad: number | null,
-  overrideYawQuality: number
+  overrideYawQuality: number,
+  marchOpts: RayMarchOpts
 ): DepthBoxResult {
-  // Separate points into "above floor" (object surface) and "near floor" (floor contamination).
-  // Only use above-floor points for XZ extents to avoid floor pixels inflating width/depth.
-  const FLOOR_MARGIN = 0.03; // 3cm above floor = "on the object"
-
-  const aboveFloor: THREE.Vector3[] = [];
+  // --- Height from point cloud (maxY - floorY) ---
   let maxY = -Infinity;
-
   for (const p of points) {
     if (p.y > maxY) maxY = p.y;
-    if (p.y > floorY + FLOOR_MARGIN) {
-      aboveFloor.push(p);
-    }
   }
+  const bottomY = floorY;
+  const topY = Number.isFinite(maxY) ? maxY : floorY + 0.05;
+  const height_m = clamp(topY - bottomY, 0.05, 5.0);
 
-  // Use above-floor points for XZ extents if we have enough, otherwise fall back to all points
-  let xzPoints = aboveFloor.length >= 3 ? aboveFloor : points;
-
-  // XZ proximity filter: reject points far from the tap point in XZ plane.
-  // Radius is adaptive — computed from flood-fill region corners projected to world space.
-  if (tapWorld && xzPoints.length > 3) {
-    const rSq = maxXZRadiusMeters * maxXZRadiusMeters;
-    const filtered = xzPoints.filter(p => {
-      const dx = p.x - tapWorld.x;
-      const dz = p.z - tapWorld.z;
-      return dx * dx + dz * dz <= rSq;
-    });
-    if (filtered.length >= 3) {
-      xzPoints = filtered;
-    }
-  }
-
-  // Rotation selection: prefer silhouette yaw (if quality > 0.3), fall back to 3D PCA, else 0°.
-  const pca = computePCA_XZ(xzPoints);
-  const usePcaRotation = pca.ratio > 4.0 && xzPoints.length >= 20;
+  // --- Yaw selection (unchanged: silhouette > PCA > 0°) ---
+  const pca = computePCA_XZ(points);
+  const usePcaRotation = pca.ratio > 4.0 && points.length >= 20;
   const useSilhouette = overrideYawRad !== null && overrideYawQuality >= 0.3;
-  const angle =
+  const yaw =
     useSilhouette ? overrideYawRad! :
     (usePcaRotation ? pca.angle : 0);
   const yawSource: 'silhouette' | 'pca' | 'none' =
     useSilhouette ? 'silhouette' : (usePcaRotation ? 'pca' : 'none');
 
-  // Compute XZ centroid for rotation frame
-  let meanX = 0, meanZ = 0;
-  for (const p of xzPoints) { meanX += p.x; meanZ += p.z; }
-  meanX /= xzPoints.length;
-  meanZ /= xzPoints.length;
-
-  // Compute bounding box in the (possibly rotated) frame
-  const cosA = Math.cos(-angle);
-  const sinA = Math.sin(-angle);
-
-  // Collect U/V projections for quantile trimming
-  const uVals: number[] = [];
-  const vVals: number[] = [];
-
-  for (const p of xzPoints) {
-    const dx = p.x - meanX;
-    const dz = p.z - meanZ;
-    uVals.push(dx * cosA - dz * sinA);
-    vVals.push(dx * sinA + dz * cosA);
+  // --- Center: use tapWorld if available, else point cloud centroid ---
+  let cx: number, cz: number;
+  if (tapWorld) {
+    cx = tapWorld.x;
+    cz = tapWorld.z;
+  } else {
+    cx = 0; cz = 0;
+    for (const p of points) { cx += p.x; cz += p.z; }
+    cx /= points.length;
+    cz /= points.length;
   }
+  const marchCenter = new THREE.Vector3(cx, floorY + height_m / 2, cz);
 
-  // Use quantile-trimmed bounds for robustness (trims 2% outliers on each side)
-  // Only applies when we have enough points; small sets use raw min/max.
-  const [minU, maxU] = xzPoints.length >= 80
-    ? quantileBounds(uVals, 0.02)
-    : [Math.min(...uVals), Math.max(...uVals)];
-  const [minV, maxV] = xzPoints.length >= 80
-    ? quantileBounds(vVals, 0.02)
-    : [Math.min(...vVals), Math.max(...vVals)];
+  // --- Ray-march width/depth along rotated axes ---
+  const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+  const V = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)).normalize();
 
-  const bottomY = floorY;
-  const topY = maxY;
+  const stepM = 0.01;     // 1cm steps
+  const upOffsetM = 0.08; // sample 8cm above floor
+  const xzEpsM = 0.06;    // 6cm proximity tolerance
 
-  const width_m = Math.max(0.05, Math.min(maxU - minU, 5.0));
-  const depth_m = Math.max(0.05, Math.min(maxV - minV, 5.0));
-  const height_m = Math.max(0.05, Math.min(topY - bottomY, 5.0));
+  const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv } = marchOpts;
 
-  // Rotate center back to world space
-  const centerU = (minU + maxU) / 2;
-  const centerV = (minV + maxV) / 2;
-  const cosAInv = Math.cos(angle);
-  const sinAInv = Math.sin(angle);
+  const posU = marchExtentXZ(marchCenter, U, floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
+  const negU = marchExtentXZ(marchCenter, U.clone().negate(), floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
+  const posV = marchExtentXZ(marchCenter, V, floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
+  const negV = marchExtentXZ(marchCenter, V.clone().negate(), floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
 
+  const width_m = clamp(posU + negU, 0.05, 5.0);
+  const depth_m = clamp(posV + negV, 0.05, 5.0);
+
+  // Recenter box based on march extents (shift from tap toward measured center)
+  const halfShiftU = (posU - negU) / 2;
+  const halfShiftV = (posV - negV) / 2;
   const center = new THREE.Vector3(
-    meanX + centerU * cosAInv - centerV * sinAInv,
+    cx + U.x * halfShiftU + V.x * halfShiftV,
     bottomY + height_m / 2,
-    meanZ + centerU * sinAInv + centerV * cosAInv
+    cz + U.z * halfShiftU + V.z * halfShiftV
   );
 
-  const rotation_deg = (angle * 180) / Math.PI;
-
+  const rotation_deg = (yaw * 180) / Math.PI;
   const pixelCount = points.length;
+
+  // Confidence based on march coverage + point count
+  const marchTotal = posU + negU + posV + negV;
   let confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-  if (pixelCount > 50 && width_m > 0.05 && depth_m > 0.05 && height_m > 0.05) {
+  if (pixelCount > 50 && marchTotal > 0.15) {
     confidence = 'HIGH';
-  } else if (pixelCount > 20) {
+  } else if (pixelCount > 20 || marchTotal > 0.08) {
     confidence = 'MEDIUM';
   } else {
     confidence = 'LOW';
   }
 
   console.log(
-    `Box fit: ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
-    `rot=${rotation_deg.toFixed(1)}°, ` +
-    `center=(${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)}), ` +
-    `${pixelCount} total pts, ${aboveFloor.length} above floor, confidence=${confidence}`
+    `Box fit (ray-march): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
+    `rot=${rotation_deg.toFixed(1)}°, yaw=${yawSource}, ` +
+    `march: +U=${posU.toFixed(2)} -U=${negU.toFixed(2)} +V=${posV.toFixed(2)} -V=${negV.toFixed(2)}, ` +
+    `${pixelCount} pts, confidence=${confidence}`
   );
 
-  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence, _pcaRatio: pca.ratio, _yawSource: yawSource, _xzRadius: maxXZRadiusMeters };
+  return {
+    center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence,
+    _pcaRatio: pca.ratio, _yawSource: yawSource, _xzRadius: maxSearchDist
+  };
 }
 
 /**
