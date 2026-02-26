@@ -287,9 +287,9 @@ export default function ARSession({ overlayRef, onExit, onFindStorage, tutorialE
             tap.floorY
           );
           if (frameCloud && frameCloud.length > 0) {
-            // Append new points, cap at 3000 total
+            // Append new points, cap at 5000 total
             const cloud = accumulatedCloudRef.current;
-            const remaining = 3000 - cloud.length;
+            const remaining = 5000 - cloud.length;
             if (remaining > 0) {
               cloud.push(...frameCloud.slice(0, remaining));
             }
