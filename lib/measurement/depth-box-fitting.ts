@@ -372,9 +372,18 @@ function marchExtentXZ(
   const pixelRadius = Math.max(2, Math.round(depthMeters * 3));
   // Neighborhood search: find the depth sample whose unprojected world point
   // best matches the marched target P in XZ (and is above floor).
-  function bestMatchNear(target: THREE.Vector3, bx: number, by: number, radius: number) {
+  // Precompute candidate view-space Z for depth consistency check
+  const _tv = new THREE.Vector4();
+  function viewZ(p: THREE.Vector3): number {
+    _tv.set(p.x, p.y, p.z, 1).applyMatrix4(worldToView);
+    return Math.abs(_tv.z);
+  }
+
+  function bestMatchNear(target: THREE.Vector3, targetViewZ: number, bx: number, by: number, radius: number) {
     let bestW: THREE.Vector3 | null = null;
     let bestDist = Infinity;
+    // View-space Z tolerance: 5cm + 4% of candidate depth
+    const zTol = 0.05 + 0.04 * targetViewZ;
     for (let oy = -radius; oy <= radius; oy++) {
       const yy = by + oy;
       if (yy < 0 || yy >= bufH) continue;
@@ -386,7 +395,10 @@ function marchExtentXZ(
         const v = bufToView((xx + 0.5) / bufW, (yy + 0.5) / bufH);
         const W = unprojectDepthToWorld(v.x, v.y, d, projInv, viewInv);
         if (!W) continue;
-        if (W.y <= floorY + 0.02) continue; // reject floor only
+        if (W.y <= floorY + 0.02) continue; // reject floor
+        // Reject surfaces far behind candidate in view space (background walls)
+        const surfZ = viewZ(W);
+        if (surfZ > targetViewZ + zTol) continue;
         const dx = W.x - target.x;
         const dz = W.z - target.z;
         const xzDist = Math.sqrt(dx * dx + dz * dz);
@@ -398,10 +410,6 @@ function marchExtentXZ(
     }
     return { bestW, bestDist };
   }
-
-  // Camera world position from view inverse (translation column of camera transform)
-  const camPos = new THREE.Vector3();
-  camPos.setFromMatrixPosition(viewInv);
 
   const P = new THREE.Vector3();
   let lastGood = 0;
@@ -425,7 +433,8 @@ function marchExtentXZ(
     if (bx < 0 || by < 0 || bx >= bufW || by >= bufH) break;
 
     // Search neighborhood for the best XZ match above floor (radius scales with distance)
-    const { bestW, bestDist } = bestMatchNear(P, bx, by, pixelRadius);
+    const pViewZ = viewZ(P);
+    const { bestW, bestDist } = bestMatchNear(P, pViewZ, bx, by, pixelRadius);
 
     if (bestW && bestDist <= xzEpsM) {
       // Directional consistency: matched point must lie at the correct
@@ -437,12 +446,7 @@ function marchExtentXZ(
       const pz = vz - along * dirXZ.z;
       const perp = Math.sqrt(px * px + pz * pz);
 
-      // Depth ordering: surface must not be significantly farther from
-      // camera than candidate P — rejects background walls behind the object
-      const camToP = P.distanceTo(camPos);
-      const camToW = bestW.distanceTo(camPos);
-
-      if (Math.abs(along - t) <= alongEps && perp <= perpEps && camToW <= camToP + 0.03) {
+      if (Math.abs(along - t) <= alongEps && perp <= perpEps) {
         lastGood = t;
         missStreak = 0;
       } else {
