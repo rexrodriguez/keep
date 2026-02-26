@@ -21,9 +21,9 @@ export function createRenderLoop(
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
   onFrame: FrameCallback
-): { start: () => void; stop: () => void } {
+): { start: () => void; stop: () => void; captureNextFrame: (cb: (dataUrl: string) => void) => void } {
   let isRunning = false;
-  let animationFrameId: number | null = null;
+  let captureCallback: ((dataUrl: string) => void) | null = null;
 
   const render = (time: number, frame?: XRFrame) => {
     if (!isRunning || !frame) return;
@@ -54,6 +54,17 @@ export function createRenderLoop(
 
     // Render scene
     context.renderer.render(scene, camera);
+
+    // Capture frame if requested (must happen right after render)
+    if (captureCallback) {
+      try {
+        const dataUrl = context.renderer.domElement.toDataURL('image/jpeg', 0.5);
+        captureCallback(dataUrl);
+      } catch {
+        captureCallback('');
+      }
+      captureCallback = null;
+    }
   };
 
   const start = () => {
@@ -67,5 +78,9 @@ export function createRenderLoop(
     context.renderer.setAnimationLoop(null);
   };
 
-  return { start, stop };
+  const captureNextFrame = (cb: (dataUrl: string) => void) => {
+    captureCallback = cb;
+  };
+
+  return { start, stop, captureNextFrame };
 }

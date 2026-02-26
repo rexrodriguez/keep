@@ -60,7 +60,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   const reticleRef = useRef<THREE.Group | null>(null);
   const targetMarkerRef = useRef<THREE.Group | null>(null);
   const stabilizerRef = useRef<PoseStabilizer>(new PoseStabilizer());
-  const renderLoopRef = useRef<{ start: () => void; stop: () => void } | null>(null);
+  const renderLoopRef = useRef<{ start: () => void; stop: () => void; captureNextFrame: (cb: (dataUrl: string) => void) => void } | null>(null);
 
   const [context, setContext] = useState<StateMachineContext>(initialContext);
   const [measurements, setMeasurements] = useState<ComputedMeasurements | null>(null);
@@ -911,29 +911,33 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
 
   const handleAddItem = useCallback(() => {
     if (context.dragStart && context.dragEnd) {
-      // Capture thumbnail from canvas
-      let thumbnail = '';
-      if (sceneContextRef.current?.renderer) {
-        try {
-          thumbnail = sceneContextRef.current.renderer.domElement.toDataURL('image/jpeg', 0.5);
-        } catch (e) {
-          console.warn('Failed to capture thumbnail:', e);
-        }
-      }
-
-      const item: MeasuredItem = {
-        id: crypto.randomUUID(),
+      const itemData = {
         width_m: context.width_m,
         depth_m: context.depth_m,
         height_m: context.height_m,
-        confidence: context.llmEstimate?.confidence || 'MEDIUM',
-        thumbnail,
-        addedAt: Date.now(),
+        confidence: context.llmEstimate?.confidence || 'MEDIUM' as const,
       };
 
-      onAddItem(item);
-      // Reset to measure another object (re-lock floor for different elevations)
-      dispatch({ type: 'RESET' });
+      // Capture thumbnail from next rendered frame, then create item
+      const createItem = (thumbnail: string) => {
+        const item: MeasuredItem = {
+          id: crypto.randomUUID(),
+          ...itemData,
+          thumbnail,
+          addedAt: Date.now(),
+        };
+        onAddItem(item);
+        dispatch({ type: 'RESET' });
+      };
+
+      if (renderLoopRef.current) {
+        renderLoopRef.current.captureNextFrame((dataUrl) => {
+          createItem(dataUrl);
+        });
+      } else {
+        // Fallback: no thumbnail
+        createItem('');
+      }
     }
   }, [context.dragStart, context.dragEnd, context.width_m, context.depth_m, context.height_m, context.llmEstimate, onAddItem, dispatch]);
 

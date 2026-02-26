@@ -122,21 +122,11 @@ export default function MeasurementUI({
             </svg>
           </button>
 
-          {/* Item counter + Done button */}
+          {/* Item counter pill */}
           {itemCount > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="bg-black/50 backdrop-blur-sm text-white/80 px-3 py-1.5 rounded-full text-sm">
-                {itemCount} item{itemCount !== 1 ? 's' : ''}
-              </span>
-              <button
-                onClick={onDone}
-                onTouchEnd={(e) => { e.preventDefault(); onDone(); }}
-                className="bg-blue-500 text-white px-3 py-1.5 rounded-full text-sm font-medium"
-                style={{ touchAction: 'manipulation' }}
-              >
-                Done
-              </button>
-            </div>
+            <span className="bg-black/50 backdrop-blur-sm text-white/80 px-3 py-1.5 rounded-full text-sm">
+              {itemCount} item{itemCount !== 1 ? 's' : ''}
+            </span>
           )}
 
           {/* Floating dimension display when adjusting */}
@@ -239,14 +229,33 @@ export default function MeasurementUI({
       )}
 
       {/* Floating hints for initial states */}
-      {isReadyToDraw && !trackingWarning && (
+      {isReadyToDraw && !trackingWarning && itemCount === 0 && (
         <div className="pointer-events-none pb-8 px-4">
           <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full mx-auto w-fit">
             <span className="text-white text-sm">
-              {itemCount > 0
-                ? 'Measure another item, or tap Done'
-                : 'Point at the floor and tap to set the surface'}
+              Point at the floor and tap to set the surface
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* After adding items: prominent Done button + hint */}
+      {isReadyToDraw && !trackingWarning && itemCount > 0 && (
+        <div className="pointer-events-auto pb-8 px-4 safe-area-bottom">
+          <div className="flex flex-col items-center gap-3">
+            <div className="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-full">
+              <span className="text-white text-sm">
+                Measure another item, or tap Done
+              </span>
+            </div>
+            <button
+              onClick={onDone}
+              onTouchEnd={(e) => { e.preventDefault(); onDone(); }}
+              className="w-48 py-3 rounded-xl font-medium text-base bg-blue-500 text-white active:bg-blue-600 transition-colors"
+              style={{ touchAction: 'manipulation' }}
+            >
+              Done ({itemCount} item{itemCount !== 1 ? 's' : ''})
+            </button>
           </div>
         </div>
       )}
