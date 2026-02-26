@@ -470,15 +470,16 @@ function fitQuantileBox(
   const u0 = percentile(uVals, qLo), u1 = percentile(uVals, qHi);
   const v0 = percentile(vVals, qLo), v1 = percentile(vVals, qHi);
 
+  // Center = bounds midpoint (tap-invariant: works even when tap is near edge)
+  const uC = (u0 + u1) / 2;
+  const vC = (v0 + v1) / 2;
+
   const width_m = clamp(u1 - u0, 0.05, 5.0);
   const depth_m = clamp(v1 - v0, 0.05, 5.0);
 
-  // Center from medians (more stable than midpoint when outliers are asymmetric)
-  const uMed = percentile(uVals, 0.50);
-  const vMed = percentile(vVals, 0.50);
   const center = tapWorld.clone()
-    .addScaledVector(U, uMed)
-    .addScaledVector(V, vMed);
+    .addScaledVector(U, uC)
+    .addScaledVector(V, vC);
   center.y = floorY + height_m / 2;
 
   const rotation_deg = (yaw * 180) / Math.PI;
@@ -497,7 +498,7 @@ function fitQuantileBox(
     `Box fit (quantile): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
     `rot=${rotation_deg.toFixed(1)}°, yaw=${yawSource}, ` +
     `cloud=${pixelCount} pts, U=[${u0.toFixed(2)},${u1.toFixed(2)}] V=[${v0.toFixed(2)},${v1.toFixed(2)}], ` +
-    `confidence=${confidence}`
+    `ctr_offset=(${uC.toFixed(3)},${vC.toFixed(3)}), confidence=${confidence}`
   );
 
   return {
