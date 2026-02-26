@@ -379,6 +379,7 @@ function marchExtentXZ(
         const W = unprojectDepthToWorld(v.x, v.y, d, projInv, viewInv);
         if (!W) continue;
         if (W.y <= floorY + 0.02) continue; // reject floor
+        if (Math.abs(W.y - target.y) > 0.07) continue; // Y-slice: match near marched height
         const dx = W.x - target.x;
         const dz = W.z - target.z;
         const xzDist = Math.sqrt(dx * dx + dz * dz);
@@ -504,15 +505,31 @@ function fitGravityAlignedBox(
 
   const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv } = marchOpts;
 
-  const posU = marchExtentXZ(marchCenter, U, floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
-  const negU = marchExtentXZ(marchCenter, U.clone().negate(), floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
-  const posV = marchExtentXZ(marchCenter, V, floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
-  const negV = marchExtentXZ(marchCenter, V.clone().negate(), floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv);
+  // First pass: march from tap point
+  const marchArgs = [floorY, upOffsetM, stepM, maxSearchDist, xzEpsM, depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv] as const;
+  let posU = marchExtentXZ(marchCenter, U, ...marchArgs);
+  let negU = marchExtentXZ(marchCenter, U.clone().negate(), ...marchArgs);
+  let posV = marchExtentXZ(marchCenter, V, ...marchArgs);
+  let negV = marchExtentXZ(marchCenter, V.clone().negate(), ...marchArgs);
+
+  // One-step recenter: shift center by half the imbalance, then re-march
+  const du = (posU - negU) * 0.5;
+  const dv = (posV - negV) * 0.5;
+  if (Math.abs(du) > 0.02 || Math.abs(dv) > 0.02) {
+    marchCenter.addScaledVector(U, du);
+    marchCenter.addScaledVector(V, dv);
+    posU = marchExtentXZ(marchCenter, U, ...marchArgs);
+    negU = marchExtentXZ(marchCenter, U.clone().negate(), ...marchArgs);
+    posV = marchExtentXZ(marchCenter, V, ...marchArgs);
+    negV = marchExtentXZ(marchCenter, V.clone().negate(), ...marchArgs);
+    cx = marchCenter.x;
+    cz = marchCenter.z;
+  }
 
   const width_m = clamp(posU + negU, 0.05, 5.0);
   const depth_m = clamp(posV + negV, 0.05, 5.0);
 
-  // Recenter box based on march extents (shift from tap toward measured center)
+  // Center box at final march center
   const halfShiftU = (posU - negU) / 2;
   const halfShiftV = (posV - negV) / 2;
   const center = new THREE.Vector3(
