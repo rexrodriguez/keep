@@ -59,6 +59,16 @@ export interface MeasurementData {
   confidence: ConfidenceLevel;
 }
 
+export interface MeasuredItem {
+  id: string;
+  width_m: number;
+  depth_m: number;
+  height_m: number;
+  confidence: ConfidenceLevel;
+  thumbnail: string;
+  addedAt: number;
+}
+
 export type ConfidenceLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 
 // Stabilization

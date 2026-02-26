@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   MeasurementPoint,
   MeasurementData,
+  MeasuredItem,
   ComputedMeasurements,
   ConfidenceLevel,
 } from '@/lib/types';
@@ -169,4 +170,11 @@ export function formatMeasurement(
  */
 export function formatVolume(m3: number, ft3: number): string {
   return `${m3.toFixed(3)} m³ (${ft3.toFixed(2)} ft³)`;
+}
+
+/**
+ * Compute total volume of multiple measured items.
+ */
+export function totalVolume(items: MeasuredItem[]): number {
+  return items.reduce((sum, item) => sum + item.width_m * item.depth_m * item.height_m, 0);
 }
