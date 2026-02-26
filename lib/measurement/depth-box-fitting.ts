@@ -20,6 +20,7 @@ export interface DepthBoxResult {
   _debug?: string;
   _pcaRatio?: number;
   _yawSource?: 'silhouette' | 'pca' | 'none';
+  _xzRadius?: number;
 }
 
 export function fitBoxFromDepth(
@@ -149,16 +150,42 @@ export function fitBoxFromDepth(
   // Unproject tap point to 3D for XZ proximity filtering
   const tapWorld = unprojectDepthToWorld(tapNormX, tapNormY, centerDepth, projMatrixInv, viewMatrixInv);
 
+  // Adaptive XZ gating radius: project flood-fill region corners to world space
+  // at the tap depth, then use max XZ distance from tap as the radius.
+  // This scales the filter with the apparent object size instead of using a fixed 50cm.
+  let maxXZRadius = 0.50; // fallback
+  if (tapWorld) {
+    const corners: [number, number][] = [
+      [region.minX, region.minY], [region.maxX, region.minY],
+      [region.minX, region.maxY], [region.maxX, region.maxY],
+    ];
+    let maxDistSq = 0;
+    for (const [cx, cy] of corners) {
+      const bNx = (cx + 0.5) / width;
+      const bNy = (cy + 0.5) / height;
+      const vCoord = bufToView(bNx, bNy);
+      const cDepth = sampleDepthNearest(buffer, width, height, cx, cy, 3);
+      const wp = unprojectDepthToWorld(vCoord.x, vCoord.y, cDepth > 0 ? cDepth : centerDepth, projMatrixInv, viewMatrixInv);
+      if (wp) {
+        const dx = wp.x - tapWorld.x, dz = wp.z - tapWorld.z;
+        maxDistSq = Math.max(maxDistSq, dx * dx + dz * dz);
+      }
+    }
+    if (maxDistSq > 0) {
+      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.35, 0.15, 0.60);
+    }
+  }
+
   // Estimate world yaw from 2D silhouette (more stable than 3D PCA)
   const silhouetteYaw = estimateYawFromSilhouette(
     boundary, buffer, width, height, bufToView, projMatrixInv, viewMatrixInv
   );
 
-  diag.push(`bnd:${boundary.length} 3D:${worldPoints.length}`);
+  diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m`);
   diag.push(`yaw:${silhouetteYaw ? (silhouetteYaw.yaw * 180 / Math.PI).toFixed(0) + '°' : 'n/a'} q:${silhouetteYaw?.quality.toFixed(2) ?? '0'}`);
 
   // 5. Fit gravity-aligned bounding box
-  const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld, silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0);
+  const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld, maxXZRadius, silhouetteYaw?.yaw ?? null, silhouetteYaw?.quality ?? 0);
 
   diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° src:${result._yawSource ?? '?'}`);
   result._debug = diag.join('\n');
@@ -174,6 +201,23 @@ export function fitBoxFromDepth(
   }
 
   return result;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+/**
+ * Quantile-trimmed bounds: sort values, discard bottom/top `trim` fraction,
+ * return [min, max] of the remaining central portion.
+ * Falls back to raw min/max for small arrays.
+ */
+function quantileBounds(vals: number[], trim = 0.02): [number, number] {
+  if (vals.length < 2) return [vals[0] ?? 0, vals[0] ?? 0];
+  vals.sort((a, b) => a - b);
+  const lo = Math.floor(vals.length * trim);
+  const hi = Math.max(lo + 1, Math.ceil(vals.length * (1 - trim)) - 1);
+  return [vals[lo], vals[hi]];
 }
 
 function floodFillDepth(
@@ -280,6 +324,7 @@ function fitGravityAlignedBox(
   points: THREE.Vector3[],
   floorY: number,
   tapWorld: THREE.Vector3 | null,
+  maxXZRadiusMeters: number,
   overrideYawRad: number | null,
   overrideYawQuality: number
 ): DepthBoxResult {
@@ -301,13 +346,13 @@ function fitGravityAlignedBox(
   let xzPoints = aboveFloor.length >= 3 ? aboveFloor : points;
 
   // XZ proximity filter: reject points far from the tap point in XZ plane.
-  // Floor leakage spreads out in XZ while the object stays compact.
+  // Radius is adaptive — computed from flood-fill region corners projected to world space.
   if (tapWorld && xzPoints.length > 3) {
-    const MAX_XZ_RADIUS = 0.50; // 50cm — most household objects fit within this
+    const rSq = maxXZRadiusMeters * maxXZRadiusMeters;
     const filtered = xzPoints.filter(p => {
       const dx = p.x - tapWorld.x;
       const dz = p.z - tapWorld.z;
-      return dx * dx + dz * dz <= MAX_XZ_RADIUS * MAX_XZ_RADIUS;
+      return dx * dx + dz * dz <= rSq;
     });
     if (filtered.length >= 3) {
       xzPoints = filtered;
@@ -334,19 +379,25 @@ function fitGravityAlignedBox(
   const cosA = Math.cos(-angle);
   const sinA = Math.sin(-angle);
 
-  let minU = Infinity, maxU = -Infinity;
-  let minV = Infinity, maxV = -Infinity;
+  // Collect U/V projections for quantile trimming
+  const uVals: number[] = [];
+  const vVals: number[] = [];
 
   for (const p of xzPoints) {
     const dx = p.x - meanX;
     const dz = p.z - meanZ;
-    const u = dx * cosA - dz * sinA;
-    const v = dx * sinA + dz * cosA;
-    minU = Math.min(minU, u);
-    maxU = Math.max(maxU, u);
-    minV = Math.min(minV, v);
-    maxV = Math.max(maxV, v);
+    uVals.push(dx * cosA - dz * sinA);
+    vVals.push(dx * sinA + dz * cosA);
   }
+
+  // Use quantile-trimmed bounds for robustness (trims 2% outliers on each side)
+  // Only applies when we have enough points; small sets use raw min/max.
+  const [minU, maxU] = xzPoints.length >= 80
+    ? quantileBounds(uVals, 0.02)
+    : [Math.min(...uVals), Math.max(...uVals)];
+  const [minV, maxV] = xzPoints.length >= 80
+    ? quantileBounds(vVals, 0.02)
+    : [Math.min(...vVals), Math.max(...vVals)];
 
   const bottomY = floorY;
   const topY = maxY;
@@ -386,7 +437,7 @@ function fitGravityAlignedBox(
     `${pixelCount} total pts, ${aboveFloor.length} above floor, confidence=${confidence}`
   );
 
-  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence, _pcaRatio: pca.ratio, _yawSource: yawSource };
+  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence, _pcaRatio: pca.ratio, _yawSource: yawSource, _xzRadius: maxXZRadiusMeters };
 }
 
 /**

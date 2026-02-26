@@ -4,3 +4,4 @@ certificates
 .next/
 .env
 tsconfig.tsbuildinfo
+packages
