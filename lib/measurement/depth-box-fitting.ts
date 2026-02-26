@@ -378,8 +378,7 @@ function marchExtentXZ(
         const v = bufToView((xx + 0.5) / bufW, (yy + 0.5) / bufH);
         const W = unprojectDepthToWorld(v.x, v.y, d, projInv, viewInv);
         if (!W) continue;
-        if (W.y <= floorY + 0.02) continue; // reject floor
-        if (Math.abs(W.y - target.y) > 0.07) continue; // Y-slice: match near marched height
+        if (W.y <= floorY + 0.02) continue; // reject floor only
         const dx = W.x - target.x;
         const dz = W.z - target.z;
         const xzDist = Math.sqrt(dx * dx + dz * dz);
