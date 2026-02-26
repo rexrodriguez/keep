@@ -6,6 +6,7 @@ import LandingPage from '@/components/LandingPage';
 import CapabilityCheck from '@/components/CapabilityCheck';
 import RadiusSlider from '@/components/RadiusSlider';
 import ResultsDisplay from '@/components/ResultsDisplay';
+import ItemListView from '@/components/ItemListView';
 import { MeasuredItem, StorageSearchResponse, StorageSearchRequest } from '@/lib/types';
 import { totalVolume } from '@/lib/measurement/calculations';
 
@@ -30,12 +31,6 @@ type AppState =
   | 'SEARCHING'
   | 'RESULTS';
 
-// Temporary placeholder — will be replaced in Task 5
-const ItemListView = ({ onAddMore }: { items: MeasuredItem[]; onDelete: (id: string) => void; onAddMore: () => void; onFindStorage: () => void }) => (
-  <div className="flex items-center justify-center min-h-screen bg-gray-900">
-    <button onClick={onAddMore} className="text-white">Placeholder - Add More</button>
-  </div>
-);
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('LANDING');
