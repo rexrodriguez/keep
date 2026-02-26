@@ -361,13 +361,42 @@ function marchExtentXZ(
   projInv: THREE.Matrix4,
   viewInv: THREE.Matrix4
 ): number {
+  // Neighborhood search: find the depth sample whose unprojected world point
+  // best matches the marched target P in XZ (and is above floor).
+  function bestMatchNear(target: THREE.Vector3, bx: number, by: number, radius: number) {
+    let bestW: THREE.Vector3 | null = null;
+    let bestDist = Infinity;
+    for (let oy = -radius; oy <= radius; oy++) {
+      const yy = by + oy;
+      if (yy < 0 || yy >= bufH) continue;
+      for (let ox = -radius; ox <= radius; ox++) {
+        const xx = bx + ox;
+        if (xx < 0 || xx >= bufW) continue;
+        const d = depthBuf[yy * bufW + xx];
+        if (!(d > 0)) continue;
+        const v = bufToView((xx + 0.5) / bufW, (yy + 0.5) / bufH);
+        const W = unprojectDepthToWorld(v.x, v.y, d, projInv, viewInv);
+        if (!W) continue;
+        if (W.y <= floorY + 0.02) continue; // reject floor
+        const dx = W.x - target.x;
+        const dz = W.z - target.z;
+        const xzDist = Math.sqrt(dx * dx + dz * dz);
+        if (xzDist < bestDist) {
+          bestDist = xzDist;
+          bestW = W;
+        }
+      }
+    }
+    return { bestW, bestDist };
+  }
+
   const P = new THREE.Vector3();
   let lastGood = 0;
   let missStreak = 0;
 
   for (let t = 0; t <= maxDistM; t += stepM) {
     P.copy(center).addScaledVector(dirXZ, t);
-    P.y = Math.max(P.y, floorY + upOffsetM);
+    P.y = floorY + upOffsetM; // march on a consistent slice above the floor
 
     // Project candidate world point to view-normalized coords
     const vNorm = worldToViewNorm(P, worldToView, proj);
@@ -379,28 +408,10 @@ function marchExtentXZ(
     const by = Math.floor(b.y * (bufH - 1));
     if (bx < 0 || by < 0 || bx >= bufW || by >= bufH) break;
 
-    // Read depth and unproject to world to test "on object"
-    const d = depthBuf[by * bufW + bx];
-    if (!(d > 0)) {
-      missStreak++;
-      if (missStreak >= 3) break;
-      continue;
-    }
+    // Search a 7×7 neighborhood for the best XZ match above floor
+    const { bestW, bestDist } = bestMatchNear(P, bx, by, 3);
 
-    const bvNorm = bufToView((bx + 0.5) / bufW, (by + 0.5) / bufH);
-    const W = unprojectDepthToWorld(bvNorm.x, bvNorm.y, d, projInv, viewInv);
-    if (!W) {
-      missStreak++;
-      if (missStreak >= 3) break;
-      continue;
-    }
-
-    // On-object test: depth world point should be near candidate in XZ and above floor
-    const dx = W.x - P.x;
-    const dz = W.z - P.z;
-    const xzDist = Math.sqrt(dx * dx + dz * dz);
-
-    if (xzDist <= xzEpsM && W.y > floorY + 0.02) {
+    if (bestW && bestDist <= xzEpsM) {
       lastGood = t;
       missStreak = 0;
     } else {
@@ -463,7 +474,7 @@ function fitGravityAlignedBox(
     cx /= points.length;
     cz /= points.length;
   }
-  const marchCenter = new THREE.Vector3(cx, floorY + height_m / 2, cz);
+  const marchCenter = new THREE.Vector3(cx, floorY, cz);
 
   // --- Ray-march width/depth along rotated axes ---
   const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
@@ -471,7 +482,7 @@ function fitGravityAlignedBox(
 
   const stepM = 0.01;     // 1cm steps
   const upOffsetM = 0.08; // sample 8cm above floor
-  const xzEpsM = 0.06;    // 6cm proximity tolerance
+  const xzEpsM = 0.10;    // 10cm proximity tolerance (forgiving; tighten later)
 
   const { depthBuf, bufW, bufH, viewToBuf, bufToView, worldToView, proj, projInv, viewInv } = marchOpts;
 
