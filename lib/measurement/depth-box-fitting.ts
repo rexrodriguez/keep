@@ -148,12 +148,17 @@ export function fitBoxFromDepth(
   // Unproject tap point to 3D for XZ proximity filtering
   const tapWorld = unprojectDepthToWorld(tapNormX, tapNormY, centerDepth, projMatrixInv, viewMatrixInv);
 
+  // Estimate world yaw from 2D silhouette (more stable than 3D PCA)
+  const silhouetteYaw = estimateYawFromSilhouette(
+    boundary, buffer, width, height, bufToView, projMatrixInv, viewMatrixInv
+  );
+
   diag.push(`bnd:${boundary.length} 3D:${worldPoints.length}`);
 
   // 5. Fit gravity-aligned bounding box
-  const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld);
+  const result = fitGravityAlignedBox(worldPoints, floorY, tapWorld, silhouetteYaw);
 
-  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° pca:${result._pcaRatio?.toFixed(1) ?? '?'}`);
+  diag.push(`box: ${(result.width_m*39.37).toFixed(0)}"x${(result.depth_m*39.37).toFixed(0)}"x${(result.height_m*39.37).toFixed(0)}" rot:${result.rotation_deg.toFixed(0)}° sil:${result._pcaRatio?.toFixed(1) ?? '?'}`);
   result._debug = diag.join('\n');
 
   // 6. Size guards
@@ -272,7 +277,8 @@ function unprojectDepthToWorld(
 function fitGravityAlignedBox(
   points: THREE.Vector3[],
   floorY: number,
-  tapWorld: THREE.Vector3 | null
+  tapWorld: THREE.Vector3 | null,
+  silhouetteYaw: { yaw: number; ratio: number } | null
 ): DepthBoxResult {
   // Separate points into "above floor" (object surface) and "near floor" (floor contamination).
   // Only use above-floor points for XZ extents to avoid floor pixels inflating width/depth.
@@ -305,15 +311,17 @@ function fitGravityAlignedBox(
     }
   }
 
-  // Compute principal orientation via PCA on XZ plane
-  const pca = computePCA_XZ(xzPoints);
+  // Use silhouette-derived world yaw for rotation (more stable than 3D PCA).
+  // The 2D silhouette captures the object's visual orientation reliably,
+  // then we lift it to world space by unprojecting two axis points.
+  const angle = (silhouetteYaw && silhouetteYaw.ratio >= 1.5) ? silhouetteYaw.yaw : 0;
+  const silRatio = silhouetteYaw?.ratio ?? 1;
 
-  // Only apply PCA rotation if:
-  // 1. Object is very clearly elongated (ratio > 4.0) — conservative threshold
-  //    since single-viewpoint depth data makes PCA view-dependent
-  // 2. We have enough points for reliable statistics (>= 20)
-  const useRotation = pca.ratio > 4.0 && xzPoints.length >= 20;
-  const angle = useRotation ? pca.angle : 0;
+  // Compute XZ centroid for rotation frame
+  let meanX = 0, meanZ = 0;
+  for (const p of xzPoints) { meanX += p.x; meanZ += p.z; }
+  meanX /= xzPoints.length;
+  meanZ /= xzPoints.length;
 
   // Compute bounding box in the (possibly rotated) frame
   const cosA = Math.cos(-angle);
@@ -323,8 +331,8 @@ function fitGravityAlignedBox(
   let minV = Infinity, maxV = -Infinity;
 
   for (const p of xzPoints) {
-    const dx = p.x - pca.meanX;
-    const dz = p.z - pca.meanZ;
+    const dx = p.x - meanX;
+    const dz = p.z - meanZ;
     const u = dx * cosA - dz * sinA;
     const v = dx * sinA + dz * cosA;
     minU = Math.min(minU, u);
@@ -347,9 +355,9 @@ function fitGravityAlignedBox(
   const sinAInv = Math.sin(angle);
 
   const center = new THREE.Vector3(
-    pca.meanX + centerU * cosAInv - centerV * sinAInv,
+    meanX + centerU * cosAInv - centerV * sinAInv,
     bottomY + height_m / 2,
-    pca.meanZ + centerU * sinAInv + centerV * cosAInv
+    meanZ + centerU * sinAInv + centerV * cosAInv
   );
 
   const rotation_deg = (angle * 180) / Math.PI;
@@ -371,7 +379,7 @@ function fitGravityAlignedBox(
     `${pixelCount} total pts, ${aboveFloor.length} above floor, confidence=${confidence}`
   );
 
-  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence, _pcaRatio: pca.ratio };
+  return { center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence, _pcaRatio: silRatio };
 }
 
 /**
@@ -418,39 +426,82 @@ function getCoordTransforms(xform: { matrix: Float32Array } | null | undefined) 
 }
 
 /**
- * PCA on XZ-projected points to find principal orientation.
- * Returns angle (radians), centroid, and eigenvalue ratio for elongation check.
+ * PCA on 2D boundary pixels in buffer space.
+ * More stable than 3D PCA because buffer pixels are clean and dense,
+ * while 3D points have depth noise and view-dependent coverage.
  */
-function computePCA_XZ(points: THREE.Vector3[]) {
-  let sumX = 0, sumZ = 0;
-  for (const p of points) {
-    sumX += p.x;
-    sumZ += p.z;
-  }
-  const n = points.length;
-  const meanX = sumX / n;
-  const meanZ = sumZ / n;
+function pca2D(boundary: [number, number][]) {
+  let mx = 0, my = 0;
+  for (const [x, y] of boundary) { mx += x; my += y; }
+  const n = boundary.length;
+  mx /= n; my /= n;
 
-  let cxx = 0, cxz = 0, czz = 0;
-  for (const p of points) {
-    const dx = p.x - meanX;
-    const dz = p.z - meanZ;
-    cxx += dx * dx;
-    cxz += dx * dz;
-    czz += dz * dz;
+  let cxx = 0, cxy = 0, cyy = 0;
+  for (const [x, y] of boundary) {
+    const dx = x - mx, dy = y - my;
+    cxx += dx * dx; cxy += dx * dy; cyy += dy * dy;
   }
-  cxx /= n; cxz /= n; czz /= n;
+  cxx /= n; cxy /= n; cyy /= n;
 
-  // Eigenvalues of 2x2 symmetric matrix
-  const trace = cxx + czz;
-  const det = cxx * czz - cxz * cxz;
+  const trace = cxx + cyy;
+  const det = cxx * cyy - cxy * cxy;
   const disc = Math.sqrt(Math.max(0, trace * trace / 4 - det));
   const lambda1 = trace / 2 + disc;
   const lambda2 = trace / 2 - disc;
-  const ratio = lambda2 > 1e-10 ? lambda1 / lambda2 : 999;
+  const ratio = lambda2 > 1e-10 ? lambda1 / lambda2 : 1;
 
-  // Angle of principal eigenvector
-  const angle = 0.5 * Math.atan2(2 * cxz, cxx - czz);
+  const angle = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+  return { angle, mx, my, ratio };
+}
 
-  return { angle, meanX, meanZ, ratio };
+/**
+ * Estimate world-space yaw from the 2D silhouette's principal axis.
+ * Picks two points along the 2D major axis, unprojects them to 3D,
+ * and computes the XZ direction vector → yaw angle.
+ */
+function estimateYawFromSilhouette(
+  boundary: [number, number][],
+  depthBuf: Float32Array,
+  width: number,
+  height: number,
+  bufToView: (x: number, y: number) => { x: number; y: number },
+  projInv: THREE.Matrix4,
+  viewInv: THREE.Matrix4
+): { yaw: number; ratio: number } | null {
+  if (boundary.length < 20) return null;
+
+  const { angle, mx, my, ratio } = pca2D(boundary);
+
+  // Only compute yaw if silhouette is clearly elongated
+  if (ratio < 1.5) return { yaw: 0, ratio };
+
+  // Pick two sample pixels along the major axis, offset from centroid
+  const L = Math.min(12, Math.floor(Math.sqrt(boundary.length) / 2));
+  const ax = Math.cos(angle), ay = Math.sin(angle);
+  const bx0 = Math.round(mx - ax * L), by0 = Math.round(my - ay * L);
+  const bx1 = Math.round(mx + ax * L), by1 = Math.round(my + ay * L);
+
+  // Clamp to buffer bounds
+  if (bx0 < 0 || bx0 >= width || by0 < 0 || by0 >= height) return { yaw: 0, ratio };
+  if (bx1 < 0 || bx1 >= width || by1 < 0 || by1 >= height) return { yaw: 0, ratio };
+
+  const d0 = depthBuf[by0 * width + bx0];
+  const d1 = depthBuf[by1 * width + bx1];
+  if (!(d0 > 0 && d1 > 0)) return { yaw: 0, ratio };
+
+  const v0 = bufToView((bx0 + 0.5) / width, (by0 + 0.5) / height);
+  const v1 = bufToView((bx1 + 0.5) / width, (by1 + 0.5) / height);
+
+  const w0 = unprojectDepthToWorld(v0.x, v0.y, d0, projInv, viewInv);
+  const w1 = unprojectDepthToWorld(v1.x, v1.y, d1, projInv, viewInv);
+  if (!w0 || !w1) return { yaw: 0, ratio };
+
+  // Direction in world XZ plane
+  const dir = w1.clone().sub(w0);
+  dir.y = 0;
+  if (dir.lengthSq() < 1e-6) return { yaw: 0, ratio };
+  dir.normalize();
+
+  const yaw = Math.atan2(dir.x, dir.z);
+  return { yaw, ratio };
 }
