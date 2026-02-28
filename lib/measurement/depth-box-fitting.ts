@@ -630,15 +630,65 @@ export function fitQuantileBox(
     0.05, 5.0
   );
 
-  // --- Yaw from minimum-area bounding rectangle on TOP surface ---
-  // Side-face points shift the XZ footprint depending on viewing angle.
-  // Top-face points project to the true footprint regardless of camera position.
-  const topThreshold = topY - 0.03; // within 3cm of top surface
-  const topPoints = localCloud.filter(p => p.y > topThreshold);
-  const orientCloud = topPoints.length >= 10 ? topPoints : localCloud;
+  // --- Adaptive top-surface selection ---
+  // Use top 20% of points by Y. Scales with object height (not fixed metric).
+  let topThreshold = percentile(yVals, 0.80);
+  // Guard: minimum 1.5cm band for noisy/flat data
+  if (topY - topThreshold < 0.015) {
+    topThreshold = topY - 0.015;
+  }
+  let topPoints = localCloud.filter(p => p.y >= topThreshold);
+  // Fallback chain: top 20% → top 40% → full cloud
+  if (topPoints.length < 10) {
+    topThreshold = percentile(yVals, 0.60);
+    topPoints = localCloud.filter(p => p.y >= topThreshold);
+  }
+  const orientCloud = topPoints.length < 10 ? localCloud : topPoints;
+
+  // --- Hybrid yaw: MABR + PCA with confidence-weighted circular blend ---
   const xzPoints = orientCloud.map(p => ({ x: p.x, z: p.z }));
-  const mabrResult = xzPoints.length >= 3 ? minimumAreaBoundingRect(xzPoints) : { yaw: 0, mabrConfidence: 0 };
-  const yaw = mabrResult.yaw;
+  const mabrResult = xzPoints.length >= 3
+    ? minimumAreaBoundingRect(xzPoints)
+    : { yaw: 0, mabrConfidence: 0 };
+  const pcaResult = pcaYawXZ(xzPoints);
+
+  let yaw: number;
+  let yawSource: string;
+
+  // Safety fallback: if orientation cloud is too small for both methods, use MABR-only
+  if (xzPoints.length < 3) {
+    yaw = 0;
+    yawSource = 'none';
+  } else if (mabrResult.mabrConfidence < 0.01 && pcaResult.pcaConfidence < 0.01) {
+    // Both degenerate — no reliable orientation
+    yaw = 0;
+    yawSource = 'none';
+  } else {
+    // Double-angle circular blend
+    const mabrX = mabrResult.mabrConfidence * Math.cos(2 * mabrResult.yaw);
+    const mabrY = mabrResult.mabrConfidence * Math.sin(2 * mabrResult.yaw);
+    const pcaX = pcaResult.pcaConfidence * Math.cos(2 * pcaResult.yaw);
+    const pcaY = pcaResult.pcaConfidence * Math.sin(2 * pcaResult.yaw);
+
+    const sx = mabrX + pcaX;
+    const sy = mabrY + pcaY;
+    const resultant = Math.sqrt(sx * sx + sy * sy) / (mabrResult.mabrConfidence + pcaResult.pcaConfidence + 1e-9);
+
+    if (sx * sx + sy * sy < 1e-10) {
+      // Cancellation — pick higher-confidence source
+      yaw = mabrResult.mabrConfidence >= pcaResult.pcaConfidence ? mabrResult.yaw : pcaResult.yaw;
+      yawSource = mabrResult.mabrConfidence >= pcaResult.pcaConfidence ? 'mabr-cancel' : 'pca-cancel';
+    } else {
+      yaw = normalizeYaw(Math.atan2(sy, sx) / 2);
+      yawSource = `blend(r=${resultant.toFixed(2)})`;
+    }
+
+    console.log(
+      `Yaw blend: mabr=${(mabrResult.yaw * 180 / Math.PI).toFixed(1)}°(conf=${mabrResult.mabrConfidence.toFixed(2)}) ` +
+      `pca=${(pcaResult.yaw * 180 / Math.PI).toFixed(1)}°(conf=${pcaResult.pcaConfidence.toFixed(2)}) ` +
+      `→ ${(yaw * 180 / Math.PI).toFixed(1)}° src=${yawSource} topPts=${topPoints.length}`
+    );
+  }
 
   // --- Rotate into yaw-aligned frame and compute quantile extents ---
   const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
@@ -689,14 +739,14 @@ export function fitQuantileBox(
 
   console.log(
     `Box fit (MABR): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
-    `rot=${rotation_deg.toFixed(1)}°, topPts=${topPoints.length}/${pixelCount}, ` +
+    `rot=${rotation_deg.toFixed(1)}°(${yawSource}), topPts=${topPoints.length}/${pixelCount}, ` +
     `cloud=${pixelCount} pts, U=[${u0.toFixed(2)},${u1.toFixed(2)}] V=[${v0.toFixed(2)},${v1.toFixed(2)}], ` +
     `ctr_offset=(${uC.toFixed(3)},${vC.toFixed(3)}), confidence=${confidence}`
   );
 
   return {
     center, width_m, depth_m, height_m, rotation_deg, pixelCount, confidence,
-    _yawSource: 'mabr' as 'silhouette' | 'pca' | 'none',
+    _yawSource: yawSource,
     _quantileExtents: `q=${qLo.toFixed(2)}..${qHi.toFixed(2)} U[${u0.toFixed(2)},${u1.toFixed(2)}] V[${v0.toFixed(2)},${v1.toFixed(2)}]`
   };
 }
