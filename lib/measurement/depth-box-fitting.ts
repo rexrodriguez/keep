@@ -176,14 +176,19 @@ export function fitBoxFromDepth(
       }
     }
     if (maxDistSq > 0) {
-      // Lower close-range floor to avoid over-collecting nearby background.
-      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.10, 0.10, centerDepth * 0.6);
+      // Close-range guard: shrink gating radius when depth is short to avoid overreach.
+      const closeDepthScale = clamp(centerDepth / 1.0, 0.65, 1.0);
+      maxXZRadius = clamp(
+        Math.sqrt(maxDistSq) * 1.10 * closeDepthScale,
+        0.08,
+        centerDepth * 0.45
+      );
     }
   }
 
   // Inverse-depth scaling: closer objects occupy more pixels, farther objects fewer.
   // The pixel-space annulus tracks the object's apparent size in the depth buffer.
-  const rOuter = clamp(Math.round(40 / centerDepth), 18, 52);
+  const rOuter = clamp(Math.round(28 / centerDepth), 14, 40);
   const rInner = Math.max(Math.round(rOuter * 0.30), 4);
 
   diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m rOut:${rOuter}px rIn:${rInner}px`);
@@ -268,10 +273,10 @@ export function buildCloudFromDepth(
 
   // Tighter than single-frame (0.5 vs 0.6): reduces background accumulation
   // across many viewing angles where there's no flood-fill to constrain the region
-  const maxXZRadius = clamp(centerDepth * 0.5, 0.10, 2.0);
+  const maxXZRadius = clamp(centerDepth * 0.35, 0.08, 1.2);
 
   // Same inverse-depth annulus as fitBoxFromDepth
-  const rOuter = clamp(Math.round(40 / centerDepth), 18, 52);
+  const rOuter = clamp(Math.round(28 / centerDepth), 14, 40);
   const rInner = Math.max(Math.round(rOuter * 0.30), 4);
 
   const cloud = buildLocalCloud(
@@ -738,9 +743,11 @@ export function fitQuantileBox(
   const uC = (u0 + u1) / 2;
   const vC = (v0 + v1) / 2;
 
-  // Sensor margin: depth noise means true edges are slightly beyond measured points
-  // 2cm per side accounts for typical ARCore depth uncertainty at 1-2m range
-  const SENSOR_MARGIN = 0.02;
+  // Sensor margin: scale with measured footprint so small close objects
+  // are not over-inflated by a fixed absolute padding.
+  const spanU = u1 - u0;
+  const spanV = v1 - v0;
+  const SENSOR_MARGIN = clamp(Math.max(spanU, spanV) * 0.05, 0.008, 0.02);
   const width_m = clamp((u1 - u0) + 2 * SENSOR_MARGIN, 0.05, 5.0);
   const depth_m = clamp((v1 - v0) + 2 * SENSOR_MARGIN, 0.05, 5.0);
 
