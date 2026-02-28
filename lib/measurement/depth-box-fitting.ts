@@ -283,6 +283,74 @@ function percentile(sorted: number[], p: number): number {
 }
 
 /**
+ * Normalize a yaw angle to the canonical range [-π/2, π/2).
+ * Box orientations are symmetric: θ and θ+π are the same box.
+ */
+function normalizeYaw(yaw: number): number {
+  let y = yaw;
+  while (y >= Math.PI / 2) y -= Math.PI;
+  while (y < -Math.PI / 2) y += Math.PI;
+  return y;
+}
+
+/**
+ * Compute principal axis orientation of XZ footprint via PCA.
+ * Returns yaw angle and anisotropy confidence (0 = isotropic, 1 = elongated).
+ */
+function pcaYawXZ(points: { x: number; z: number }[]): { yaw: number; pcaConfidence: number } {
+  if (points.length < 3) {
+    return { yaw: 0, pcaConfidence: 0 };
+  }
+
+  // Centroid
+  let cx = 0, cz = 0;
+  for (const p of points) { cx += p.x; cz += p.z; }
+  cx /= points.length;
+  cz /= points.length;
+
+  // 2x2 covariance matrix
+  let Cxx = 0, Cxz = 0, Czz = 0;
+  for (const p of points) {
+    const dx = p.x - cx;
+    const dz = p.z - cz;
+    Cxx += dx * dx;
+    Cxz += dx * dz;
+    Czz += dz * dz;
+  }
+  Cxx /= points.length;
+  Cxz /= points.length;
+  Czz /= points.length;
+
+  // Eigenvalues via quadratic formula
+  const trace = Cxx + Czz;
+  const det = Cxx * Czz - Cxz * Cxz;
+  const disc = Math.sqrt(Math.max(trace * trace / 4 - det, 0));
+  const lambda1 = trace / 2 + disc; // major
+  const lambda2 = trace / 2 - disc; // minor
+
+  const eigSum = lambda1 + lambda2;
+  if (eigSum < 1e-8) {
+    return { yaw: 0, pcaConfidence: 0 };
+  }
+
+  // Anisotropy: 0 = isotropic/square, 1 = strongly elongated
+  const anisotropy = (lambda1 - lambda2) / (eigSum + 1e-9);
+
+  // Major eigenvector for λ1: (Cxx - λ2, Cxz) or (Cxz, Czz - λ2)
+  let evX = Cxz;
+  let evZ = lambda1 - Cxx;
+  const evLen = Math.sqrt(evX * evX + evZ * evZ);
+  if (evLen < 1e-10) {
+    // Fallback: try other form
+    evX = lambda1 - Czz;
+    evZ = Cxz;
+  }
+
+  const yaw = normalizeYaw(Math.atan2(evX, evZ));
+  return { yaw, pcaConfidence: anisotropy };
+}
+
+/**
  * Build a local point cloud by sampling an annulus of pixels around the
  * tap point in buffer space. The annulus (ring) skips interior pixels near
  * the tap center, reducing bias toward the tap point and emphasizing
@@ -485,14 +553,29 @@ function convexHullXZ(points: { x: number; z: number }[]): { x: number; z: numbe
 }
 
 /**
+ * Area of a polygon via the shoelace formula.
+ */
+function shoelaceArea(hull: { x: number; z: number }[]): number {
+  let area = 0;
+  const n = hull.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += hull[i].x * hull[j].z;
+    area -= hull[j].x * hull[i].z;
+  }
+  return Math.abs(area) / 2;
+}
+
+/**
  * Minimum-area bounding rectangle via rotating calipers on the convex hull.
  * Returns the yaw angle that produces the tightest-fitting oriented rectangle.
  * This is view-invariant — depends only on the XZ footprint geometry.
  */
-function minimumAreaBoundingRect(points: { x: number; z: number }[]): number {
+function minimumAreaBoundingRect(points: { x: number; z: number }[]): { yaw: number; mabrConfidence: number } {
   const hull = convexHullXZ(points);
-  if (hull.length < 3) return 0;
+  if (hull.length < 3) return { yaw: 0, mabrConfidence: 0 };
 
+  const hullArea = shoelaceArea(hull);
   let bestArea = Infinity;
   let bestYaw = 0;
 
@@ -504,11 +587,9 @@ function minimumAreaBoundingRect(points: { x: number; z: number }[]): number {
     const len = Math.sqrt(ex * ex + ez * ez);
     if (len < 1e-10) continue;
 
-    // Unit vectors along and perpendicular to this hull edge
     const ux = ex / len, uz = ez / len;
     const vx = -uz, vz = ux;
 
-    // Project all hull points onto these axes
     let minU = Infinity, maxU = -Infinity;
     let minV = Infinity, maxV = -Infinity;
     for (const p of hull) {
@@ -527,7 +608,8 @@ function minimumAreaBoundingRect(points: { x: number; z: number }[]): number {
     }
   }
 
-  return bestYaw;
+  const mabrConfidence = clamp(hullArea / (bestArea + 1e-9), 0, 1);
+  return { yaw: normalizeYaw(bestYaw), mabrConfidence };
 }
 
 /**
@@ -555,7 +637,8 @@ export function fitQuantileBox(
   const topPoints = localCloud.filter(p => p.y > topThreshold);
   const orientCloud = topPoints.length >= 10 ? topPoints : localCloud;
   const xzPoints = orientCloud.map(p => ({ x: p.x, z: p.z }));
-  const yaw = xzPoints.length >= 3 ? minimumAreaBoundingRect(xzPoints) : 0;
+  const mabrResult = xzPoints.length >= 3 ? minimumAreaBoundingRect(xzPoints) : { yaw: 0, mabrConfidence: 0 };
+  const yaw = mabrResult.yaw;
 
   // --- Rotate into yaw-aligned frame and compute quantile extents ---
   const U = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
