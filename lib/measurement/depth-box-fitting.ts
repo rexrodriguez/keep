@@ -9,6 +9,8 @@
 import * as THREE from 'three';
 import { DepthData, getDepthAtNormalized, getDepthBuffer } from '@/lib/webxr/depth-sensing';
 
+let _cloudFrameCount = 0;
+
 export interface DepthBoxResult {
   center: THREE.Vector3;
   width_m: number;
@@ -178,7 +180,12 @@ export function fitBoxFromDepth(
     }
   }
 
-  diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m`);
+  // Inverse-depth scaling: closer objects occupy more pixels, farther objects fewer.
+  // The pixel-space annulus tracks the object's apparent size in the depth buffer.
+  const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
+  const rInner = Math.max(Math.round(rOuter * 0.25), 3);
+
+  diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m rOut:${rOuter}px rIn:${rInner}px`);
 
   // 5. Build dense local cloud and fit quantile box
   if (!tapWorld) {
@@ -187,11 +194,6 @@ export function fitBoxFromDepth(
   }
 
   const worldToView = viewMatrixInv.clone().invert();
-
-  // Inverse-depth scaling: closer objects occupy more pixels, farther objects fewer.
-  // The pixel-space annulus tracks the object's apparent size in the depth buffer.
-  const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
-  const rInner = Math.max(Math.round(rOuter * 0.25), 3);
 
   const localCloud = buildLocalCloud(
     tapBufX, tapBufY, tapWorld, floorY,
@@ -271,12 +273,19 @@ export function buildCloudFromDepth(
   const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
   const rInner = Math.max(Math.round(rOuter * 0.25), 3);
 
-  return buildLocalCloud(
+  const cloud = buildLocalCloud(
     tapBufX, tapBufY, tapWorld, floorY,
     buffer, width, height, bufToView,
     projMatrixInv, viewMatrixInv, worldToView,
     rOuter, rInner, 1, maxXZRadius
   );
+
+  // Log every 30th frame to avoid spam / AR perf impact
+  if (++_cloudFrameCount % 30 === 0) {
+    console.log(`Cloud frame #${_cloudFrameCount}: depth=${centerDepth.toFixed(2)}m rOuter=${rOuter}px xzR=${maxXZRadius.toFixed(2)}m pts=${cloud.length}`);
+  }
+
+  return cloud;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
