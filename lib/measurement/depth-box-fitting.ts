@@ -174,7 +174,7 @@ export function fitBoxFromDepth(
       }
     }
     if (maxDistSq > 0) {
-      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.10, 0.15, 0.35);
+      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.10, 0.15, centerDepth * 0.6);
     }
   }
 
@@ -187,12 +187,18 @@ export function fitBoxFromDepth(
   }
 
   const worldToView = viewMatrixInv.clone().invert();
+
+  // Inverse-depth scaling: closer objects occupy more pixels, farther objects fewer.
+  // The pixel-space annulus tracks the object's apparent size in the depth buffer.
+  const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
+  const rInner = Math.max(Math.round(rOuter * 0.25), 3);
+
   const localCloud = buildLocalCloud(
     tapBufX, tapBufY, tapWorld, floorY,
     buffer, width, height, bufToView,
     projMatrixInv, viewMatrixInv, worldToView,
-    38,           // rOuterPx: outer annulus radius in buffer pixels
-    10,           // rInnerPx: inner annulus radius (skip tap-center bias)
+    rOuter,       // rOuterPx: outer annulus radius in buffer pixels
+    rInner,       // rInnerPx: inner annulus radius (skip tap-center bias)
     1,            // stride: sample every pixel
     maxXZRadius   // maxXZ: adaptive gating radius
   );
@@ -257,14 +263,19 @@ export function buildCloudFromDepth(
   const tapWorld = unprojectDepthToWorld(tapNormX, tapNormY, centerDepth, projMatrixInv, viewMatrixInv);
   if (!tapWorld) return null;
 
-  // Use a fixed generous XZ radius for accumulation (individual frame clouds get merged)
-  const maxXZRadius = 0.35;
+  // Tighter than single-frame (0.5 vs 0.6): reduces background accumulation
+  // across many viewing angles where there's no flood-fill to constrain the region
+  const maxXZRadius = clamp(centerDepth * 0.5, 0.15, 2.0);
+
+  // Same inverse-depth annulus as fitBoxFromDepth
+  const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
+  const rInner = Math.max(Math.round(rOuter * 0.25), 3);
 
   return buildLocalCloud(
     tapBufX, tapBufY, tapWorld, floorY,
     buffer, width, height, bufToView,
     projMatrixInv, viewMatrixInv, worldToView,
-    38, 10, 1, maxXZRadius
+    rOuter, rInner, 1, maxXZRadius
   );
 }
 
