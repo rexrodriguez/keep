@@ -705,9 +705,9 @@ export function fitQuantileBox(
   uVals.sort((a, b) => a - b);
   vVals.sort((a, b) => a - b);
 
-  // Adaptive quantiles: tighten when cloud is small, widen when dense
+  // Conservative quantile trim: reject only extreme outliers, not edges
   const n = localCloud.length;
-  const qLo = n < 150 ? 0.10 : (n > 600 ? 0.02 : 0.05);
+  const qLo = n < 40 ? 0.05 : n < 120 ? 0.02 : 0.01;
   const qHi = 1 - qLo;
 
   const u0 = percentile(uVals, qLo), u1 = percentile(uVals, qHi);
@@ -717,8 +717,11 @@ export function fitQuantileBox(
   const uC = (u0 + u1) / 2;
   const vC = (v0 + v1) / 2;
 
-  const width_m = clamp(u1 - u0, 0.05, 5.0);
-  const depth_m = clamp(v1 - v0, 0.05, 5.0);
+  // Sensor margin: depth noise means true edges are slightly beyond measured points
+  // 2cm per side accounts for typical ARCore depth uncertainty at 1-2m range
+  const SENSOR_MARGIN = 0.02;
+  const width_m = clamp((u1 - u0) + 2 * SENSOR_MARGIN, 0.05, 5.0);
+  const depth_m = clamp((v1 - v0) + 2 * SENSOR_MARGIN, 0.05, 5.0);
 
   const center = tapWorld.clone()
     .addScaledVector(U, uC)
@@ -738,7 +741,7 @@ export function fitQuantileBox(
   }
 
   console.log(
-    `Box fit (MABR): ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
+    `Box fit: ${width_m.toFixed(3)} x ${depth_m.toFixed(3)} x ${height_m.toFixed(3)} m, ` +
     `rot=${rotation_deg.toFixed(1)}°(${yawSource}), topPts=${topPoints.length}/${pixelCount}, ` +
     `cloud=${pixelCount} pts, U=[${u0.toFixed(2)},${u1.toFixed(2)}] V=[${v0.toFixed(2)},${v1.toFixed(2)}], ` +
     `ctr_offset=(${uC.toFixed(3)},${vC.toFixed(3)}), confidence=${confidence}`
