@@ -655,14 +655,14 @@ export function fitQuantileBox(
   let yaw: number;
   let yawSource: string;
 
-  // Safety fallback: if orientation cloud is too small for both methods, use MABR-only
+  // Safety fallback: if orientation cloud is too small, no orientation possible
   if (xzPoints.length < 3) {
     yaw = 0;
-    yawSource = 'none';
+    yawSource = 'too-few';
   } else if (mabrResult.mabrConfidence < 0.01 && pcaResult.pcaConfidence < 0.01) {
-    // Both degenerate — no reliable orientation
-    yaw = 0;
-    yawSource = 'none';
+    // Both very low confidence — use stronger source rather than forcing axis-aligned
+    yaw = mabrResult.mabrConfidence >= pcaResult.pcaConfidence ? mabrResult.yaw : pcaResult.yaw;
+    yawSource = mabrResult.mabrConfidence >= pcaResult.pcaConfidence ? 'mabr-weak' : 'pca-weak';
   } else {
     // Double-angle circular blend
     const mabrX = mabrResult.mabrConfidence * Math.cos(2 * mabrResult.yaw);
