@@ -71,6 +71,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   const [controlMode, setControlMode] = useState<ControlMode>('move');
   const [hasDepth, setHasDepth] = useState(false);
   const hasDepthRef = useRef(false);
+  const sessionEndedRef = useRef(false);
 
   // Current hit position for drag capture
   const currentHitRef = useRef<{ position: THREE.Vector3; stability: number } | null>(null);
@@ -268,10 +269,12 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   const cleanup = useCallback(() => {
     if (renderLoopRef.current) {
       renderLoopRef.current.stop();
+      renderLoopRef.current = null;
     }
 
     if (xrContextRef.current) {
       endARSession(xrContextRef.current).catch(console.error);
+      xrContextRef.current = null;
     }
 
     if (sceneContextRef.current) {
@@ -279,6 +282,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       disposeTargetMarker(sceneContextRef.current.scene);
       disposeFloorGrid(sceneContextRef.current.scene);
       disposeScene(sceneContextRef.current);
+      sceneContextRef.current = null;
     }
   }, []);
 
@@ -310,6 +314,26 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
           overlayRef.current || undefined
         );
         xrContextRef.current = xrCtx;
+
+        // Listen for session end (browser back, system interrupt, etc.)
+        // Guard prevents double onExit when cleanup() also ends the session
+        xrCtx.session.addEventListener('end', () => {
+          if (!mounted || sessionEndedRef.current) return;
+          sessionEndedRef.current = true;
+          console.log('XR session ended externally');
+          // Stop render loop and dispose scene without calling session.end() again
+          if (renderLoopRef.current) renderLoopRef.current.stop();
+          if (sceneContextRef.current) {
+            disposeBoundingBox(sceneContextRef.current.scene);
+            disposeTargetMarker(sceneContextRef.current.scene);
+            disposeFloorGrid(sceneContextRef.current.scene);
+            disposeScene(sceneContextRef.current);
+          }
+          xrContextRef.current = null;
+          sceneContextRef.current = null;
+          renderLoopRef.current = null;
+          onExit();
+        });
 
         // Create render loop
         const loop = createRenderLoop(
@@ -436,7 +460,8 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
     window.history.pushState({ arSession: true }, '');
 
     const handlePopState = () => {
-      // Exit AR session and return to landing page
+      if (sessionEndedRef.current) return;
+      sessionEndedRef.current = true;
       cleanup();
       onExit();
     };
@@ -942,12 +967,14 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   }, [context.dragStart, context.dragEnd, context.width_m, context.depth_m, context.height_m, context.llmEstimate, onAddItem, dispatch]);
 
   const handleDone = useCallback(() => {
+    sessionEndedRef.current = true;
     try { cleanup(); } catch (e) { console.error('Cleanup error:', e); }
     dispatch({ type: 'END_SESSION' });
     onDone();
   }, [cleanup, dispatch, onDone]);
 
   const handleExit = useCallback(() => {
+    sessionEndedRef.current = true;
     try { cleanup(); } catch (e) { console.error('Cleanup error:', e); }
     dispatch({ type: 'END_SESSION' });
     onExit();
