@@ -86,7 +86,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   const accumulatedCloudRef = useRef<THREE.Vector3[]>([]);
   const measureFrameCountRef = useRef(0);
   const measureStartTimeRef = useRef(0);
-  const MEASURE_TIMEOUT_MS = 500; // minimum accumulation window
+  const MEASURE_TIMEOUT_MS = 1000; // minimum accumulation window
   // Track touch gesture state
   const isTouchingRef = useRef(false);
   const touchStartRef = useRef<{ time: number; position: THREE.Vector3 } | null>(null);
@@ -143,9 +143,9 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
             tap.floorY
           );
           if (frameCloud && frameCloud.length > 0) {
-            // Append new points, cap at 5000 total
+            // Append new points, cap at 10000 total
             const cloud = accumulatedCloudRef.current;
-            const remaining = 5000 - cloud.length;
+            const remaining = 10000 - cloud.length;
             if (remaining > 0) {
               cloud.push(...frameCloud.slice(0, remaining));
             }
