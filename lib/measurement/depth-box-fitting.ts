@@ -176,14 +176,15 @@ export function fitBoxFromDepth(
       }
     }
     if (maxDistSq > 0) {
-      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.10, 0.15, centerDepth * 0.6);
+      // Lower close-range floor to avoid over-collecting nearby background.
+      maxXZRadius = clamp(Math.sqrt(maxDistSq) * 1.10, 0.10, centerDepth * 0.6);
     }
   }
 
   // Inverse-depth scaling: closer objects occupy more pixels, farther objects fewer.
   // The pixel-space annulus tracks the object's apparent size in the depth buffer.
-  const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
-  const rInner = Math.max(Math.round(rOuter * 0.25), 3);
+  const rOuter = clamp(Math.round(40 / centerDepth), 18, 52);
+  const rInner = Math.max(Math.round(rOuter * 0.30), 4);
 
   diag.push(`bnd:${boundary.length} 3D:${worldPoints.length} xzR:${maxXZRadius.toFixed(2)}m rOut:${rOuter}px rIn:${rInner}px`);
 
@@ -267,11 +268,11 @@ export function buildCloudFromDepth(
 
   // Tighter than single-frame (0.5 vs 0.6): reduces background accumulation
   // across many viewing angles where there's no flood-fill to constrain the region
-  const maxXZRadius = clamp(centerDepth * 0.5, 0.15, 2.0);
+  const maxXZRadius = clamp(centerDepth * 0.5, 0.10, 2.0);
 
   // Same inverse-depth annulus as fitBoxFromDepth
-  const rOuter = clamp(Math.round(60 / centerDepth), 20, 80);
-  const rInner = Math.max(Math.round(rOuter * 0.25), 3);
+  const rOuter = clamp(Math.round(40 / centerDepth), 18, 52);
+  const rInner = Math.max(Math.round(rOuter * 0.30), 4);
 
   const cloud = buildLocalCloud(
     tapBufX, tapBufY, tapWorld, floorY,
@@ -832,4 +833,3 @@ function sampleDepthNearest(
   }
   return 0;
 }
-
