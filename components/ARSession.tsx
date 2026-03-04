@@ -984,7 +984,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   // Tutorial handlers
   const handleTutorialNext = useCallback(() => {
     setTutorialStep((prev) => {
-      const steps: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'done', 'complete'];
+      const steps: TutorialStep[] = ['surface', 'object', 'move', 'rotate', 'resize', 'done', 'complete'];
       const currentIndex = steps.indexOf(prev);
       return steps[Math.min(currentIndex + 1, steps.length - 1)];
     });
@@ -999,15 +999,22 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
     setTutorialStep(tutorialEnabled ? 'surface' : 'complete');
   }, [tutorialEnabled]);
 
-  // Auto-advance tutorial from 'surface' to 'move' when box is placed
+  // Auto-advance tutorial through setup:
+  // surface -> object when floor is locked
+  // object -> move when box is placed
   useEffect(() => {
     if (!tutorialActive) return;
-    if (tutorialStep === 'surface' && context.dragStart && context.dragEnd) {
+    if (tutorialStep === 'surface' && context.state === 'FLOOR_LOCKED') {
+      const timer = setTimeout(() => setTutorialStep('object'), 300);
+      return () => clearTimeout(timer);
+    }
+
+    if (tutorialStep === 'object' && context.dragStart && context.dragEnd) {
       // Small delay so user can see the box appear
       const timer = setTimeout(() => setTutorialStep('move'), 500);
       return () => clearTimeout(timer);
     }
-  }, [tutorialStep, context.dragStart, context.dragEnd, tutorialActive]);
+  }, [tutorialStep, context.state, context.dragStart, context.dragEnd, tutorialActive]);
 
   // Keep active mode aligned with the tutorial step
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export type TutorialStep = 'surface' | 'move' | 'rotate' | 'resize' | 'done' | 'complete';
+export type TutorialStep = 'surface' | 'object' | 'move' | 'rotate' | 'resize' | 'done' | 'complete';
 
 interface TutorialOverlayProps {
   step: TutorialStep;
@@ -13,7 +13,12 @@ interface TutorialOverlayProps {
 const stepContent: Record<TutorialStep, { title: string; description: string; showNext: boolean; buttonText?: string }> = {
   surface: {
     title: 'Find a Flat Surface',
-    description: 'Point your camera at the floor until the reticle appears, then tap to place a box.',
+    description: 'Point your camera at the floor until the reticle appears, then tap to set the floor reference.',
+    showNext: false, // Auto-advances when box is placed
+  },
+  object: {
+    title: 'Pick an Object',
+    description: 'Now tap the object you want to measure to place a box.',
     showNext: false, // Auto-advances when box is placed
   },
   move: {
@@ -44,7 +49,7 @@ const stepContent: Record<TutorialStep, { title: string; description: string; sh
   },
 };
 
-const TUTORIAL_STEPS: TutorialStep[] = ['surface', 'move', 'rotate', 'resize', 'done'];
+const TUTORIAL_STEPS: TutorialStep[] = ['surface', 'object', 'move', 'rotate', 'resize', 'done'];
 
 export default function TutorialOverlay({ step, onNext, onSkip }: TutorialOverlayProps) {
   if (step === 'complete') {
