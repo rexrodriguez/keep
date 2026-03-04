@@ -53,7 +53,7 @@ interface ARSessionProps {
   tutorialEnabled?: boolean;
 }
 
-export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemCount, tutorialEnabled = false }: ARSessionProps) {
+export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemCount, tutorialEnabled = true }: ARSessionProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneContextRef = useRef<SceneContext | null>(null);
   const xrContextRef = useRef<XRSessionContext | null>(null);
@@ -106,6 +106,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
 
   // Track if we're currently manipulating a handle
   const [isManipulating, setIsManipulating] = useState(false);
+  const tutorialActive = tutorialEnabled && tutorialStep !== 'complete';
 
   const dispatch = useCallback((action: StateAction) => {
     setContext((prev) => stateMachineReducer(prev, action));
@@ -835,7 +836,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       setIsManipulating(false);
 
       // Auto-advance tutorial when user interacts in the matching mode
-      if (tutorialEnabled) {
+      if (tutorialActive) {
         setTutorialStep((prev) => {
           // Check if the current control mode matches the tutorial step
           if (prev === 'move' && controlMode === 'move') {
@@ -912,7 +913,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       dispatch({ type: 'PLACE_BOX', point });
       return;
     }
-  }, [context.state, context.floorY, dispatch, controlMode, tutorialEnabled, hasDepth]);
+  }, [context.state, context.floorY, dispatch, controlMode, tutorialActive, hasDepth]);
 
   const handleUndo = useCallback(() => {
     dispatch({ type: 'UNDO' });
@@ -993,24 +994,51 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
     setTutorialStep('complete');
   }, []);
 
+  // Keep tutorial state in sync with user preference
+  useEffect(() => {
+    setTutorialStep(tutorialEnabled ? 'surface' : 'complete');
+  }, [tutorialEnabled]);
+
   // Auto-advance tutorial from 'surface' to 'move' when box is placed
   useEffect(() => {
+    if (!tutorialActive) return;
     if (tutorialStep === 'surface' && context.dragStart && context.dragEnd) {
       // Small delay so user can see the box appear
       const timer = setTimeout(() => setTutorialStep('move'), 500);
       return () => clearTimeout(timer);
     }
-  }, [tutorialStep, context.dragStart, context.dragEnd]);
+  }, [tutorialStep, context.dragStart, context.dragEnd, tutorialActive]);
+
+  // Keep active mode aligned with the tutorial step
+  useEffect(() => {
+    if (!tutorialActive) return;
+    if (tutorialStep === 'move') {
+      setControlMode('move');
+    } else if (tutorialStep === 'rotate') {
+      setControlMode('rotate');
+    } else if (tutorialStep === 'resize') {
+      setControlMode('resize');
+    }
+  }, [tutorialStep, tutorialActive]);
 
   // Update tutorial highlighting when step changes
-  // With mode-based controls, only highlight resize handles when on resize step
   useEffect(() => {
     if (!sceneContextRef.current) return;
+    if (!tutorialActive) {
+      setTutorialHighlight(sceneContextRef.current.scene, null);
+      return;
+    }
 
-    // Only highlight resize handles during resize tutorial step
-    const shouldHighlight = tutorialStep === 'resize' ? 'resize' : null;
+    const shouldHighlight: 'move' | 'rotate' | 'resize' | null =
+      tutorialStep === 'move'
+        ? 'move'
+        : tutorialStep === 'rotate'
+          ? 'rotate'
+          : tutorialStep === 'resize'
+            ? 'resize'
+            : null;
     setTutorialHighlight(sceneContextRef.current.scene, shouldHighlight);
-  }, [tutorialStep]);
+  }, [tutorialStep, tutorialActive]);
 
   // Render UI into the overlay container via portal so it shows during AR
   const overlayContent = (
@@ -1045,7 +1073,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       )}
 
       {/* Tutorial overlay */}
-      {tutorialStep !== 'complete' && (
+      {tutorialActive && (
         <TutorialOverlay
           step={tutorialStep}
           onNext={handleTutorialNext}

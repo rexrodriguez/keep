@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import LandingPage from '@/components/LandingPage';
 import CapabilityCheck from '@/components/CapabilityCheck';
@@ -33,13 +33,35 @@ type AppState =
 
 
 export default function Home() {
+  const TUTORIAL_PREF_KEY = 'keep:tutorial-enabled';
   const [appState, setAppState] = useState<AppState>('LANDING');
   const [measuredItems, setMeasuredItems] = useState<MeasuredItem[]>([]);
   const [radiusMiles, setRadiusMiles] = useState(5);
   const [searchResults, setSearchResults] = useState<StorageSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tutorialEnabled, setTutorialEnabled] = useState(true);
 
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(TUTORIAL_PREF_KEY);
+      if (saved === 'true' || saved === 'false') {
+        setTutorialEnabled(saved === 'true');
+      }
+    } catch (err) {
+      console.warn('Failed to load tutorial preference:', err);
+    }
+  }, []);
+
+  const handleTutorialToggle = useCallback((enabled: boolean) => {
+    setTutorialEnabled(enabled);
+    try {
+      localStorage.setItem(TUTORIAL_PREF_KEY, String(enabled));
+    } catch (err) {
+      console.warn('Failed to save tutorial preference:', err);
+    }
+  }, []);
 
 
   const handleGetStarted = useCallback(() => {
@@ -239,6 +261,19 @@ export default function Home() {
           </div>
 
           {/* Start button */}
+          <label className="flex items-center gap-3 bg-gray-800 rounded-xl px-4 py-3 mb-4 text-left cursor-pointer">
+            <input
+              type="checkbox"
+              checked={tutorialEnabled}
+              onChange={(e) => handleTutorialToggle(e.target.checked)}
+              className="h-4 w-4 accent-blue-500"
+            />
+            <div>
+              <div className="text-sm font-medium text-gray-200">Show AR tutorial</div>
+              <div className="text-xs text-gray-400">Guides move, rotate, and resize modes step-by-step.</div>
+            </div>
+          </label>
+
           <button
             onClick={handleStartAR}
             className="w-full py-4 rounded-xl font-semibold text-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
@@ -268,6 +303,7 @@ export default function Home() {
           onAddItem={handleAddItem}
           onDone={handleDone}
           itemCount={measuredItems.length}
+          tutorialEnabled={tutorialEnabled}
         />
       </>
     );
