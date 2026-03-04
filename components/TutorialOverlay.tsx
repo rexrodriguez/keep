@@ -18,17 +18,17 @@ const stepContent: Record<TutorialStep, { title: string; description: string; sh
   },
   move: {
     title: 'Move Mode',
-    description: 'Tap "Move" below, then drag anywhere on the box to reposition it.',
+    description: 'Tap "Move" below. The large cyan arrows show that translation is the only active interaction in this mode.',
     showNext: true,
   },
   rotate: {
     title: 'Rotate Mode',
-    description: 'Tap "Rotate" below, then drag anywhere on the box to spin it.',
+    description: 'Tap "Rotate" below. The circular arrow around the box shows that rotation is the only active interaction in this mode.',
     showNext: true,
   },
   resize: {
     title: 'Resize Mode',
-    description: 'Tap "Resize" below, then drag the arrow handles to adjust width, depth, and height. Align the reticle with an arrow for greater accuracy.',
+    description: 'Tap "Resize" below. Different colored face arrows indicate the only allowed resize directions for width, depth, and height.',
     showNext: true,
   },
   done: {

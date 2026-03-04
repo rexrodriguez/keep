@@ -9,6 +9,12 @@ interface ModeSelectorProps {
 }
 
 export default function ModeSelector({ mode, onModeChange }: ModeSelectorProps) {
+  const modeCue: Record<ControlMode, string> = {
+    move: 'Only translation is enabled',
+    rotate: 'Only rotation is enabled',
+    resize: 'Only resizing is enabled',
+  };
+
   const modes: { key: ControlMode; label: string; icon: React.ReactNode }[] = [
     {
       key: 'move',
@@ -65,6 +71,9 @@ export default function ModeSelector({ mode, onModeChange }: ModeSelectorProps) 
             <span className="text-xs font-medium">{label}</span>
           </button>
         ))}
+      </div>
+      <div className="mt-2 text-center text-[11px] font-medium text-white/80 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-1">
+        {modeCue[mode]}
       </div>
     </div>
   );

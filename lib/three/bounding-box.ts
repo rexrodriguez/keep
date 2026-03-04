@@ -541,45 +541,51 @@ function addInteractionHandles(
     side: THREE.DoubleSide,
   });
 
-  // VISIBLE arrow handles for edges - clean arrows with stems
-  const arrowMaterial = new THREE.MeshBasicMaterial({
-    color: 0x22d3ee, // Cyan for width/depth
-    transparent: true,
-    opacity: 0.5, // Toned down
-    depthTest: false,
-  });
-
-  const arrowHeadLength = 0.03; // 3cm arrow head
-  const arrowHeadRadius = 0.015; // 1.5cm radius cone
-  const stemLength = 0.04; // 4cm stem
-  const stemRadius = 0.004; // 4mm stem
-
-  // Helper to create arrow with stem
-  const createEdgeArrow = (name: string, userData: object, rotation: THREE.Euler, position: THREE.Vector3) => {
+  // Reusable arrow helper for mode-specific visual cues
+  const createArrow = (
+    name: string,
+    userData: object,
+    direction: THREE.Vector3,
+    position: THREE.Vector3,
+    color: number,
+    opacity: number,
+    hitSize: number = 0.1 * hitScaleFactor
+  ) => {
     const arrowGroup = new THREE.Group();
     arrowGroup.name = name;
     arrowGroup.userData = userData;
 
-    // Arrow head
+    const arrowMaterial = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthTest: false,
+    });
+
+    const headLength = 0.045;
+    const headRadius = 0.018;
+    const stemLength = 0.055;
+    const stemRadius = 0.005;
+
     const cone = new THREE.Mesh(
-      new THREE.ConeGeometry(arrowHeadRadius, arrowHeadLength, 6),
+      new THREE.ConeGeometry(headRadius, headLength, 8),
       arrowMaterial.clone()
     );
-    cone.position.set(0, stemLength / 2 + arrowHeadLength / 2, 0);
+    cone.userData = { baseColor: color, baseOpacity: opacity };
+    cone.position.set(0, stemLength / 2 + headLength / 2, 0);
     arrowGroup.add(cone);
 
-    // Stem
     const stem = new THREE.Mesh(
-      new THREE.CylinderGeometry(stemRadius, stemRadius, stemLength, 6),
+      new THREE.CylinderGeometry(stemRadius, stemRadius, stemLength, 8),
       arrowMaterial.clone()
     );
+    stem.userData = { baseColor: color, baseOpacity: opacity };
     arrowGroup.add(stem);
 
-    // Apply rotation to whole group
-    arrowGroup.rotation.copy(rotation);
+    const unitDirection = direction.clone().normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    arrowGroup.quaternion.setFromUnitVectors(up, unitDirection);
 
-    // Invisible hit box for easier touch - scaled based on screen size
-    const hitSize = 0.1 * hitScaleFactor;
     const hitBox = new THREE.Mesh(
       new THREE.BoxGeometry(hitSize, hitSize, hitSize),
       hitMaterial.clone()
@@ -592,76 +598,53 @@ function addInteractionHandles(
 
   const arrowOffset = 0.05; // Distance from box face
 
-  // RESIZE MODE: Show edge arrows and top face arrow
+  // RESIZE MODE: Distinct colored arrows per face
   if (controlMode === 'resize') {
-    // Front arrow - controls depth
-    group.add(createEdgeArrow(
-    'handle-edge-front',
-    { handleType: 'edge', edge: 'front', axis: 'depth', direction: 1 },
-    new THREE.Euler(Math.PI / 2, 0, 0),
-    new THREE.Vector3(0, 0, hd + arrowOffset)
-  ));
+    group.add(createArrow(
+      'handle-edge-front',
+      { handleType: 'edge', edge: 'front', axis: 'depth', direction: 1 },
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(0, 0, hd + arrowOffset),
+      0xef4444,
+      0.75
+    ));
 
-  // Back arrow - controls depth
-  group.add(createEdgeArrow(
-    'handle-edge-back',
-    { handleType: 'edge', edge: 'back', axis: 'depth', direction: -1 },
-    new THREE.Euler(-Math.PI / 2, 0, 0),
-    new THREE.Vector3(0, 0, -hd - arrowOffset)
-  ));
+    group.add(createArrow(
+      'handle-edge-back',
+      { handleType: 'edge', edge: 'back', axis: 'depth', direction: -1 },
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, -hd - arrowOffset),
+      0xf97316,
+      0.75
+    ));
 
-  // Left arrow - controls width
-  group.add(createEdgeArrow(
-    'handle-edge-left',
-    { handleType: 'edge', edge: 'left', axis: 'width', direction: -1 },
-    new THREE.Euler(0, 0, Math.PI / 2),
-    new THREE.Vector3(-hw - arrowOffset, 0, 0)
-  ));
+    group.add(createArrow(
+      'handle-edge-left',
+      { handleType: 'edge', edge: 'left', axis: 'width', direction: -1 },
+      new THREE.Vector3(-1, 0, 0),
+      new THREE.Vector3(-hw - arrowOffset, 0, 0),
+      0x2563eb,
+      0.75
+    ));
 
-  // Right arrow - controls width
-  group.add(createEdgeArrow(
-    'handle-edge-right',
-    { handleType: 'edge', edge: 'right', axis: 'width', direction: 1 },
-    new THREE.Euler(0, 0, -Math.PI / 2),
-    new THREE.Vector3(hw + arrowOffset, 0, 0)
-  ));
+    group.add(createArrow(
+      'handle-edge-right',
+      { handleType: 'edge', edge: 'right', axis: 'width', direction: 1 },
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(hw + arrowOffset, 0, 0),
+      0x22d3ee,
+      0.75
+    ));
 
-  // Top face - VISIBLE upward arrow for height control (cleaner, smaller)
-  const heightArrowMaterial = new THREE.MeshBasicMaterial({
-    color: 0xc084fc, // Purple for height
-    transparent: true,
-    opacity: 0.5, // Toned down
-    depthTest: false,
-  });
-
-  const topArrowGroup = new THREE.Group();
-  topArrowGroup.name = 'handle-top-face';
-  topArrowGroup.userData = { handleType: 'topFace' };
-
-  // Upward pointing cone (smaller)
-  const topCone = new THREE.Mesh(
-    new THREE.ConeGeometry(0.015, 0.03, 6),
-    heightArrowMaterial.clone()
-  );
-  topCone.position.y = 0.035;
-  topArrowGroup.add(topCone);
-
-  // Stem below the cone
-  const topStem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.004, 0.004, 0.04, 6),
-    heightArrowMaterial.clone()
-  );
-  topArrowGroup.add(topStem);
-
-  // Invisible hit box for easier touch
-  const topHitBox = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 0.15, 0.1),
-    hitMaterial.clone()
-  );
-  topArrowGroup.add(topHitBox);
-
-    topArrowGroup.position.set(0, hh + 0.04, 0);
-    group.add(topArrowGroup);
+    group.add(createArrow(
+      'handle-top-face',
+      { handleType: 'topFace' },
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, hh + 0.05, 0),
+      0xa855f7,
+      0.75,
+      0.12 * hitScaleFactor
+    ));
   } // End resize mode
 
   // Bottom face hit region - controls position (move box)
@@ -673,139 +656,85 @@ function addInteractionHandles(
   bottomFace.name = 'handle-bottom-face';
   group.add(bottomFace);
 
-  // ROTATE MODE: Show rotation arcs at top corners
+  // ROTATE MODE: Circular arrow around the box
   if (controlMode === 'rotate') {
     const rotationHandleMat = new THREE.MeshBasicMaterial({
-    color: 0xc084fc, // Purple for rotation
-    transparent: true,
-    opacity: 0.6,
-    depthTest: false,
-  });
+      color: 0xa855f7,
+      transparent: true,
+      opacity: 0.8,
+      depthTest: false,
+    });
 
-  const upperCornerPositions: [number, number, number, number][] = [
-    [-hw, hh, hd, 0],   // top-front-left
-    [hw, hh, hd, 1],    // top-front-right
-    [hw, hh, -hd, 2],   // top-back-right
-    [-hw, hh, -hd, 3],  // top-back-left
-  ];
+    const rotationGroup = new THREE.Group();
+    rotationGroup.name = 'handle-corner-top-ring';
+    rotationGroup.userData = { handleType: 'cornerTop', cornerIndex: 0 };
+    rotationGroup.position.set(0, hh + 0.04, 0);
 
-  for (const [x, y, z, index] of upperCornerPositions) {
-    const cornerGroup = new THREE.Group();
-    cornerGroup.name = `handle-corner-top-${index}`;
-    cornerGroup.userData = { handleType: 'cornerTop', cornerIndex: index };
-
-    // Simple curved arc - shows rotation is possible
-    // Arc curves OUTWARD (convex away from box center)
-    const arcRadius = 0.025;
-    const arcSweep = Math.PI * 0.5; // 90 degrees
-
-    // Hardcoded values per corner for consistent outward-curving arcs
-    // Each corner needs: offset direction (outward) and arc start angle
-    const cornerConfigs = [
-      // index 0: front-left (-X, +Z corner) - correct
-      { offsetAngle: (3 * Math.PI) / 4, arcStart: Math.PI },
-      // index 1: front-right (+X, +Z corner) - flipped (+π)
-      { offsetAngle: Math.PI / 4, arcStart: Math.PI / 2 + Math.PI },
-      // index 2: back-right (+X, -Z corner) - correct
-      { offsetAngle: -Math.PI / 4, arcStart: 0 },
-      // index 3: back-left (-X, -Z corner) - flipped (+π)
-      { offsetAngle: (-3 * Math.PI) / 4, arcStart: -Math.PI / 2 + Math.PI },
-    ];
-    const config = cornerConfigs[index];
-
-    // Position arc center slightly outward from corner
-    const offsetDist = 0.01;
-    const offsetX = Math.cos(config.offsetAngle) * offsetDist;
-    const offsetZ = Math.sin(config.offsetAngle) * offsetDist;
-
-    const arc = new THREE.Mesh(
-      new THREE.TorusGeometry(arcRadius, 0.004, 8, 12, arcSweep),
+    const ringRadius = Math.max(hw, hd) + 0.1;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(ringRadius, 0.007, 12, 96),
       rotationHandleMat.clone()
     );
-    arc.position.set(offsetX, 0, offsetZ);
-    arc.rotation.x = -Math.PI / 2; // Lay flat
-    arc.rotation.z = config.arcStart;
-    cornerGroup.add(arc);
+    ring.rotation.x = Math.PI / 2;
+    ring.userData = { baseColor: 0xa855f7, baseOpacity: 0.8 };
+    rotationGroup.add(ring);
 
-    // Invisible hit box for easier touch - scaled based on screen size
-    const hitBox = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07 * hitScaleFactor),
+    const arrowAngles = [Math.PI / 4, (5 * Math.PI) / 4];
+    for (const angle of arrowAngles) {
+      const arrowHead = new THREE.Mesh(
+        new THREE.ConeGeometry(0.022, 0.045, 10),
+        rotationHandleMat.clone()
+      );
+      const tangent = new THREE.Vector3(Math.sin(angle), 0, -Math.cos(angle)).normalize();
+      arrowHead.position.set(
+        Math.cos(angle) * ringRadius,
+        0,
+        Math.sin(angle) * ringRadius
+      );
+      arrowHead.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tangent);
+      arrowHead.userData = { baseColor: 0xa855f7, baseOpacity: 0.8 };
+      rotationGroup.add(arrowHead);
+    }
+
+    const hitRing = new THREE.Mesh(
+      new THREE.TorusGeometry(ringRadius, 0.05 * hitScaleFactor, 8, 24),
       hitMaterial.clone()
     );
-    cornerGroup.add(hitBox);
+    hitRing.rotation.x = Math.PI / 2;
+    rotationGroup.add(hitRing);
 
-    cornerGroup.position.set(x, y + 0.01, z);
-    group.add(cornerGroup);
-    }
+    group.add(rotationGroup);
   } // End rotate mode
 
-  // MOVE MODE: Show 4-way arrows at bottom corners
+  // MOVE MODE: Prominent outward arrows around box footprint
   if (controlMode === 'move') {
-    const moveHandleMat = new THREE.MeshBasicMaterial({
-    color: 0x22d3ee, // Cyan for movement
-    transparent: true,
-    opacity: 0.6,
-    depthTest: false,
-  });
+    const moveGroup = new THREE.Group();
+    moveGroup.name = 'handle-corner-bottom-cluster';
+    moveGroup.userData = { handleType: 'cornerBottom', cornerIndex: 0 };
+    moveGroup.position.set(0, -hh + 0.06, 0);
 
-  const lowerCornerPositions: [number, number, number, number][] = [
-    [-hw, -hh, hd, 0],   // bottom-front-left
-    [hw, -hh, hd, 1],    // bottom-front-right
-    [hw, -hh, -hd, 2],   // bottom-back-right
-    [-hw, -hh, -hd, 3],  // bottom-back-left
-  ];
+    const ringRadius = Math.max(hw, hd) + 0.12;
+    const arrowCount = 8;
+    for (let i = 0; i < arrowCount; i++) {
+      const angle = (i / arrowCount) * Math.PI * 2;
+      const radial = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize();
 
-  for (const [x, y, z, index] of lowerCornerPositions) {
-    const cornerGroup = new THREE.Group();
-    cornerGroup.name = `handle-corner-bottom-${index}`;
-    cornerGroup.userData = { handleType: 'cornerBottom', cornerIndex: index };
-
-    // Four arrows pointing outward (move icon) - no center sphere
-    const miniArrowGeom = new THREE.ConeGeometry(0.01, 0.02, 4);
-    const stemGeom = new THREE.CylinderGeometry(0.003, 0.003, 0.025, 4);
-    const arrowDist = 0.035;
-    const directions = [
-      { angle: 0 },           // right (+X)
-      { angle: Math.PI },     // left (-X)
-      { angle: Math.PI / 2 }, // forward (+Z)
-      { angle: -Math.PI / 2 }, // back (-Z)
-    ];
-
-    for (const dir of directions) {
-      // Arrow head
-      const arrow = new THREE.Mesh(miniArrowGeom, moveHandleMat.clone());
-      arrow.position.set(
-        Math.cos(dir.angle) * arrowDist,
-        0,
-        Math.sin(dir.angle) * arrowDist
+      const arrow = createArrow(
+        `handle-corner-bottom-${i}`,
+        { handleType: 'cornerBottom', cornerIndex: (i % 4) as 0 | 1 | 2 | 3 },
+        radial,
+        new THREE.Vector3(
+          Math.cos(angle) * ringRadius,
+          0,
+          Math.sin(angle) * ringRadius
+        ),
+        0x22d3ee,
+        0.85,
+        0.09 * hitScaleFactor
       );
-      arrow.rotation.z = -dir.angle - Math.PI / 2;
-      arrow.rotation.order = 'YXZ';
-      cornerGroup.add(arrow);
-
-      // Stem
-      const stem = new THREE.Mesh(stemGeom, moveHandleMat.clone());
-      stem.position.set(
-        Math.cos(dir.angle) * (arrowDist - 0.018),
-        0,
-        Math.sin(dir.angle) * (arrowDist - 0.018)
-      );
-      stem.rotation.z = Math.PI / 2;
-      stem.rotation.y = dir.angle;
-      stem.rotation.order = 'YXZ';
-      cornerGroup.add(stem);
+      moveGroup.add(arrow);
     }
-
-    // Invisible hit box for easier touch - scaled based on screen size
-    const hitBox = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07 * hitScaleFactor),
-      hitMaterial.clone()
-    );
-    cornerGroup.add(hitBox);
-
-    cornerGroup.position.set(x, y + 0.025, z); // Raise slightly above floor
-    group.add(cornerGroup);
-    }
+    group.add(moveGroup);
   } // End move mode
 }
 
@@ -1206,10 +1135,8 @@ export function setTutorialHighlight(
   const boundingBox = scene.getObjectByName('bounding-box');
   if (!boundingBox) return;
 
-  // Colors for highlighting
+  // Highlight color
   const glowColor = 0xffd700; // Gold/yellow for tutorial highlight
-  const normalCyan = 0x22d3ee;
-  const normalPurple = 0xa855f7;
 
   boundingBox.traverse((child) => {
     if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
@@ -1234,14 +1161,14 @@ export function setTutorialHighlight(
         child.material.color.setHex(glowColor);
         child.material.opacity = 0.9;
       } else {
-        // Reset to normal colors
-        if (isRotate) {
-          child.material.color.setHex(normalPurple);
-          child.material.opacity = 0.6;
-        } else {
-          child.material.color.setHex(normalCyan);
-          child.material.opacity = isResize ? 0.5 : 0.6;
-        }
+        const baseColor = typeof child.userData.baseColor === 'number'
+          ? child.userData.baseColor
+          : (isRotate ? 0xa855f7 : 0x22d3ee);
+        const baseOpacity = typeof child.userData.baseOpacity === 'number'
+          ? child.userData.baseOpacity
+          : (isResize ? 0.75 : 0.85);
+        child.material.color.setHex(baseColor);
+        child.material.opacity = baseOpacity;
       }
     }
   });
