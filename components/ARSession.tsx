@@ -70,6 +70,8 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
   const [tutorialStep, setTutorialStep] = useState<TutorialStep>(tutorialEnabled ? 'surface' : 'complete');
   const [controlMode, setControlMode] = useState<ControlMode>('move');
   const [hasDepth, setHasDepth] = useState(false);
+  const FLOOR_OFFSET_KEY = 'keep:floor-y-offset-cm';
+  const [floorOffsetCm, setFloorOffsetCm] = useState(0);
   const hasDepthRef = useRef(false);
   const sessionEndedRef = useRef(false);
 
@@ -285,6 +287,22 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
       disposeScene(sceneContextRef.current);
       sceneContextRef.current = null;
     }
+  }, []);
+
+  // Load floor offset from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(FLOOR_OFFSET_KEY);
+      if (saved !== null) setFloorOffsetCm(Number(saved) || 0);
+    } catch {}
+  }, []);
+
+  const handleFloorOffset = useCallback((deltaCm: number) => {
+    setFloorOffsetCm(prev => {
+      const next = Math.max(-10, Math.min(10, prev + deltaCm));
+      try { localStorage.setItem(FLOOR_OFFSET_KEY, String(next)); } catch {}
+      return next;
+    });
   }, []);
 
   // Initialize AR session
@@ -870,7 +888,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
     if (context.state === 'READY_TO_DRAW') {
       dispatch({
         type: 'LOCK_FLOOR',
-        floorY: touchStart.position.y,
+        floorY: touchStart.position.y + (floorOffsetCm / 100),
         position: touchStart.position.clone(),
       });
       return;
@@ -1073,6 +1091,31 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
         onSetStabilityMode={handleSetStabilityMode}
         onExit={handleExit}
       />
+
+      {/* Floor offset stepper */}
+      {(context.state === 'FLOOR_LOCKED' || context.state === 'MEASURING' ||
+        context.state === 'HEIGHT_INPUT' || context.state === 'REVIEW') && (
+        <div className="fixed left-3 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 z-40">
+          <button
+            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleFloorOffset(1); }}
+            className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center active:bg-white/20"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3L13 9H3L8 3Z" fill="white"/></svg>
+          </button>
+          <div className="text-white/70 text-[10px] font-mono leading-tight text-center">
+            <div>Floor</div>
+            <div>{floorOffsetCm >= 0 ? '+' : ''}{floorOffsetCm}cm</div>
+          </div>
+          <button
+            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); handleFloorOffset(-1); }}
+            className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center active:bg-white/20"
+            style={{ touchAction: 'manipulation' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 13L3 7H13L8 13Z" fill="white"/></svg>
+          </button>
+        </div>
+      )}
 
       {/* Mode selector - show when box is placed */}
       {context.state === 'HEIGHT_INPUT' && (

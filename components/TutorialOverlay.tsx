@@ -13,7 +13,7 @@ interface TutorialOverlayProps {
 const stepContent: Record<TutorialStep, { title: string; description: string; showNext: boolean; buttonText?: string }> = {
   surface: {
     title: 'Find a Flat Surface',
-    description: 'Point your camera at the floor until the reticle appears, then tap to set the floor reference.',
+    description: 'Point your camera at the floor until the reticle appears, then tap to set the floor reference. Use the ↑↓ buttons on the left to adjust floor level if needed.',
     showNext: false, // Auto-advances when box is placed
   },
   object: {

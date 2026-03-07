@@ -668,7 +668,7 @@ function addInteractionHandles(
     const rotationGroup = new THREE.Group();
     rotationGroup.name = 'handle-corner-top-ring';
     rotationGroup.userData = { handleType: 'cornerTop', cornerIndex: 0 };
-    rotationGroup.position.set(0, hh + 0.04, 0);
+    rotationGroup.position.set(0, 0, 0);
 
     const ringRadius = Math.max(hw, hd) + 0.1;
     const ring = new THREE.Mesh(

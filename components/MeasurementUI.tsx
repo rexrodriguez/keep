@@ -272,6 +272,11 @@ export default function MeasurementUI({
               Depth sensing active
             </div>
           )}
+          {!hasDepth && (
+            <div className="text-xs text-amber-400 mt-1 text-center">
+              Manual mode — adjust box size after placing
+            </div>
+          )}
         </div>
       )}
 
