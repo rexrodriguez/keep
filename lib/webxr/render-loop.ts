@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { XRSessionContext } from './session-manager';
 import { processHitTest, HitTestResult } from './hit-test';
 import { DepthData, getDepthData } from './depth-sensing';
-import { captureXRCameraImage } from './camera-capture';
+import { captureXRCameraImage, captureRendererFallback } from './camera-capture';
 
 export interface FrameData {
   time: number;
@@ -67,8 +67,15 @@ export function createRenderLoop(
         frame,
         context.localFloorSpace
       ).then(dataUrl => {
-        cb(dataUrl || '');
-      }).catch(() => cb(''));
+        if (dataUrl) {
+          cb(dataUrl);
+        } else {
+          // Fallback: capture renderer canvas (3D overlay on camera passthrough)
+          cb(captureRendererFallback(context.renderer) || '');
+        }
+      }).catch(() => {
+        cb(captureRendererFallback(context.renderer) || '');
+      });
     }
   };
 

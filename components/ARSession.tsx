@@ -1063,7 +1063,7 @@ export default function ARSession({ overlayRef, onExit, onAddItem, onDone, itemC
             ? 'resize'
             : null;
     setTutorialHighlight(sceneContextRef.current.scene, shouldHighlight);
-  }, [tutorialStep, tutorialActive]);
+  }, [tutorialStep, tutorialActive, controlMode]);
 
   // Render UI into the overlay container via portal so it shows during AR
   const overlayContent = (
